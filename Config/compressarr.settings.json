@@ -1,0 +1,37 @@
+{
+  "handbrake": {
+    "cliPath": "%ProgramFiles%\\HandBrake\\HandBrakeCLI.exe",
+    "presetsPath": "%appdata%\\HandBrake\\presets.json",
+    "options": ""
+  },
+  "contentLanes": {
+    "hdMovies":  { "input": "", "outputBase": "", "preset": "VeryFastDDtoAAC" },
+    "hdTV":      { "input": "", "outputBase": "", "preset": "VeryFastDDtoAAC" },
+    "uhdMovies": { "input": "", "outputBase": "", "preset": "" },
+    "uhdTV":     { "input": "", "outputBase": "", "preset": "" }
+  },
+  "processing": {
+    "vidTypes": ["mkv", "avi"],
+    "outSameAsIn": false,
+    "deleteAfterConvert": "Maintain",
+    "moveFiles": false,
+    "limit": 999,
+    "minSize": "0gb"
+  },
+  "logging": {
+    "logFilePath": ".\\Logs",
+    "retentionDays": 30
+  },
+  "postExec": {
+    "cmd": "",
+    "args": ""
+  },
+  "report": {
+    "reportPath": ".\\Reports",
+    "openAfterRun": "Always"
+  },
+  "repeat": {
+    "count": 0,
+    "monitor": false
+  }
+}

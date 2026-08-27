@@ -1,0 +1,15 @@
+# Generated at runtime
+Logs/*
+!Logs/.gitkeep
+Reports/*
+!Reports/.gitkeep
+compressarr.resume.json
+
+# User's live/local config (keep the checked-in sample in Config/)
+Config/compressarr.local.json
+
+# Windows / editor cruft
+Thumbs.db
+desktop.ini
+.vs/
+*.user
