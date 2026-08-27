@@ -119,7 +119,8 @@ function Show-CompressarrMainForm {
   #>
   param(
     [Parameter(Mandatory)] $Config,
-    [Parameter(Mandatory)] [string]$ConfigPath
+    [Parameter(Mandatory)] [string]$ConfigPath,
+    [string]$Version
   )
 
   Add-Type -AssemblyName System.Windows.Forms
@@ -129,7 +130,7 @@ function Show-CompressarrMainForm {
   $formResult = @{ Action = 'Exit'; Config = $Config }
 
   $form = New-Object System.Windows.Forms.Form
-  $form.Text = 'Compressarr'
+  $form.Text = if ($Version) { "Compressarr v$Version" } else { 'Compressarr' }
   $form.MinimumSize = New-Object System.Drawing.Size(880, 640)
   $form.Size = New-Object System.Drawing.Size(1000, 760)
   $form.StartPosition = 'CenterScreen'

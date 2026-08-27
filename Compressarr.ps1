@@ -36,6 +36,8 @@ param(
   [switch]$Once
 )
 
+$script:CompressarrVersion = '1.0.0-beta.1'
+
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
 if (-not $ConfigPath) {
@@ -73,7 +75,7 @@ function Invoke-CompressarrRun {
   $reportPath = Expand-CompressarrPath $Config.report.reportPath
   $summaryLogFile = Initialize-CompressarrLogging -LogFilePath $logFilePath -Timestamp $timestamp
 
-  Write-CompressarrLog "Compressarr - run started $timestamp"
+  Write-CompressarrLog "Compressarr v$script:CompressarrVersion - run started $timestamp"
   Write-CompressarrLog ('-' * 80)
 
   $hbloc = Expand-CompressarrPath $Config.handbrake.cliPath
@@ -156,7 +158,7 @@ try {
     Invoke-CompressarrRun -Config $config | Out-Null
   }
   else {
-    $formResult = Show-CompressarrMainForm -Config $config -ConfigPath $ConfigPath
+    $formResult = Show-CompressarrMainForm -Config $config -ConfigPath $ConfigPath -Version $script:CompressarrVersion
     $config = $formResult.Config
 
     if ($formResult.Action -eq 'Execute') {
