@@ -125,7 +125,12 @@ function New-CompressarrReport {
     [Parameter(Mandatory)] [hashtable]$LaneResults,
     [Parameter(Mandatory)] [TimeSpan]$RunTime,
     [Parameter(Mandatory)] [string]$LogFilePath,
-    [string]$SummaryLogFile
+    [string]$SummaryLogFile,
+    # Only a run that actually processed files gets a number (see
+    # Get-CompressarrRunCount in Compressarr.Logging.psm1) - 0/omitted
+    # means this pass found nothing to do, so the report shows a plain
+    # "Run:" line instead of a "Run #N:" badge for a run that wasn't counted.
+    [int]$RunNumber = 0
   )
 
   if (-not (Test-Path $ReportPath)) {
@@ -169,6 +174,7 @@ function New-CompressarrReport {
   $logoB64 = Get-CompressarrBase64Asset -Path (Join-Path -Path $assetsPath -ChildPath 'compressarr-logo.png')
   $faviconTag = if ($faviconB64) { "<link rel=`"icon`" type=`"image/x-icon`" href=`"data:image/x-icon;base64,$faviconB64`">" } else { '' }
   $logoTag = if ($logoB64) { "<img src=`"data:image/png;base64,$logoB64`" alt=`"Compressarr`" class=`"logo`">" } else { '' }
+  $runLabel = if ($RunNumber -gt 0) { "Run #${RunNumber}:" } else { 'Run:' }
 
   $html = @"
 <title>Compressarr Report - $Timestamp</title>
@@ -196,7 +202,7 @@ $faviconTag
   $logoTag
   <h1>Compressarr Report</h1>
 </div>
-<p class="muted">Run: $Timestamp &nbsp;|&nbsp; Duration: $($RunTime.Hours)h $($RunTime.Minutes)m $($RunTime.Seconds)s</p>
+<p class="muted">$runLabel $Timestamp &nbsp;|&nbsp; Duration: $($RunTime.Hours)h $($RunTime.Minutes)m $($RunTime.Seconds)s</p>
 $statusBanner
 <div class="summary-grid">
   <div class="stat"><div class="label">Files processed</div><div class="value">$totalFiles</div></div>

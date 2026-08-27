@@ -4,6 +4,7 @@ Logs/*
 Reports/*
 !Reports/.gitkeep
 compressarr.resume.json
+compressarr.runcount.json
 
 # User's live/local config (keep the checked-in sample in Config/)
 Config/compressarr.local.json

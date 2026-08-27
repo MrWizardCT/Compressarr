@@ -36,7 +36,20 @@ At the end of a run, Compressarr writes a **standalone HTML report** to the
 `Reports\` folder (no email/SMTP involved) covering per-lane results (with
 each file's type and preset), disk savings, any errors, and daily/monthly/
 yearly history rollups. The `report.openAfterRun` setting
-(`Always`/`Error`/`Never`) controls whether it opens automatically.
+(`Always`/`Error`/`Never`) controls whether it opens automatically. Each
+report is labeled with a running run number (`Run #237: ...`) - a
+persistent, cumulative count of runs that actually processed at least one
+file (tracked in `compressarr.runcount.json`; empty scans, including quiet
+monitor-mode polls, don't count).
+
+### Startup screen
+
+The very first time Compressarr is ever run, it opens straight to the full
+configuration screen. Every launch after that shows a brief splash instead
+- the logo, a countdown, and a **Change Settings** button. Click it to open
+the config screen; if nothing is clicked before the countdown reaches zero,
+Compressarr runs automatically with whatever's already configured. The
+countdown length (default 10s) is itself a General tab setting.
 
 ---
 
@@ -140,6 +153,7 @@ Settings that apply across both lanes:
 | Original file after conversion | `Maintain`, `Delete`, or `Recycle` the source file once conversion succeeds |
 | Post-execution command/arguments | Optional command to run after each full run completes |
 | Repeat run count | Run the whole pass this many additional times back-to-back |
+| Change Settings countdown (seconds) | How long the startup splash waits before running automatically (see Startup screen above) |
 | Monitor mode | Keep watching the lane input folders and auto-run when new files show up |
 
 ### HD/SD and UHD tabs

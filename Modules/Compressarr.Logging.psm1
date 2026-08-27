@@ -228,6 +228,37 @@ function Get-CompressarrHistory {
   return ,@(Import-Csv -Path $historyFile)
 }
 
+function Get-CompressarrRunCount {
+  <#
+    Persistent, cumulative count of runs that actually processed at least
+    one file - a "run" here means one Invoke-CompressarrRun pass with
+    files, not one launch of Compressarr.ps1 (so repeat passes and
+    monitor-mode-triggered passes each count individually, but an empty
+    scan never does). Returns 0 if never run before (a 0 is also how
+    Compressarr.ps1 recognizes "first launch ever" and shows the full
+    config screen instead of the startup countdown).
+  #>
+  param(
+    [Parameter(Mandatory)] [string]$Path
+  )
+
+  if (-not (Test-Path $Path)) { return 0 }
+  $raw = (Get-Content -Path $Path -Raw -ErrorAction SilentlyContinue)
+  if ([string]::IsNullOrWhiteSpace($raw)) { return 0 }
+  $count = 0
+  if ([int]::TryParse($raw.Trim(), [ref]$count)) { return $count }
+  return 0
+}
+
+function Set-CompressarrRunCount {
+  param(
+    [Parameter(Mandatory)] [string]$Path,
+    [Parameter(Mandatory)] [int]$Count
+  )
+
+  Set-Content -Path $Path -Value $Count -Encoding UTF8
+}
+
 Export-ModuleMember -Function `
   Initialize-CompressarrLogging, `
   Get-CompressarrSummaryLogFile, `
@@ -239,4 +270,6 @@ Export-ModuleMember -Function `
   Remove-CompressarrItem, `
   Remove-CompressarrOldLogs, `
   Add-CompressarrHistoryRecord, `
-  Get-CompressarrHistory
+  Get-CompressarrHistory, `
+  Get-CompressarrRunCount, `
+  Set-CompressarrRunCount

@@ -36,7 +36,7 @@ param(
   [switch]$Once
 )
 
-$script:CompressarrVersion = '1.0.0-beta.8'
+$script:CompressarrVersion = '1.0.0-beta.9'
 
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
@@ -58,6 +58,12 @@ $config = Import-CompressarrConfig -Path $ConfigPath
 if (-not (Test-Path $ConfigPath)) {
   Export-CompressarrConfig -Config $config -Path $ConfigPath
 }
+
+# Persistent, cumulative "how many times has Compressarr actually done
+# something" counter - a 0 here means this is the very first time the
+# program has ever run, which decides whether startup shows the full
+# config screen or the brief Change Settings countdown (see below).
+$runCountFilePath = Join-Path -Path $scriptRoot -ChildPath 'compressarr.runcount.json'
 
 # Optional soft dependency, same as Paul's taglib-sharp.dll check.
 $tagLibPath = Join-Path -Path $scriptRoot -ChildPath 'taglib-sharp.dll'
@@ -135,10 +141,17 @@ function Invoke-CompressarrRun {
 
   $allResults = @($laneResults.Values | ForEach-Object { $_ })
   $totalFiles = $allResults.Count
+  $runNumber = 0
   if ($totalFiles -gt 0) {
     $totalBeg = ($allResults | Measure-Object -Property BeginSizeGB -Sum).Sum
     $totalEnd = ($allResults | Measure-Object -Property EndSizeGB -Sum).Sum
     Add-CompressarrHistoryRecord -LogFilePath $logFilePath -BeginSizeGB $totalBeg -EndSizeGB $totalEnd -FileCount $totalFiles -RunTime $runTime | Out-Null
+
+    # Only a pass that actually processed files counts as a "run" - an
+    # empty scan (including every quiet monitor-mode poll) doesn't move
+    # this counter, even though Invoke-CompressarrRun still gets called.
+    $runNumber = (Get-CompressarrRunCount -Path $runCountFilePath) + 1
+    Set-CompressarrRunCount -Path $runCountFilePath -Count $runNumber
   }
 
   $postExecCmd = Expand-CompressarrPath $Config.postExec.cmd
@@ -150,7 +163,7 @@ function Invoke-CompressarrRun {
   Write-CompressarrLog "`nCompressarr run completed. $totalFiles file(s) processed in $($runTime.Hours)h $($runTime.Minutes)m $($runTime.Seconds)s."
 
   $report = New-CompressarrReport -ReportPath $reportPath -Timestamp $timestamp -LaneResults $laneResults `
-    -RunTime $runTime -LogFilePath $logFilePath -SummaryLogFile $summaryLogFile
+    -RunTime $runTime -LogFilePath $logFilePath -SummaryLogFile $summaryLogFile -RunNumber $runNumber
   Show-CompressarrReport -ReportFile $report.Path -OpenAfterRun $Config.report.openAfterRun -ErrorCount $report.ErrorCount
 
   return $report
@@ -163,10 +176,33 @@ try {
     Invoke-CompressarrRun -Config $config | Out-Null
   }
   else {
-    $formResult = Show-CompressarrMainForm -Config $config -ConfigPath $ConfigPath -Version $script:CompressarrVersion
-    $config = $formResult.Config
+    $existingRunCount = Get-CompressarrRunCount -Path $runCountFilePath
+    $shouldExecute = $false
 
-    if ($formResult.Action -eq 'Execute') {
+    if ($existingRunCount -eq 0) {
+      # First time this program has ever run - show the full config
+      # screen directly, same as always.
+      $formResult = Show-CompressarrMainForm -Config $config -ConfigPath $ConfigPath -Version $script:CompressarrVersion
+      $config = $formResult.Config
+      $shouldExecute = ($formResult.Action -eq 'Execute')
+    }
+    else {
+      # Every later launch: a brief "Change Settings" countdown instead of
+      # forcing the config screen open every time. This only happens once
+      # at startup - repeats and monitor-mode passes below run unattended,
+      # exactly as before.
+      $splashResult = Show-CompressarrCountdownForm -Config $config -Version $script:CompressarrVersion
+      if ($splashResult.Action -eq 'ChangeSettings') {
+        $formResult = Show-CompressarrMainForm -Config $config -ConfigPath $ConfigPath -Version $script:CompressarrVersion
+        $config = $formResult.Config
+        $shouldExecute = ($formResult.Action -eq 'Execute')
+      }
+      else {
+        $shouldExecute = $true
+      }
+    }
+
+    if ($shouldExecute) {
       Invoke-CompressarrRun -Config $config | Out-Null
 
       $remainingRepeats = [int]$config.repeat.count

@@ -367,9 +367,11 @@ function Show-CompressarrMainForm {
   $moveFilesCheck = $generalChecks[1]
   $monitorCheck = $generalChecks[2]
 
-  $deleteCombo = New-CompressarrCompactComboBox -Items @('Maintain', 'Delete', 'Recycle') -Value $Config.processing.deleteAfterConvert -Width 110
+  $deleteCombo = Add-CompressarrComboRow -Panel $generalPanel -Row ([ref]$row) -Label 'Original file after conversion' -Items @('Maintain', 'Delete', 'Recycle') -Value $Config.processing.deleteAfterConvert
+
   $repeatCountBox = New-CompressarrCompactTextBox -Value $Config.repeat.count -Width 60
-  Add-CompressarrDualRow -Panel $generalPanel -Row ([ref]$row) -Label1 'Original file after conversion' -Control1 $deleteCombo -Label2 'Repeat run count' -Control2 $repeatCountBox
+  $countdownBox = New-CompressarrCompactTextBox -Value $Config.startup.countdownSeconds -Width 60
+  Add-CompressarrDualRow -Panel $generalPanel -Row ([ref]$row) -Label1 'Repeat run count' -Control1 $repeatCountBox -Label2 'Change Settings countdown (seconds)' -Control2 $countdownBox
 
   $postExecCmdBox = Add-CompressarrPathRow -Panel $generalPanel -Row ([ref]$row) -Label 'Post-execution command (optional)' -Value $Config.postExec.cmd -Browse File
   $postExecArgsBox = Add-CompressarrTextRow -Panel $generalPanel -Row ([ref]$row) -Label 'Post-execution arguments' -Value $Config.postExec.args
@@ -516,6 +518,8 @@ function Show-CompressarrMainForm {
     $newConfig.repeat.count = [int]($repeatCountBox.Text)
     $newConfig.repeat.monitor = $monitorCheck.Checked
 
+    $newConfig.startup.countdownSeconds = [int]($countdownBox.Text)
+
     foreach ($laneName in (Get-CompressarrLaneNames)) {
       $lc = $laneControls[$laneName]
       $newConfig.contentLanes.$laneName.input = $lc.Input.Text
@@ -578,4 +582,131 @@ function Show-CompressarrMainForm {
   return $formResult
 }
 
-Export-ModuleMember -Function Show-CompressarrMainForm, Get-CompressarrAssetsPath
+function Show-CompressarrCountdownForm {
+  <#
+    Shown at startup instead of the full config screen once Compressarr
+    has run before (run count > 0) - a small splash with the logo and a
+    countdown; "Change Settings" opens the real config screen, and if the
+    countdown reaches zero with no action, the caller proceeds to execute
+    using the config already on disk. Returns @{ Action = 'ChangeSettings' | 'Proceed' }.
+  #>
+  param(
+    [Parameter(Mandatory)] $Config,
+    [string]$Version
+  )
+
+  Add-Type -AssemblyName System.Windows.Forms
+  Add-Type -AssemblyName System.Drawing
+  [System.Windows.Forms.Application]::EnableVisualStyles()
+
+  $assetsPath = Get-CompressarrAssetsPath
+  $iconPath = Join-Path -Path $assetsPath -ChildPath 'compressarr.ico'
+  $logoPath = Join-Path -Path $assetsPath -ChildPath 'compressarr-logo.png'
+
+  $seconds = 10
+  if ($Config.startup -and $Config.startup.countdownSeconds) { $seconds = [int]$Config.startup.countdownSeconds }
+  if ($seconds -le 0) { $seconds = 10 }
+
+  # A hashtable, not a bare int variable: Timer.Tick fires the same
+  # scriptblock instance repeatedly, and GetNewClosure() gives each
+  # invocation a fresh snapshot of any plain captured variable - a bare
+  # `$remaining--` would silently reset to the original value on every
+  # tick instead of counting down. Mutating a field on a shared reference
+  # object (this hashtable) persists correctly across ticks instead.
+  $state = @{ Remaining = $seconds; Action = 'Proceed' }
+
+  $form = New-Object System.Windows.Forms.Form
+  $form.Text = if ($Version) { "Compressarr v$Version" } else { 'Compressarr' }
+  $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+  $form.MaximizeBox = $false
+  $form.MinimizeBox = $false
+  $form.StartPosition = 'CenterScreen'
+  $form.ClientSize = New-Object System.Drawing.Size(400, 190)
+  if (Test-Path $iconPath) { $form.Icon = New-Object System.Drawing.Icon($iconPath) }
+
+  $layout = New-Object System.Windows.Forms.TableLayoutPanel
+  $layout.Dock = 'Fill'
+  $layout.Padding = New-Object System.Windows.Forms.Padding(20)
+  $layout.ColumnCount = 1
+  $layout.RowCount = 4
+  [void]$layout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 56)))
+  [void]$layout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 26)))
+  [void]$layout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+  [void]$layout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 40)))
+  $form.Controls.Add($layout)
+
+  $headerFlow = New-Object System.Windows.Forms.FlowLayoutPanel
+  $headerFlow.Dock = 'Fill'
+  $headerFlow.FlowDirection = [System.Windows.Forms.FlowDirection]::LeftToRight
+  $layout.Controls.Add($headerFlow, 0, 0)
+
+  if (Test-Path $logoPath) {
+    $logoBox = New-Object System.Windows.Forms.PictureBox
+    $logoBox.Image = [System.Drawing.Image]::FromFile($logoPath)
+    $logoBox.Size = New-Object System.Drawing.Size(48, 48)
+    $logoBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+    $logoBox.Margin = New-Object System.Windows.Forms.Padding(0, 0, 12, 0)
+    $headerFlow.Controls.Add($logoBox)
+  }
+
+  $titleLabel = New-Object System.Windows.Forms.Label
+  $titleLabel.Text = 'Compressarr'
+  $titleLabel.AutoSize = $true
+  $titleLabel.Font = New-Object System.Drawing.Font('Segoe UI', 14, [System.Drawing.FontStyle]::Bold)
+  $titleLabel.Margin = New-Object System.Windows.Forms.Padding(0, 8, 0, 0)
+  $headerFlow.Controls.Add($titleLabel)
+
+  $countdownLabel = New-Object System.Windows.Forms.Label
+  $countdownLabel.Text = "Starting in $($state.Remaining) second(s)..."
+  $countdownLabel.AutoSize = $true
+  $countdownLabel.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+  $layout.Controls.Add($countdownLabel, 0, 1)
+
+  $bodyLabel = New-Object System.Windows.Forms.Label
+  $bodyLabel.Text = "Compressarr will run automatically with the current settings.`nClick Change Settings to review or edit them first."
+  $bodyLabel.AutoSize = $true
+  $bodyLabel.ForeColor = [System.Drawing.Color]::DimGray
+  $layout.Controls.Add($bodyLabel, 0, 2)
+
+  $buttonPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+  $buttonPanel.Dock = 'Fill'
+  $buttonPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::RightToLeft
+  $layout.Controls.Add($buttonPanel, 0, 3)
+
+  $changeBtn = New-Object System.Windows.Forms.Button
+  $changeBtn.Text = 'Change Settings'
+  $changeBtn.AutoSize = $true
+  $buttonPanel.Controls.Add($changeBtn)
+
+  $timer = New-Object System.Windows.Forms.Timer
+  $timer.Interval = 1000
+
+  $changeBtn.Add_Click({
+    $state.Action = 'ChangeSettings'
+    $timer.Stop()
+    $form.Close()
+  }.GetNewClosure())
+
+  $timer.Add_Tick({
+    $state.Remaining--
+    if ($state.Remaining -le 0) {
+      $state.Action = 'Proceed'
+      $timer.Stop()
+      $form.Close()
+    }
+    else {
+      $countdownLabel.Text = "Starting in $($state.Remaining) second(s)..."
+    }
+  }.GetNewClosure())
+
+  $form.Add_Shown({ $timer.Start() }.GetNewClosure())
+  $form.Add_FormClosing({ $timer.Stop() }.GetNewClosure())
+
+  [void]$form.ShowDialog()
+  $timer.Dispose()
+  $form.Dispose()
+
+  return @{ Action = $state.Action }
+}
+
+Export-ModuleMember -Function Show-CompressarrMainForm, Show-CompressarrCountdownForm, Get-CompressarrAssetsPath
