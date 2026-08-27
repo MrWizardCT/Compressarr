@@ -119,13 +119,23 @@ already what Compressarr's default config expects.
 
 Compressarr needs a `presets.json` to read preset definitions from (encoder
 settings, container format, etc.). The default location Compressarr looks
-for is `%appdata%\HandBrake\presets.json`. You have two options:
+for is `%appdata%\HandBrake\presets.json`.
+
+The default config (`Config\compressarr.settings.json`) is set up to use
+the presets from
+[MrWizardCT/Handbrake-Custom-Presets](https://github.com/MrWizardCT/Handbrake-Custom-Presets)
+- `PlexSTD2026` for the HD/SD lane, `PlexUHDAV1` for UHD. Import that
+preset file into HandBrake (or point `handbrake.presetsPath` at it
+directly) to use the config as shipped.
+
+Using your own presets instead is just as easy:
 
 - Install the full [HandBrake GUI](https://handbrake.fr/downloads.php) once,
-  which creates this file automatically with its built-in presets, or export
-  your own presets from it.
+  which creates a `presets.json` automatically with its built-in presets, or
+  export your own presets from it.
 - Point `handbrake.presetsPath` in the config (or the "Presets file" field
-  in the GUI's General tab) at any `presets.json` you already have.
+  in the GUI's General tab) at any `presets.json` you already have, and set
+  each lane's TV/Movie preset fields to match.
 
 ### 6. (Optional) Title metadata clearing
 
@@ -220,7 +230,12 @@ doesn't exist yet.
 
 Config is JSON (`Config\compressarr.settings.json` by default). Paths may
 contain `%ENVVAR%` tokens (e.g. `%ProgramFiles%`), expanded at the point of
-use so the same file works across machines.
+use so the same file works across machines. The `contentLanes` paths and
+preset names below are the shipped defaults, matching the author's own
+folder layout and the presets from
+[Handbrake-Custom-Presets](https://github.com/MrWizardCT/Handbrake-Custom-Presets)
+- change them (via the GUI's Paths tab, or by hand here) to match your
+own folders and presets.
 
 ```json
 {
@@ -231,34 +246,35 @@ use so the same file works across machines.
   },
   "contentLanes": {
     "hdsd": {
-      "input": "",
-      "output": "",
-      "tvPreset": "VeryFastDDtoAAC",
-      "moviePreset": "VeryFastDDtoAAC",
-      "tvShowBasePath": "",
-      "movieBasePath": ""
+      "input": "C:\\Work\\HDSDContent",
+      "output": "C:\\Work\\Processed\\HD",
+      "tvPreset": "PlexSTD2026",
+      "moviePreset": "PlexSTD2026",
+      "tvShowBasePath": "C:\\Work\\Processed\\HD",
+      "movieBasePath": "C:\\Work\\Processed\\HD"
     },
     "uhd": {
-      "input": "",
-      "output": "",
-      "tvPreset": "",
-      "moviePreset": "",
-      "tvShowBasePath": "",
-      "movieBasePath": ""
+      "input": "C:\\Work\\UHDContent",
+      "output": "C:\\Work\\Processed\\UHD",
+      "tvPreset": "PlexUHDAV1",
+      "moviePreset": "PlexUHDAV1",
+      "tvShowBasePath": "C:\\Work\\Processed\\UHD",
+      "movieBasePath": "C:\\Work\\Processed\\UHD"
     }
   },
   "processing": {
     "vidTypes": ["mkv", "avi", "mp4", "mpg", "ts", "m4v"],
     "outSameAsIn": false,
     "deleteAfterConvert": "Maintain",
-    "moveFiles": false,
+    "moveFiles": true,
     "limit": 999,
     "minSize": "0gb"
   },
   "logging": { "logFilePath": ".\\Logs", "retentionDays": 30 },
   "postExec": { "cmd": "", "args": "" },
   "report": { "reportPath": ".\\Reports", "openAfterRun": "Always" },
-  "repeat": { "count": 0, "monitor": false }
+  "repeat": { "count": 0, "monitor": false },
+  "startup": { "countdownSeconds": 10 }
 }
 ```
 
