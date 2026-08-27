@@ -23,8 +23,22 @@ way Paul's VidMonHB does it: a filename carrying a season/episode marker
 Movie. That detected type picks which preset applies (a lane's `tvPreset` or
 `moviePreset`) and, if "move files" is enabled, which destination it's filed
 into afterward - TV episodes go to `Show Name\Season NN\` under the lane's
-`tvShowBasePath`, Movies get bucketed into year-range folders (e.g.
-`03. Movies 2000-2019`) under `movieBasePath`.
+`tvShowBasePath`; Movies get bucketed into year-range folders (e.g.
+`03. Movies 2000-2019`) under `movieBasePath`, then into their own
+per-title subfolder within that (e.g. `Caddyshack (1980)\`) - anything
+after the year tag in the filename is dropped for the folder name itself
+(`Caddyshack (1980) {edition-Director's Cut}.mkv` still becomes
+`Caddyshack (1980)\`), though the file keeps its full original name.
+
+If a converted file's source folder holds nothing else that still needs
+converting, whatever else is sitting in there - subtitles, `.nfo` files,
+artwork - comes along too: moved in alongside it when
+`deleteAfterConvert` is `Delete`/`Recycle` (with the source folder then
+cleared out and removed entirely), or copied there when it's `Maintain`
+(leaving the source folder untouched). If other not-yet-processed video
+files still share that folder, none of this happens - only the file that
+was actually converted is touched, so nothing waiting its turn gets
+disturbed.
 
 Processing is **sequential** - one file at a time, no parallel HandBrakeCLI
 jobs. If a run is interrupted, relaunching resumes from the unprocessed
@@ -288,3 +302,11 @@ Reports/                         Per-run HTML reports (gitignored)
   being truncated to 1-2 digits.
 - Per-file progress is a neat multi-line block (name, size, type, preset)
   instead of a single cramped banner line.
+- Movies get their own per-title subfolder when moved (like TV already
+  gets `Show Name\Season NN\`), not left loose in the year-range bucket.
+- Companion files (subtitles, `.nfo`, artwork) sitting alongside a
+  converted file move or copy along with it, and the source folder gets
+  cleaned up and removed once empty (Delete/Recycle mode) - guarded
+  against shared folders that still hold other unconverted videos.
+- Persistent run counter and a startup countdown screen (see below)
+  instead of always forcing the config screen open.

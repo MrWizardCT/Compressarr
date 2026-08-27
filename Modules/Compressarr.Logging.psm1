@@ -166,6 +166,29 @@ function Remove-CompressarrItem {
   }
 }
 
+function Remove-CompressarrFolder {
+  <#
+    Deletes or recycles a directory (and anything still in it) depending
+    on -Mode. Used to clear a source folder back to nothing once a
+    converted file and its companions have all been moved out of it -
+    'Maintain' is a no-op guard, same as Remove-CompressarrItem.
+  #>
+  param(
+    [Parameter(Mandatory)] [string]$Path,
+    [ValidateSet('Delete', 'Recycle', 'Maintain')] [string]$Mode = 'Delete'
+  )
+
+  if ($Mode -eq 'Maintain') { return }
+  if (-not (Test-Path $Path)) { return }
+
+  if ($Mode -eq 'Recycle') {
+    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($Path, 'OnlyErrorDialogs', 'SendToRecycleBin')
+  }
+  else {
+    Remove-Item -Path $Path -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function Remove-CompressarrOldLogs {
   param(
     [Parameter(Mandatory)] [string]$LogFilePath,
@@ -268,6 +291,7 @@ Export-ModuleMember -Function `
   Get-CompressarrTimeDiff, `
   Test-CompressarrFileLocked, `
   Remove-CompressarrItem, `
+  Remove-CompressarrFolder, `
   Remove-CompressarrOldLogs, `
   Add-CompressarrHistoryRecord, `
   Get-CompressarrHistory, `

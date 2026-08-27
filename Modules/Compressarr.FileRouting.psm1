@@ -71,13 +71,35 @@ function Test-CompressarrIsTVFile {
   return (Get-CompressarrEpisodeInfo -FileName $FileName).HasSeasonAndEpisode
 }
 
+function Get-CompressarrMovieFolderName {
+  <#
+    The per-movie subfolder name a converted movie is filed under: the
+    base filename up through and including its "(YYYY)" year tag, with
+    anything after that discarded - "Caddyshack (1980) {edition-Director's
+    Cut}.mkv" becomes "Caddyshack (1980)", same as plain
+    "Caddyshack (1980).mkv" would. Filenames with no year tag at all fall
+    back to the full base filename unchanged.
+  #>
+  param(
+    [Parameter(Mandatory)] [string]$FileName
+  )
+
+  $baseName = [System.IO.Path]::GetFileNameWithoutExtension($FileName)
+  if ($baseName -match '^(.*?\(\d{4}\))') {
+    return $Matches[1].Trim()
+  }
+  return $baseName.Trim()
+}
+
 function Move-CompressarrMovieFile {
   <#
     Ported from Paul's moveMovieFile: buckets a movie into a year-range
     subfolder under $OutputBase (e.g. "01. Movies 1920-1979") when the
     filename carries a "(YYYY)" year tag and a matching folder exists;
     falls back to the single existing "*movie*" folder, then to
-    $OutputBase itself.
+    $OutputBase itself. Within whichever of those bucket folders is
+    chosen, the movie now gets its own per-title subfolder (same idea as
+    TV's Show Name\Season NN\) instead of sitting loose.
   #>
   param(
     [Parameter(Mandatory)] [string]$FileName,
@@ -93,13 +115,22 @@ function Move-CompressarrMovieFile {
   }
 
   $leaf = Split-Path -Path $FileName -Leaf
+  $movieFolderName = Get-CompressarrMovieFolderName -FileName $leaf
   $movieYear = ($FileName -split '\(([^\)]+)\)')[1]
   $movieFolders = Get-ChildItem -Path $OutputBase -Recurse -Directory -Include '*movie*' -ErrorAction SilentlyContinue | Sort-Object
 
-  if (($movieFolders | Measure-Object).Count -eq 1) {
-    $destPath = Join-Path -Path $movieFolders.FullName -ChildPath $leaf
+  function Move-IntoBucket ($bucketFolder) {
+    $movieDestFolder = Join-Path -Path $bucketFolder -ChildPath $movieFolderName
+    if (-not (Test-Path $movieDestFolder)) {
+      New-Item -Path $movieDestFolder -ItemType Directory -Force | Out-Null
+    }
+    $destPath = Join-Path -Path $movieDestFolder -ChildPath $leaf
     Move-Item -Path $FileName -Destination $destPath -Force
     return $destPath
+  }
+
+  if (($movieFolders | Measure-Object).Count -eq 1) {
+    return Move-IntoBucket $movieFolders.FullName
   }
 
   if ($null -ne $movieYear) {
@@ -113,16 +144,12 @@ function Move-CompressarrMovieFile {
                  (($minYear -and $maxYear) -and ($movieYear -ge $minYear) -and ($movieYear -le $maxYear))
 
       if ($isMatch) {
-        $destPath = Join-Path -Path $movieFolder.FullName -ChildPath $leaf
-        Move-Item -Path $FileName -Destination $destPath -Force
-        return $destPath
+        return Move-IntoBucket $movieFolder.FullName
       }
     }
   }
 
-  $destPath = Join-Path -Path $OutputBase -ChildPath $leaf
-  Move-Item -Path $FileName -Destination $destPath -Force
-  return $destPath
+  return Move-IntoBucket $OutputBase
 }
 
 function Move-CompressarrTVFile {
@@ -179,9 +206,88 @@ function Move-CompressarrRoutedFile {
   return Move-CompressarrMovieFile -FileName $FileName -OutputBase $MovieBasePath
 }
 
+function Move-CompressarrCompanionFiles {
+  <#
+    After a file has been routed into its destination folder (a movie's
+    per-title subfolder, or a TV episode's Season folder), handles
+    whatever else was sitting alongside it in its original source folder -
+    subtitles, .nfo files, artwork, etc:
+      - Delete/Recycle mode: siblings are MOVED into the destination
+        folder, then anything still left in the source folder is cleared
+        out and the now-empty source folder itself is removed.
+      - Maintain mode: siblings are COPIED into the destination folder;
+        the source folder and everything in it (including the original
+        media file) is left untouched.
+    Applies the same way for both Movies and TV - it only cares about the
+    file's own source folder and the folder it ended up in, not which
+    content type it was.
+
+    Safety guard: only acts if $OriginalFileFullName was the ONLY file
+    matching $VidTypes in its source folder. If other, not-yet-processed
+    video files share that folder (a flat/shared folder rather than one
+    dedicated to this item), nothing here is touched - only the file that
+    was actually converted gets handled, everywhere else in the module.
+  #>
+  param(
+    [Parameter(Mandatory)] [string]$OriginalFileFullName,
+    [Parameter(Mandatory)] [string]$OriginalFileDirectory,
+    [Parameter(Mandatory)] [string]$DestinationFolder,
+    [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]]$VidTypes,
+    [Parameter(Mandatory)] [ValidateSet('Maintain', 'Delete', 'Recycle')] [string]$DeleteAfterConvert
+  )
+
+  if (-not (Test-Path $OriginalFileDirectory)) { return }
+
+  # -Path must end in \* for -Include to actually filter anything here:
+  # Get-ChildItem -Path $folder -Include *.ext (no -Recurse, no wildcard in
+  # -Path) is a well-known PowerShell trap that silently returns nothing at
+  # all, even when matching files exist - which would have made this safety
+  # guard never see any "other videos" and always proceed to sweep/delete.
+  $vidIncludes = $VidTypes | Where-Object { $_ } | ForEach-Object { "*.$($_.Trim())" }
+  $otherVideos = @(Get-ChildItem -Path "$OriginalFileDirectory\*" -File -Include $vidIncludes -ErrorAction SilentlyContinue |
+    Where-Object { -not [string]::Equals($_.FullName, $OriginalFileFullName, [System.StringComparison]::OrdinalIgnoreCase) })
+
+  if ($otherVideos.Count -gt 0) {
+    # Shared/flat folder - leave everything alone except the file that was
+    # actually converted (already handled elsewhere).
+    return
+  }
+
+  $siblings = @(Get-ChildItem -Path $OriginalFileDirectory -File -Force -ErrorAction SilentlyContinue |
+    Where-Object { -not [string]::Equals($_.FullName, $OriginalFileFullName, [System.StringComparison]::OrdinalIgnoreCase) })
+
+  foreach ($sibling in $siblings) {
+    $destPath = Join-Path -Path $DestinationFolder -ChildPath $sibling.Name
+    if ($DeleteAfterConvert -eq 'Maintain') {
+      Copy-Item -Path $sibling.FullName -Destination $destPath -Force
+    }
+    else {
+      Move-Item -Path $sibling.FullName -Destination $destPath -Force
+    }
+  }
+
+  if ($DeleteAfterConvert -eq 'Maintain') { return }
+
+  # Clear out anything still left (e.g. a subfolder, or an item a move
+  # above couldn't complete), then remove the now-empty source folder
+  # itself, leaving a clean workspace for the next run.
+  $remaining = Get-ChildItem -Path $OriginalFileDirectory -Force -ErrorAction SilentlyContinue
+  foreach ($item in $remaining) {
+    if ($item.PSIsContainer) {
+      Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    else {
+      Remove-CompressarrItem -Path $item.FullName -Mode $DeleteAfterConvert
+    }
+  }
+  Remove-CompressarrFolder -Path $OriginalFileDirectory -Mode $DeleteAfterConvert
+}
+
 Export-ModuleMember -Function `
   Get-CompressarrEpisodeInfo, `
   Test-CompressarrIsTVFile, `
+  Get-CompressarrMovieFolderName, `
   Move-CompressarrMovieFile, `
   Move-CompressarrTVFile, `
-  Move-CompressarrRoutedFile
+  Move-CompressarrRoutedFile, `
+  Move-CompressarrCompanionFiles

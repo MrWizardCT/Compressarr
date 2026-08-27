@@ -287,15 +287,27 @@ function Invoke-CompressarrLaneConversion {
         Remove-CompressarrItem -Path $file.FullName -Mode $Config.processing.deleteAfterConvert
       }
 
+      $routedDestPath = $null
       try {
-        Move-CompressarrRoutedFile -FileName $newFileName -IsTV $isTV -TVShowBasePath $tvShowBasePath `
-          -MovieBasePath $movieBasePath -MoveFiles $Config.processing.moveFiles | Out-Null
+        $routedDestPath = Move-CompressarrRoutedFile -FileName $newFileName -IsTV $isTV -TVShowBasePath $tvShowBasePath `
+          -MovieBasePath $movieBasePath -MoveFiles $Config.processing.moveFiles
       }
       catch {
         # The conversion itself already succeeded - a bad/blank base path
         # shouldn't take down the whole run, just leave this file where
         # HandBrake wrote it and note why the move step was skipped.
         Write-CompressarrLog "  Move skipped: $($_.Exception.Message)" -Severity 'E'
+      }
+
+      if ($routedDestPath) {
+        try {
+          $routedDestFolder = Split-Path -Path $routedDestPath -Parent
+          Move-CompressarrCompanionFiles -OriginalFileFullName $file.FullName -OriginalFileDirectory $file.DirectoryName `
+            -DestinationFolder $routedDestFolder -VidTypes $Config.processing.vidTypes -DeleteAfterConvert $Config.processing.deleteAfterConvert
+        }
+        catch {
+          Write-CompressarrLog "  Companion file handling skipped: $($_.Exception.Message)" -Severity 'E'
+        }
       }
 
       if ($resumeEntry) { $resumeEntry.status = 'Completed' }
