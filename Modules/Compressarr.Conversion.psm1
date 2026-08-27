@@ -235,7 +235,20 @@ function Invoke-CompressarrLaneConversion {
     }
     $newFileName = Join-Path -Path $destFolder -ChildPath ($file.BaseName + $extension)
 
-    $cmdArgs = '-i "' + $file.FullName + '" -t 1 -o "' + $newFileName + '" --preset-import-file "' + $presetsPath + '" --preset "' + $presetName + '"'
+    # HandBrake must NEVER be told to write (-o) to the same path it's
+    # reading (-i) - opening the output truncates it immediately, which
+    # then corrupts the source out from under HandBrake's own read and
+    # produces a near-instant, empty "conversion". This is easy to hit
+    # once source and destination folders match and the preset's output
+    # extension happens to match the source's (e.g. mp4 -> mp4 in place -
+    # both increasingly common now that mp4 is a default scanned type).
+    # Always stage to a uniquely-named temp file in the destination folder
+    # and only rename it into place after a verified-successful encode, so
+    # this can never happen regardless of in/out path configuration, and a
+    # failed encode never leaves a corrupt file sitting at the final name.
+    $tempFileName = Join-Path -Path $destFolder -ChildPath ($file.BaseName + '.compressarr-' + [guid]::NewGuid().ToString('N').Substring(0, 8) + $extension)
+
+    $cmdArgs = '-i "' + $file.FullName + '" -t 1 -o "' + $tempFileName + '" --preset-import-file "' + $presetsPath + '" --preset "' + $presetName + '"'
     if ($Config.handbrake.options) { $cmdArgs += ' ' + $Config.handbrake.options }
     Write-CompressarrLog "HB Command: $hbloc $cmdArgs" -LogType 'L'
 
@@ -247,18 +260,26 @@ function Invoke-CompressarrLaneConversion {
 
     $endTime = Get-Date
     $success = $false
-    if (Test-Path $newFileName) {
+    if (Test-Path $tempFileName) {
       $finishedCount = @(Get-Content -Path $dtlLogFile -ErrorAction SilentlyContinue | Where-Object { $_ -like '*Finished work at*' }).Count
-      $success = $finishedCount -ge 1
+      # Also require a non-empty file - belt and braces against any other
+      # failure mode that still manages to print "Finished work at" while
+      # leaving a truncated/empty file behind.
+      $success = ($finishedCount -ge 1) -and ((Get-Item $tempFileName).Length -gt 0)
     }
 
     $endSizeGB = 0
-    if ($success) { $endSizeGB = [math]::Round((Get-Item $newFileName).Length / 1GB, 3) }
 
     if ($success) {
-      Clear-CompressarrTitleMetadata -FilePath $newFileName
+      Clear-CompressarrTitleMetadata -FilePath $tempFileName
+      Move-Item -Path $tempFileName -Destination $newFileName -Force
+      $endSizeGB = [math]::Round((Get-Item $newFileName).Length / 1GB, 3)
 
-      if ($Config.processing.deleteAfterConvert -ne 'Maintain') {
+      # If the source and final destination are the same path (in-place
+      # conversion), the rename above already replaced the original with
+      # the converted result - there is nothing left to separately delete.
+      $sameAsSource = [string]::Equals((Get-Item $file.FullName -ErrorAction SilentlyContinue).FullName, $newFileName, [System.StringComparison]::OrdinalIgnoreCase)
+      if (-not $sameAsSource -and $Config.processing.deleteAfterConvert -ne 'Maintain') {
         $chkFile = Get-Item -Path $file.FullName -ErrorAction SilentlyContinue
         if ($chkFile -and ($chkFile.Attributes -band [System.IO.FileAttributes]::ReadOnly)) {
           $chkFile.Attributes = $chkFile.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)
@@ -280,6 +301,7 @@ function Invoke-CompressarrLaneConversion {
       if ($resumeEntry) { $resumeEntry.status = 'Completed' }
     }
     else {
+      Remove-Item -Path $tempFileName -Force -ErrorAction SilentlyContinue
       if ($resumeEntry) { $resumeEntry.status = 'Error' }
     }
 
