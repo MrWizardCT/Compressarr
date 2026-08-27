@@ -51,6 +51,7 @@ function Add-CompressarrSectionHeader {
   [void]$Panel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 34)))
   $label = New-Object System.Windows.Forms.Label
   $label.Text = $Text
+  $label.UseMnemonic = $false
   $label.Dock = 'Fill'
   $label.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
   $label.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
@@ -80,6 +81,13 @@ function Add-CompressarrRowLabel {
   [void]$Panel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 36)))
   $label = New-Object System.Windows.Forms.Label
   $label.Text = $LabelText
+  # UseMnemonic = $false so a literal "&" in label text (e.g. "Log &
+  # Reports Retention (Days)") displays as-is, instead of WinForms
+  # treating it as an accelerator-key prefix and swallowing it - the
+  # character right after "&" gets underlined/hidden from display rather
+  # than the "&" itself appearing, which is what "Log Reports Retention
+  # (Days)" (missing its "&") turned out to be.
+  $label.UseMnemonic = $false
   $label.Dock = 'Fill'
   $label.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
   $Panel.Controls.Add($label, 0, $Row.Value)
@@ -141,6 +149,10 @@ function Add-CompressarrDualRow {
 
   $lbl1 = New-Object System.Windows.Forms.Label
   $lbl1.Text = $Label1
+  # See Add-CompressarrRowLabel for why UseMnemonic is disabled - a literal
+  # "&" in label text (e.g. "Log & Reports Retention (Days)") would
+  # otherwise be swallowed as an accelerator-key prefix instead of shown.
+  $lbl1.UseMnemonic = $false
   $lbl1.AutoSize = $true
   $lbl1.Anchor = [System.Windows.Forms.AnchorStyles]::Left
   $lbl1.Margin = New-Object System.Windows.Forms.Padding(0, 7, 8, 0)
@@ -152,6 +164,7 @@ function Add-CompressarrDualRow {
 
   $lbl2 = New-Object System.Windows.Forms.Label
   $lbl2.Text = $Label2
+  $lbl2.UseMnemonic = $false
   $lbl2.AutoSize = $true
   $lbl2.Anchor = [System.Windows.Forms.AnchorStyles]::Left
   $lbl2.Margin = New-Object System.Windows.Forms.Padding(0, 7, 8, 0)
