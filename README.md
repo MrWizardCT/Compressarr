@@ -38,20 +38,139 @@ each file's type and preset), disk savings, any errors, and daily/monthly/
 yearly history rollups. The `report.openAfterRun` setting
 (`Always`/`Error`/`Never`) controls whether it opens automatically.
 
-## Setup
+---
 
-1. Install [HandBrakeCLI](https://handbrake.fr/downloads2.php).
-2. Have a HandBrake `presets.json` available (exported from the HandBrake
-   GUI, or the default one under `%appdata%\HandBrake\presets.json`).
-3. Copy `Config\compressarr.settings.json` if you want a starting point, or
-   just launch `Compressarr.ps1` once - it will write out a default config
-   next to itself if none exists yet at the path you point it at.
-4. Optional: drop `taglib-sharp.dll` next to `Compressarr.ps1` to enable
-   clearing the Title tag on converted files (skipped silently if absent).
-5. First-time PowerShell execution policy, same as the original project:
-   ```powershell
-   Set-ExecutionPolicy Unrestricted -Scope CurrentUser -Force
-   ```
+## Installation
+
+### 1. Download and extract
+
+Grab the latest release zip from the
+[Releases page](https://github.com/MrWizardCT/Compressarr/releases) and
+extract it anywhere (e.g. `C:\tools\Compressarr`).
+
+### 2. Unblock the files
+
+**This step is required.** Windows tags any file that came from the internet
+- your browser does this to the zip the moment it finishes downloading, and
+File Explorer carries that tag onto every file when you extract it. With
+that tag still in place, PowerShell will refuse to run the scripts (you'll
+typically see an error mentioning the file "is not digitally signed" or
+"cannot be loaded"), regardless of your execution policy setting.
+
+This is Windows marking a *specific downloaded file* as untrusted, not
+something that can be pre-cleared inside the zip itself before you download
+it - it only happens client-side, after the file reaches your machine.
+Clearing it takes one command, run **after** extracting:
+
+```powershell
+Get-ChildItem -Path "C:\tools\Compressarr" -Recurse | Unblock-File
+```
+
+(Swap in wherever you actually extracted it.) You only need to do this
+once per download. If you'd rather do it by hand for a single file: right
+click the file → **Properties** → check **Unblock** at the bottom of the
+General tab → **OK**.
+
+### 3. Allow PowerShell scripts to run
+
+Separately from the block above, PowerShell's execution policy controls
+whether *any* unsigned script can run at all. If you've never changed this
+before:
+
+```powershell
+Set-ExecutionPolicy Unrestricted -Scope CurrentUser -Force
+```
+
+### 4. Install HandBrakeCLI
+
+Download and install the command-line version of HandBrake:
+[handbrake.fr/downloads2.php](https://handbrake.fr/downloads2.php). Default
+install location is `%ProgramFiles%\HandBrake\HandBrakeCLI.exe`, which is
+already what Compressarr's default config expects.
+
+### 5. Get a HandBrake presets file
+
+Compressarr needs a `presets.json` to read preset definitions from (encoder
+settings, container format, etc.). The default location Compressarr looks
+for is `%appdata%\HandBrake\presets.json`. You have two options:
+
+- Install the full [HandBrake GUI](https://handbrake.fr/downloads.php) once,
+  which creates this file automatically with its built-in presets, or export
+  your own presets from it.
+- Point `handbrake.presetsPath` in the config (or the "Presets file" field
+  in the GUI's General tab) at any `presets.json` you already have.
+
+### 6. (Optional) Title metadata clearing
+
+Drop `taglib-sharp.dll` next to `Compressarr.ps1` if you want the Title tag
+cleared from converted files. Not required - skipped silently if absent.
+
+---
+
+## Configuring Compressarr
+
+Launch it once to open the setup GUI:
+
+```powershell
+.\Compressarr.ps1
+```
+
+If no config file exists yet at the default location
+(`Config\compressarr.settings.json`), Compressarr writes one out with
+defaults so there's something to edit and save.
+
+### General tab
+
+Settings that apply across both lanes:
+
+| Field | What it's for |
+|---|---|
+| HandBrakeCLI.exe location | Path to `HandBrakeCLI.exe` (step 4 above) |
+| Presets file | Path to `presets.json` (step 5 above) |
+| Extra HandBrake options | Any additional flags passed straight through to HandBrakeCLI |
+| Log folder | Where per-run summary and detail logs are written |
+| Log retention (days) | Logs older than this are cleaned up automatically |
+| Report folder | Where the HTML report for each run is written |
+| Open report after run | `Always`, `Error` (only if something failed), or `Never` |
+| Video file types | Comma-separated extensions to scan for (default: `mkv,avi,mp4,mpg,ts,m4v`) |
+| Max files per run | Caps how many files are picked up in one pass |
+| Minimum file size | Skip anything smaller than this (e.g. `100mb`) - useful for ignoring samples/junk |
+| Write output to same folder as input | Skip the lane's Output folder and convert in place |
+| Move converted files into show/movie folders | Turns on the TV/Movie filing step described above |
+| Original file after conversion | `Maintain`, `Delete`, or `Recycle` the source file once conversion succeeds |
+| Post-execution command/arguments | Optional command to run after each full run completes |
+| Repeat run count | Run the whole pass this many additional times back-to-back |
+| Monitor mode | Keep watching the lane input folders and auto-run when new files show up |
+
+### HD/SD and UHD tabs
+
+Both lane tabs have the same six fields - fill in whichever lane(s) you
+actually plan to use; an empty **Input folder** means that lane is skipped
+entirely.
+
+| Field | What it's for |
+|---|---|
+| Input folder | Where Compressarr looks for source video files for this lane |
+| Output folder | Where HandBrake writes the converted file initially |
+| TV Show preset | HandBrake preset used for files detected as TV episodes |
+| Movie preset | HandBrake preset used for everything else |
+| TV Show base path (move to) | Final destination for TV episodes, if "move files" is on - Compressarr creates `Show Name\Season NN\` under here |
+| Movie base path (move to) | Final destination for movies, if "move files" is on - bucketed into year-range subfolders |
+
+Preset fields are dropdowns populated from your `presets.json`; a field
+turns red/highlighted if it doesn't match anything in that file, or a path
+doesn't exist yet.
+
+### Saving and running
+
+- **Save Config** writes your changes back to the config file without
+  running anything - handy for setting things up before a real pass.
+- **Execute** runs a conversion pass immediately with whatever's currently
+  in the form (saving first is optional - Execute uses the form's current
+  values either way).
+- **Exit** closes without running.
+
+---
 
 ## Running it
 
@@ -69,7 +188,7 @@ yearly history rollups. The `report.openAfterRun` setting
 .\Compressarr.ps1 -Once
 ```
 
-## Configuration
+## Configuration file reference
 
 Config is JSON (`Config\compressarr.settings.json` by default). Paths may
 contain `%ENVVAR%` tokens (e.g. `%ProgramFiles%`), expanded at the point of
