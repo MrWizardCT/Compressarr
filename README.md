@@ -4,37 +4,39 @@ A Windows PowerShell + [HandBrakeCLI](https://handbrake.fr/downloads2.php) batch
 video converter. A from-scratch rewrite of
 [VidMonHB](https://github.com/mrpaulwasserman/VidMonHB), keeping the same
 core idea - scan a folder, transcode matching video files, file the results
-into Show/Movie folders - while adding independent HD/UHD content lanes and
+into Show/Movie folders - while adding an independent UHD content lane and
 a modular codebase.
 
 ## What it does
 
-Compressarr watches up to **four independent content lanes**, each with its
-own input folder, output base path, and HandBrake preset:
+Compressarr watches **two independent content lanes**, each with its own
+input folder:
 
 | Lane | Purpose |
 |---|---|
-| HD Movies | Standard/HD movie sources |
-| HD TV Shows | Standard/HD TV episode sources |
-| UHD Movies | 4K/UHD movie sources |
-| UHD TV Shows | 4K/UHD TV episode sources |
+| HD/SD | Standard/HD video sources |
+| UHD | 4K/UHD video sources |
 
-Because each lane has its own input folder, there's no auto-detection
-needed to tell HD from UHD - you decide by which folder you drop a file
-into. Within the two TV lanes, filenames are parsed for `S##E##`-style
-season/episode markers to build a `Show Name\Season NN\` destination
-folder when "move files" is enabled. Within the two Movie lanes, files are
-bucketed into year-range folders (e.g. `03. Movies 2000-2019`) the same way.
+Within each lane, TV Shows vs Movies is **auto-detected per file**, the same
+way Paul's VidMonHB does it: a filename carrying a season/episode marker
+(`S01E01`, `1x01`, etc.) is treated as a TV episode, everything else as a
+Movie. That detected type picks which preset applies (a lane's `tvPreset` or
+`moviePreset`) and, if "move files" is enabled, which destination it's filed
+into afterward - TV episodes go to `Show Name\Season NN\` under the lane's
+`tvShowBasePath`, Movies get bucketed into year-range folders (e.g.
+`03. Movies 2000-2019`) under `movieBasePath`.
 
 Processing is **sequential** - one file at a time, no parallel HandBrakeCLI
 jobs. If a run is interrupted, relaunching resumes from the unprocessed
-files (tracked in `compressarr.resume.json`).
+files (tracked in `compressarr.resume.json`). Progress is logged as a neat
+multi-line block per file (name, original size, detected type, and preset
+in use), not a single cramped banner line.
 
 At the end of a run, Compressarr writes a **standalone HTML report** to the
-`Reports\` folder (no email/SMTP involved) covering per-lane results, disk
-savings, any errors, and daily/monthly/yearly history rollups. The
-`report.openAfterRun` setting (`Always`/`Error`/`Never`) controls whether it
-opens automatically.
+`Reports\` folder (no email/SMTP involved) covering per-lane results (with
+each file's type and preset), disk savings, any errors, and daily/monthly/
+yearly history rollups. The `report.openAfterRun` setting
+(`Always`/`Error`/`Never`) controls whether it opens automatically.
 
 ## Setup
 
@@ -81,13 +83,25 @@ use so the same file works across machines.
     "options": ""
   },
   "contentLanes": {
-    "hdMovies":  { "input": "", "outputBase": "", "preset": "VeryFastDDtoAAC" },
-    "hdTV":      { "input": "", "outputBase": "", "preset": "VeryFastDDtoAAC" },
-    "uhdMovies": { "input": "", "outputBase": "", "preset": "" },
-    "uhdTV":     { "input": "", "outputBase": "", "preset": "" }
+    "hdsd": {
+      "input": "",
+      "output": "",
+      "tvPreset": "VeryFastDDtoAAC",
+      "moviePreset": "VeryFastDDtoAAC",
+      "tvShowBasePath": "",
+      "movieBasePath": ""
+    },
+    "uhd": {
+      "input": "",
+      "output": "",
+      "tvPreset": "",
+      "moviePreset": "",
+      "tvShowBasePath": "",
+      "movieBasePath": ""
+    }
   },
   "processing": {
-    "vidTypes": ["mkv", "avi"],
+    "vidTypes": ["mkv", "avi", "mp4", "mpg", "ts", "m4v"],
     "outSameAsIn": false,
     "deleteAfterConvert": "Maintain",
     "moveFiles": false,
@@ -101,9 +115,13 @@ use so the same file works across machines.
 }
 ```
 
-The output file extension is derived from each lane's selected preset
-(its `FileFormat` value in `presets.json`, mapping `av_mp4`/`mp4` to
-`.mp4` and `av_mkv`/`mkv` to `.mkv`) rather than being hardcoded.
+Each lane's `output` is where HandBrake initially writes the converted
+file; `tvShowBasePath`/`movieBasePath` are only used if `moveFiles` is on,
+as the final destination once a file's type has been detected.
+
+The output file extension is derived from whichever preset was selected
+(its `FileFormat` value in `presets.json`, mapping `av_mp4`/`mp4` to `.mp4`
+and `av_mkv`/`mkv` to `.mkv`) rather than being hardcoded.
 
 ## Project layout
 
@@ -112,10 +130,11 @@ Compressarr.ps1                  Entry point
 Modules/
   Compressarr.Config.psm1        JSON config load/save, env-var expansion, presets.json helpers
   Compressarr.Conversion.psm1    HandBrakeCLI invocation, resume state, extension derivation
-  Compressarr.FileRouting.psm1   TV/Movie move-to-folder logic
+  Compressarr.FileRouting.psm1   TV/Movie auto-detection + move-to-folder logic
   Compressarr.Logging.psm1       Log file writer, cleanup, history CSV
   Compressarr.Reporting.psm1     Standalone HTML report generator
   Compressarr.UI.psm1            WinForms GUI
+Assets/                          Logo + icon used by the GUI and the HTML report
 Config/compressarr.settings.json Sample/default config
 Logs/                            Per-run log files (gitignored)
 Reports/                         Per-run HTML reports (gitignored)
@@ -123,7 +142,9 @@ Reports/                         Per-run HTML reports (gitignored)
 
 ## Differences from VidMonHB
 
-- Four independent HD/UHD x Movie/TV lanes instead of one shared input folder.
+- Two independent HD/SD and UHD lanes (Paul's version has one shared input
+  folder); TV-vs-Movie detection within each lane uses Paul's original
+  filename-based logic.
 - JSON config instead of `.ps-properties`.
 - Modular `.psm1` files instead of one 3,000-line script.
 - No email/SMTP notifications - a standalone HTML report instead.
@@ -132,3 +153,5 @@ Reports/                         Per-run HTML reports (gitignored)
 - Fixed a season/episode parsing bug: filenames with 3+ digit season or
   episode numbers (`S123E45`, `S01E123`) now parse correctly instead of
   being truncated to 1-2 digits.
+- Per-file progress is a neat multi-line block (name, size, type, preset)
+  instead of a single cramped banner line.

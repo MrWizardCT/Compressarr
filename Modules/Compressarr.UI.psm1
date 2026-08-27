@@ -6,11 +6,16 @@
   WinForms GUI, laid out with TableLayoutPanel + Dock/Anchor so the window
   resizes cleanly - unlike Paul's displayForm, which positions every control
   with a hardcoded System.Drawing.Point. One "General" tab for settings that
-  aren't per-lane, plus one tab per content lane (HD Movies / HD TV /
-  UHD Movies / UHD TV), each with just Input, Output Base Path, and a Preset
-  dropdown. No SMTP/email fields anywhere - post-run output is the
-  Reporting module's HTML report, not an emailed log.
+  aren't per-lane, plus one tab per content lane (HD/SD, UHD). Each lane tab
+  has Input, Output, TV Preset, Movie Preset, TV Show Base Path, and Movie
+  Base Path - TV-vs-Movie is auto-detected per file (Paul's original
+  approach), not a separate lane. No SMTP/email fields anywhere - post-run
+  output is the Reporting module's HTML report, not an emailed log.
 #>
+
+function Get-CompressarrAssetsPath {
+  return (Join-Path -Path $PSScriptRoot -ChildPath '..\Assets')
+}
 
 function New-CompressarrFormPanel {
   $panel = New-Object System.Windows.Forms.TableLayoutPanel
@@ -129,23 +134,52 @@ function Show-CompressarrMainForm {
 
   $formResult = @{ Action = 'Exit'; Config = $Config }
 
+  $assetsPath = Get-CompressarrAssetsPath
+  $iconPath = Join-Path -Path $assetsPath -ChildPath 'compressarr.ico'
+  $logoPath = Join-Path -Path $assetsPath -ChildPath 'compressarr-logo.png'
+
   $form = New-Object System.Windows.Forms.Form
   $form.Text = if ($Version) { "Compressarr v$Version" } else { 'Compressarr' }
-  $form.MinimumSize = New-Object System.Drawing.Size(880, 640)
-  $form.Size = New-Object System.Drawing.Size(1000, 760)
+  $form.MinimumSize = New-Object System.Drawing.Size(880, 680)
+  $form.Size = New-Object System.Drawing.Size(1000, 800)
   $form.StartPosition = 'CenterScreen'
+  if (Test-Path $iconPath) { $form.Icon = New-Object System.Drawing.Icon($iconPath) }
 
   $root = New-Object System.Windows.Forms.TableLayoutPanel
   $root.Dock = 'Fill'
-  $root.RowCount = 2
+  $root.RowCount = 3
   $root.ColumnCount = 1
+  [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 64)))
   [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
   [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 60)))
   $form.Controls.Add($root)
 
+  # ---- Header: logo + title ----
+  $headerPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+  $headerPanel.Dock = 'Fill'
+  $headerPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::LeftToRight
+  $headerPanel.Padding = New-Object System.Windows.Forms.Padding(10, 8, 0, 0)
+  $root.Controls.Add($headerPanel, 0, 0)
+
+  if (Test-Path $logoPath) {
+    $logoBox = New-Object System.Windows.Forms.PictureBox
+    $logoBox.Image = [System.Drawing.Image]::FromFile($logoPath)
+    $logoBox.Size = New-Object System.Drawing.Size(48, 48)
+    $logoBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+    $logoBox.Margin = New-Object System.Windows.Forms.Padding(0, 0, 10, 0)
+    $headerPanel.Controls.Add($logoBox)
+  }
+
+  $titleLabel = New-Object System.Windows.Forms.Label
+  $titleLabel.Text = if ($Version) { "Compressarr  v$Version" } else { 'Compressarr' }
+  $titleLabel.AutoSize = $true
+  $titleLabel.Font = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing.FontStyle]::Bold)
+  $titleLabel.Margin = New-Object System.Windows.Forms.Padding(0, 8, 0, 0)
+  $headerPanel.Controls.Add($titleLabel)
+
   $tabs = New-Object System.Windows.Forms.TabControl
   $tabs.Dock = 'Fill'
-  $root.Controls.Add($tabs, 0, 0)
+  $root.Controls.Add($tabs, 0, 1)
 
   $pathFields = @{}
   $presetFields = @{}
@@ -182,6 +216,10 @@ function Show-CompressarrMainForm {
   $pathFields['report.reportPath'] = $reportPathBox
 
   # ---- Lane tabs ----
+  # Each lane auto-detects TV vs Movie per file (Test-CompressarrIsTVFile),
+  # so every lane needs its own TV and Movie preset, plus separate
+  # destination base paths used when "move files" relocates a converted
+  # file into a Show/Movie folder structure.
   $laneControls = @{}
   foreach ($laneName in (Get-CompressarrLaneNames)) {
     $laneTab = New-Object System.Windows.Forms.TabPage
@@ -192,15 +230,28 @@ function Show-CompressarrMainForm {
 
     $laneConfig = $Config.contentLanes.$laneName
     $lrow = 0
-    $inputBox   = Add-CompressarrPathRow  -Panel $lanePanel -Row ([ref]$lrow) -Label 'Input folder' -Value $laneConfig.input -Browse Folder
-    $outputBox  = Add-CompressarrPathRow  -Panel $lanePanel -Row ([ref]$lrow) -Label 'Output base folder' -Value $laneConfig.outputBase -Browse Folder
-    $presetCombo = Add-CompressarrComboRow -Panel $lanePanel -Row ([ref]$lrow) -Label 'HandBrake preset' -Items @() -Value $laneConfig.preset -Editable
+    $inputBox          = Add-CompressarrPathRow  -Panel $lanePanel -Row ([ref]$lrow) -Label 'Input folder' -Value $laneConfig.input -Browse Folder
+    $outputBox         = Add-CompressarrPathRow  -Panel $lanePanel -Row ([ref]$lrow) -Label 'Output folder' -Value $laneConfig.output -Browse Folder
+    $tvPresetCombo     = Add-CompressarrComboRow -Panel $lanePanel -Row ([ref]$lrow) -Label 'TV Show preset' -Items @() -Value $laneConfig.tvPreset -Editable
+    $moviePresetCombo  = Add-CompressarrComboRow -Panel $lanePanel -Row ([ref]$lrow) -Label 'Movie preset' -Items @() -Value $laneConfig.moviePreset -Editable
+    $tvShowBasePathBox = Add-CompressarrPathRow  -Panel $lanePanel -Row ([ref]$lrow) -Label 'TV Show base path (move to)' -Value $laneConfig.tvShowBasePath -Browse Folder
+    $movieBasePathBox  = Add-CompressarrPathRow  -Panel $lanePanel -Row ([ref]$lrow) -Label 'Movie base path (move to)' -Value $laneConfig.movieBasePath -Browse Folder
 
     $pathFields["contentLanes.$laneName.input"] = $inputBox
-    $pathFields["contentLanes.$laneName.outputBase"] = $outputBox
-    $presetFields[$laneName] = $presetCombo
+    $pathFields["contentLanes.$laneName.output"] = $outputBox
+    $pathFields["contentLanes.$laneName.tvShowBasePath"] = $tvShowBasePathBox
+    $pathFields["contentLanes.$laneName.movieBasePath"] = $movieBasePathBox
+    $presetFields["$laneName.tv"] = $tvPresetCombo
+    $presetFields["$laneName.movie"] = $moviePresetCombo
 
-    $laneControls[$laneName] = [PSCustomObject]@{ Input = $inputBox; Output = $outputBox; Preset = $presetCombo }
+    $laneControls[$laneName] = [PSCustomObject]@{
+      Input          = $inputBox
+      Output         = $outputBox
+      TVPreset       = $tvPresetCombo
+      MoviePreset    = $moviePresetCombo
+      TVShowBasePath = $tvShowBasePathBox
+      MovieBasePath  = $movieBasePathBox
+    }
   }
 
   # ---- Preset dropdown population ----
@@ -289,8 +340,11 @@ function Show-CompressarrMainForm {
     foreach ($laneName in (Get-CompressarrLaneNames)) {
       $lc = $laneControls[$laneName]
       $newConfig.contentLanes.$laneName.input = $lc.Input.Text
-      $newConfig.contentLanes.$laneName.outputBase = $lc.Output.Text
-      $newConfig.contentLanes.$laneName.preset = $lc.Preset.Text
+      $newConfig.contentLanes.$laneName.output = $lc.Output.Text
+      $newConfig.contentLanes.$laneName.tvPreset = $lc.TVPreset.Text
+      $newConfig.contentLanes.$laneName.moviePreset = $lc.MoviePreset.Text
+      $newConfig.contentLanes.$laneName.tvShowBasePath = $lc.TVShowBasePath.Text
+      $newConfig.contentLanes.$laneName.movieBasePath = $lc.MovieBasePath.Text
     }
 
     return $newConfig
@@ -301,7 +355,7 @@ function Show-CompressarrMainForm {
   $buttonPanel.Dock = 'Fill'
   $buttonPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::RightToLeft
   $buttonPanel.Padding = New-Object System.Windows.Forms.Padding(10)
-  $root.Controls.Add($buttonPanel, 0, 1)
+  $root.Controls.Add($buttonPanel, 0, 2)
 
   $exitBtn = New-Object System.Windows.Forms.Button
   $exitBtn.Text = 'Exit'
@@ -345,4 +399,4 @@ function Show-CompressarrMainForm {
   return $formResult
 }
 
-Export-ModuleMember -Function Show-CompressarrMainForm
+Export-ModuleMember -Function Show-CompressarrMainForm, Get-CompressarrAssetsPath

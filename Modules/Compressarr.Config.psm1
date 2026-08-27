@@ -17,13 +17,25 @@ $script:DefaultConfigJson = @'
     "options": ""
   },
   "contentLanes": {
-    "hdMovies":  { "input": "", "outputBase": "", "preset": "VeryFastDDtoAAC" },
-    "hdTV":      { "input": "", "outputBase": "", "preset": "VeryFastDDtoAAC" },
-    "uhdMovies": { "input": "", "outputBase": "", "preset": "" },
-    "uhdTV":     { "input": "", "outputBase": "", "preset": "" }
+    "hdsd": {
+      "input": "",
+      "output": "",
+      "tvPreset": "VeryFastDDtoAAC",
+      "moviePreset": "VeryFastDDtoAAC",
+      "tvShowBasePath": "",
+      "movieBasePath": ""
+    },
+    "uhd": {
+      "input": "",
+      "output": "",
+      "tvPreset": "",
+      "moviePreset": "",
+      "tvShowBasePath": "",
+      "movieBasePath": ""
+    }
   },
   "processing": {
-    "vidTypes": ["mkv", "avi"],
+    "vidTypes": ["mkv", "avi", "mp4", "mpg", "ts", "m4v"],
     "outSameAsIn": false,
     "deleteAfterConvert": "Maintain",
     "moveFiles": false,
@@ -160,18 +172,23 @@ function Test-CompressarrPath {
 }
 
 function Get-CompressarrLaneNames {
-  <# The four content lanes, in display order. #>
-  return @('hdMovies', 'hdTV', 'uhdMovies', 'uhdTV')
+  <#
+    Two content lanes: HD/SD and UHD. Unlike the original per-lane-per-type
+    design, TV-vs-Movie is no longer a separate lane - each lane auto-detects
+    content type per file (Paul's original checkIfTVfile approach, see
+    Test-CompressarrIsTVFile in Compressarr.FileRouting.psm1) and picks the
+    matching preset/destination from that lane's tvPreset/moviePreset and
+    tvShowBasePath/movieBasePath.
+  #>
+  return @('hdsd', 'uhd')
 }
 
 function Get-CompressarrLaneDisplayName {
   param([Parameter(Mandatory)] [string]$LaneName)
   switch ($LaneName) {
-    'hdMovies'  { return 'HD Movies' }
-    'hdTV'      { return 'HD TV Shows' }
-    'uhdMovies' { return 'UHD Movies' }
-    'uhdTV'     { return 'UHD TV Shows' }
-    Default     { return $LaneName }
+    'hdsd' { return 'HD/SD' }
+    'uhd'  { return 'UHD' }
+    Default { return $LaneName }
   }
 }
 

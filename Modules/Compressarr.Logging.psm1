@@ -60,6 +60,61 @@ function Write-CompressarrLog {
   }
 }
 
+function Write-CompressarrFileStart {
+  <#
+    Neat multi-line "about to process this file" block - replaces the old
+    single-line "**** START [HD Movies] 1 of 3 - Caddyshack (1980).mkv ****"
+    banner with the file name, its original size, whether it was
+    auto-detected as a Movie or TV Show, and which preset will be used.
+  #>
+  param(
+    [Parameter(Mandatory)] [string]$LaneDisplayName,
+    [Parameter(Mandatory)] [int]$Index,
+    [Parameter(Mandatory)] [int]$Total,
+    [Parameter(Mandatory)] [string]$FileName,
+    [Parameter(Mandatory)] [double]$SizeGB,
+    [Parameter(Mandatory)] [string]$ContentType,
+    [Parameter(Mandatory)] [string]$Preset
+  )
+
+  $rule = '-' * 80
+  Write-CompressarrLog ''
+  Write-CompressarrLog $rule
+  Write-CompressarrLog "[$LaneDisplayName] File $Index of $Total"
+  Write-CompressarrLog ('  Name   : ' + $FileName)
+  Write-CompressarrLog ('  Size   : ' + ('{0:n3}' -f $SizeGB) + ' GB')
+  Write-CompressarrLog ('  Type   : ' + $ContentType)
+  Write-CompressarrLog ('  Preset : ' + $Preset)
+  Write-CompressarrLog $rule
+}
+
+function Write-CompressarrFileComplete {
+  <# Matching multi-line completion block - success or failure. #>
+  param(
+    [Parameter(Mandatory)] [string]$FileName,
+    [Parameter(Mandatory)] [double]$BeginSizeGB,
+    [Parameter(Mandatory)] [double]$EndSizeGB,
+    [Parameter(Mandatory)] [TimeSpan]$Duration,
+    [Parameter(Mandatory)] [bool]$Success,
+    [string]$DetailLogFile
+  )
+
+  if ($Success) {
+    $savings = [math]::Round($BeginSizeGB - $EndSizeGB, 3)
+    $pct = 0
+    if ($BeginSizeGB -gt 0) { $pct = [math]::Round(100 - ($EndSizeGB / $BeginSizeGB) * 100, 1) }
+    Write-CompressarrLog ('  Completed : ' + $FileName)
+    Write-CompressarrLog ('  End size  : ' + ('{0:n3}' -f $EndSizeGB) + ' GB    Saved: ' + ('{0:n3}' -f $savings) + " GB ($pct%)")
+    Write-CompressarrLog ('  Duration  : ' + $Duration.Hours + 'h ' + $Duration.Minutes + 'm ' + $Duration.Seconds + 's')
+  }
+  else {
+    Write-CompressarrLog ('  FAILED    : ' + $FileName) -Severity 'E'
+    Write-CompressarrLog ('  Detail log: ' + $DetailLogFile) -Severity 'E'
+  }
+  Write-CompressarrLog ('-' * 80)
+  Write-CompressarrLog ''
+}
+
 function Get-CompressarrTimeDiff {
   param(
     [Parameter(Mandatory)] [datetime]$BeginTime,
@@ -174,6 +229,8 @@ Export-ModuleMember -Function `
   Initialize-CompressarrLogging, `
   Get-CompressarrSummaryLogFile, `
   Write-CompressarrLog, `
+  Write-CompressarrFileStart, `
+  Write-CompressarrFileComplete, `
   Get-CompressarrTimeDiff, `
   Test-CompressarrFileLocked, `
   Remove-CompressarrItem, `

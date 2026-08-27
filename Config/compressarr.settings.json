@@ -5,13 +5,25 @@
     "options": ""
   },
   "contentLanes": {
-    "hdMovies":  { "input": "", "outputBase": "", "preset": "VeryFastDDtoAAC" },
-    "hdTV":      { "input": "", "outputBase": "", "preset": "VeryFastDDtoAAC" },
-    "uhdMovies": { "input": "", "outputBase": "", "preset": "" },
-    "uhdTV":     { "input": "", "outputBase": "", "preset": "" }
+    "hdsd": {
+      "input": "",
+      "output": "",
+      "tvPreset": "VeryFastDDtoAAC",
+      "moviePreset": "VeryFastDDtoAAC",
+      "tvShowBasePath": "",
+      "movieBasePath": ""
+    },
+    "uhd": {
+      "input": "",
+      "output": "",
+      "tvPreset": "",
+      "moviePreset": "",
+      "tvShowBasePath": "",
+      "movieBasePath": ""
+    }
   },
   "processing": {
-    "vidTypes": ["mkv", "avi"],
+    "vidTypes": ["mkv", "avi", "mp4", "mpg", "ts", "m4v"],
     "outSameAsIn": false,
     "deleteAfterConvert": "Maintain",
     "moveFiles": false,

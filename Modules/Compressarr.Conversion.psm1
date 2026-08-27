@@ -163,14 +163,15 @@ function Invoke-CompressarrLaneConversion {
   $results = New-Object System.Collections.Generic.List[object]
 
   $inputPath = Expand-CompressarrPath $LaneConfig.input
-  $outputBase = Expand-CompressarrPath $LaneConfig.outputBase
+  $outputBase = Expand-CompressarrPath $LaneConfig.output
+  $tvShowBasePath = Expand-CompressarrPath $LaneConfig.tvShowBasePath
+  $movieBasePath = Expand-CompressarrPath $LaneConfig.movieBasePath
   if ([string]::IsNullOrWhiteSpace($inputPath) -or -not (Test-Path $inputPath)) {
     return ,$results
   }
 
   $hbloc = Expand-CompressarrPath $Config.handbrake.cliPath
   $presetsPath = Expand-CompressarrPath $Config.handbrake.presetsPath
-  $presetName = $LaneConfig.preset
 
   $pending = @($ResumeState | Where-Object { $_.lane -eq $LaneName -and $_.status -eq 'Pending' })
   if ($pending.Count -gt 0) {
@@ -188,17 +189,38 @@ function Invoke-CompressarrLaneConversion {
   if ($fileCount -eq 0) { return ,$results }
 
   $padSize = ([string]$fileCount).Length
-  $extension = Get-CompressarrPresetExtension -PresetName $presetName -PresetsPath $presetsPath
   $laneDisplayName = Get-CompressarrLaneDisplayName -LaneName $LaneName
 
   $i = 0
   foreach ($file in $videoFiles) {
     $i++
-    $countMsg = ([string]$i).PadLeft($padSize, '0') + ' of ' + ([string]$fileCount).PadLeft($padSize, '0')
-    Write-CompressarrLog "`n**** START [$laneDisplayName] $countMsg - $($file.Name) ****"
+
+    $isTV = Test-CompressarrIsTVFile -FileName $file.Name
+    $contentType = if ($isTV) { 'TV Show' } else { 'Movie' }
+    $presetName = if ($isTV) { $LaneConfig.tvPreset } else { $LaneConfig.moviePreset }
 
     $beginSizeGB = [math]::Round($file.Length / 1GB, 3)
     $startTime = Get-Date
+
+    Write-CompressarrFileStart -LaneDisplayName $laneDisplayName -Index $i -Total $fileCount `
+      -FileName $file.Name -SizeGB $beginSizeGB -ContentType $contentType -Preset $presetName
+
+    $resumeEntry = $ResumeState | Where-Object { $_.lane -eq $LaneName -and $_.fullName -eq $file.FullName } | Select-Object -First 1
+
+    if ([string]::IsNullOrWhiteSpace($presetName)) {
+      Write-CompressarrLog "  No $contentType preset configured for this lane - skipping." -Severity 'E'
+      if ($resumeEntry) { $resumeEntry.status = 'Error' }
+      Export-CompressarrResumeState -State $ResumeState -Path $ResumeFilePath
+      $results.Add([PSCustomObject]@{
+        LaneName = $LaneName; FileName = $file.Name; FullName = $file.FullName; NewFileName = $null
+        ContentType = $contentType; PresetName = $presetName
+        BeginSizeGB = $beginSizeGB; EndSizeGB = 0; Success = $false; DetailLogFile = $null
+        StartTime = $startTime; EndTime = (Get-Date)
+      })
+      continue
+    }
+
+    $extension = Get-CompressarrPresetExtension -PresetName $presetName -PresetsPath $presetsPath
 
     Clear-CompressarrTitleMetadata -FilePath $file.FullName
 
@@ -209,8 +231,7 @@ function Invoke-CompressarrLaneConversion {
     }
     $newFileName = Join-Path -Path $destFolder -ChildPath ($file.BaseName + $extension)
 
-    $presetArg = if ($presetName) { '--preset "' + $presetName + '"' } else { '' }
-    $cmdArgs = '-i "' + $file.FullName + '" -t 1 -o "' + $newFileName + '" --preset-import-file "' + $presetsPath + '" ' + $presetArg
+    $cmdArgs = '-i "' + $file.FullName + '" -t 1 -o "' + $newFileName + '" --preset-import-file "' + $presetsPath + '" --preset "' + $presetName + '"'
     if ($Config.handbrake.options) { $cmdArgs += ' ' + $Config.handbrake.options }
     Write-CompressarrLog "HB Command: $hbloc $cmdArgs" -LogType 'L'
 
@@ -227,14 +248,10 @@ function Invoke-CompressarrLaneConversion {
       $success = $finishedCount -ge 1
     }
 
-    $endSizeGB = if ($success) { [math]::Round((Get-Item $newFileName).Length / 1GB, 3) } else { 0 }
-    $resumeEntry = $ResumeState | Where-Object { $_.lane -eq $LaneName -and $_.fullName -eq $file.FullName } | Select-Object -First 1
+    $endSizeGB = 0
+    if ($success) { $endSizeGB = [math]::Round((Get-Item $newFileName).Length / 1GB, 3) }
 
     if ($success) {
-      $timeDiff = Get-CompressarrTimeDiff -BeginTime $startTime -EndTime $endTime
-      $savings = [math]::Round(($beginSizeGB - $endSizeGB), 3)
-      Write-CompressarrLog ("Completed : " + $countMsg + " - `"$newFileName`"  (" + $timeDiff.Hours + "h " + $timeDiff.Minutes + "m " + $timeDiff.Seconds + "s, saved " + $savings + " GB)")
-
       Clear-CompressarrTitleMetadata -FilePath $newFileName
 
       if ($Config.processing.deleteAfterConvert -ne 'Maintain') {
@@ -245,14 +262,18 @@ function Invoke-CompressarrLaneConversion {
         Remove-CompressarrItem -Path $file.FullName -Mode $Config.processing.deleteAfterConvert
       }
 
-      Move-CompressarrRoutedFile -FileName $newFileName -LaneName $LaneName -OutputBase $outputBase -MoveFiles $Config.processing.moveFiles | Out-Null
+      Move-CompressarrRoutedFile -FileName $newFileName -IsTV $isTV -TVShowBasePath $tvShowBasePath `
+        -MovieBasePath $movieBasePath -MoveFiles $Config.processing.moveFiles | Out-Null
 
       if ($resumeEntry) { $resumeEntry.status = 'Completed' }
     }
     else {
-      Write-CompressarrLog ("HandBrake error processing `"$($file.FullName)`" - see " + $dtlLogFile) -Severity 'E'
       if ($resumeEntry) { $resumeEntry.status = 'Error' }
     }
+
+    $timeDiff = Get-CompressarrTimeDiff -BeginTime $startTime -EndTime $endTime
+    Write-CompressarrFileComplete -FileName $newFileName -BeginSizeGB $beginSizeGB -EndSizeGB $endSizeGB `
+      -Duration $timeDiff -Success $success -DetailLogFile $dtlLogFile
 
     Export-CompressarrResumeState -State $ResumeState -Path $ResumeFilePath
 
@@ -261,6 +282,8 @@ function Invoke-CompressarrLaneConversion {
       FileName      = $file.Name
       FullName      = $file.FullName
       NewFileName   = $newFileName
+      ContentType   = $contentType
+      PresetName    = $presetName
       BeginSizeGB   = $beginSizeGB
       EndSizeGB     = $endSizeGB
       Success       = $success
@@ -268,8 +291,6 @@ function Invoke-CompressarrLaneConversion {
       StartTime     = $startTime
       EndTime       = $endTime
     })
-
-    Write-CompressarrLog "**** COMPLETED [$laneDisplayName] $countMsg ****`n"
   }
 
   return ,$results

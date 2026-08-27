@@ -52,6 +52,17 @@ function ConvertTo-CompressarrHtmlEncoded {
   return [System.Net.WebUtility]::HtmlEncode($Text)
 }
 
+function Get-CompressarrAssetsPath {
+  return (Join-Path -Path $PSScriptRoot -ChildPath '..\Assets')
+}
+
+function Get-CompressarrBase64Asset {
+  <# Reads a file and returns it as a base64 string, or $null if missing. #>
+  param([Parameter(Mandatory)] [string]$Path)
+  if (-not (Test-Path $Path)) { return $null }
+  return [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($Path))
+}
+
 function Get-CompressarrLaneReportSection {
   param(
     [Parameter(Mandatory)] [string]$LaneDisplayName,
@@ -66,9 +77,13 @@ function Get-CompressarrLaneReportSection {
     $statusClass = if ($r.Success) { 'ok' } else { 'err' }
     $statusText = if ($r.Success) { 'OK' } else { 'ERROR' }
     $savings = [math]::Round($r.BeginSizeGB - $r.EndSizeGB, 3)
+    $contentType = if ($r.ContentType) { $r.ContentType } else { '' }
+    $presetName = if ($r.PresetName) { $r.PresetName } else { '' }
     @"
       <tr class="$statusClass">
         <td>$(ConvertTo-CompressarrHtmlEncoded $r.FileName)</td>
+        <td>$(ConvertTo-CompressarrHtmlEncoded $contentType)</td>
+        <td>$(ConvertTo-CompressarrHtmlEncoded $presetName)</td>
         <td>$($r.BeginSizeGB) GB</td>
         <td>$($r.EndSizeGB) GB</td>
         <td>$savings GB</td>
@@ -82,12 +97,14 @@ function Get-CompressarrLaneReportSection {
 
   return @"
     <h3>$LaneDisplayName <span class="muted">($($Results.Count) file(s), $beg GB &rarr; $end GB)</span></h3>
+    <div class="table-wrap">
     <table>
-      <thead><tr><th>File</th><th>Before</th><th>After</th><th>Savings</th><th>Status</th></tr></thead>
+      <thead><tr><th>File</th><th>Type</th><th>Preset</th><th>Before</th><th>After</th><th>Savings</th><th>Status</th></tr></thead>
       <tbody>
         $($rows -join "`n")
       </tbody>
     </table>
+    </div>
 "@
 }
 
@@ -125,7 +142,7 @@ function New-CompressarrReport {
 
   $rollups = Get-CompressarrHistoryRollups -LogFilePath $LogFilePath
 
-  $laneSections = foreach ($laneName in @('hdMovies', 'hdTV', 'uhdMovies', 'uhdTV')) {
+  $laneSections = foreach ($laneName in (Get-CompressarrLaneNames)) {
     $displayName = Get-CompressarrLaneDisplayName -LaneName $laneName
 
     # Deliberately NOT `$results = if (...) {...} else {...}` - unlike a plain
@@ -147,16 +164,26 @@ function New-CompressarrReport {
     "<div class='banner ok'>Run completed with no errors.</div>"
   }
 
+  $assetsPath = Get-CompressarrAssetsPath
+  $faviconB64 = Get-CompressarrBase64Asset -Path (Join-Path -Path $assetsPath -ChildPath 'compressarr.ico')
+  $logoB64 = Get-CompressarrBase64Asset -Path (Join-Path -Path $assetsPath -ChildPath 'compressarr-logo.png')
+  $faviconTag = if ($faviconB64) { "<link rel=`"icon`" type=`"image/x-icon`" href=`"data:image/x-icon;base64,$faviconB64`">" } else { '' }
+  $logoTag = if ($logoB64) { "<img src=`"data:image/png;base64,$logoB64`" alt=`"Compressarr`" class=`"logo`">" } else { '' }
+
   $html = @"
 <title>Compressarr Report - $Timestamp</title>
+$faviconTag
 <style>
   body { font-family: Segoe UI, Verdana, sans-serif; margin: 2rem; color: #1c1c1c; background: #fafafa; }
   h1 { margin-bottom: 0; }
+  .header { display: flex; align-items: center; gap: 0.75rem; }
+  .logo { width: 48px; height: 48px; }
   .muted { color: #666; font-weight: normal; font-size: 0.85em; }
   .banner { padding: 0.75rem 1rem; border-radius: 6px; margin: 1rem 0; font-weight: 600; }
   .banner.ok { background: #e3f7e8; color: #16693a; }
   .banner.err { background: #fdeaea; color: #a1231e; }
-  table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1.5rem 0; background: #fff; }
+  .table-wrap { overflow-x: auto; margin: 0.5rem 0 1.5rem 0; }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; margin: 0; background: #fff; }
   th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; font-size: 0.9em; }
   th { background: #2c3e50; color: #fff; }
   tr.err { background: #fdeaea; }
@@ -165,7 +192,10 @@ function New-CompressarrReport {
   .stat .label { font-size: 0.8em; color: #666; }
   .stat .value { font-size: 1.4em; font-weight: 700; }
 </style>
-<h1>Compressarr Report</h1>
+<div class="header">
+  $logoTag
+  <h1>Compressarr Report</h1>
+</div>
 <p class="muted">Run: $Timestamp &nbsp;|&nbsp; Duration: $($RunTime.Hours)h $($RunTime.Minutes)m $($RunTime.Seconds)s</p>
 $statusBanner
 <div class="summary-grid">
@@ -178,6 +208,7 @@ $statusBanner
 <h2>By lane</h2>
 $($laneSections -join "`n")
 <h2>History</h2>
+<div class="table-wrap">
 <table>
   <thead><tr><th>Period</th><th>Before</th><th>After</th><th>Savings</th><th>Files</th></tr></thead>
   <tbody>
@@ -186,6 +217,7 @@ $($laneSections -join "`n")
     $(Get-CompressarrRollupRow -Label 'This year' -Rollup $rollups.Yearly)
   </tbody>
 </table>
+</div>
 "@
 
   if ($SummaryLogFile -and (Test-Path $SummaryLogFile)) {
@@ -217,5 +249,7 @@ function Show-CompressarrReport {
 
 Export-ModuleMember -Function `
   Get-CompressarrHistoryRollups, `
+  Get-CompressarrAssetsPath, `
+  Get-CompressarrBase64Asset, `
   New-CompressarrReport, `
   Show-CompressarrReport

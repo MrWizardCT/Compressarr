@@ -3,12 +3,12 @@
 <#
   Compressarr.FileRouting.psm1
 
-  Each of the four content lanes (hdMovies, hdTV, uhdMovies, uhdTV) has its
-  own input folder, so - unlike Paul's VidMonHB, which auto-detects TV vs
-  Movie from a single shared input folder - the lane itself already tells us
-  whether a file is a TV episode or a Movie. The season/episode regex is
-  still needed, but only inside the TV lanes, to work out the "Show Name /
-  Season NN" destination folder for the move step.
+  Two content lanes (hdsd, uhd), each with a single shared input folder -
+  TV vs Movie is auto-detected per file, the same way Paul's VidMonHB does
+  it (checkIfTVfile: a file "is TV" if a season/episode marker like S01E01
+  is found in the name). See Test-CompressarrIsTVFile below. That
+  auto-detected type then picks which preset (tvPreset/moviePreset) and
+  which destination (tvShowBasePath/movieBasePath) apply to that file.
 #>
 
 function Get-CompressarrEpisodeInfo {
@@ -56,6 +56,21 @@ function Get-CompressarrEpisodeInfo {
   }
 }
 
+function Test-CompressarrIsTVFile {
+  <#
+    Paul's checkIfTVfile logic: a file is treated as a TV episode if a
+    season/episode marker is found in its name, otherwise it's a Movie.
+    This is the single auto-detection point that picks which preset
+    (tvPreset vs moviePreset) and which destination (tvShowBasePath vs
+    movieBasePath) apply to a given file within a lane.
+  #>
+  param(
+    [Parameter(Mandatory)] [string]$FileName
+  )
+
+  return (Get-CompressarrEpisodeInfo -FileName $FileName).HasSeasonAndEpisode
+}
+
 function Move-CompressarrMovieFile {
   <#
     Ported from Paul's moveMovieFile: buckets a movie into a year-range
@@ -68,6 +83,10 @@ function Move-CompressarrMovieFile {
     [Parameter(Mandatory)] [string]$FileName,
     [Parameter(Mandatory)] [string]$OutputBase
   )
+
+  if (-not (Test-Path $OutputBase)) {
+    New-Item -Path $OutputBase -ItemType Directory -Force | Out-Null
+  }
 
   $leaf = Split-Path -Path $FileName -Leaf
   $movieYear = ($FileName -split '\(([^\)]+)\)')[1]
@@ -134,28 +153,27 @@ function Move-CompressarrTVFile {
 
 function Move-CompressarrRoutedFile {
   <#
-    Dispatches on the lane name (hdMovies/uhdMovies vs hdTV/uhdTV) rather
-    than re-detecting content type from the filename - the lane already
-    tells us that, since each lane has its own dedicated input folder.
+    Dispatches on the file's auto-detected content type (see
+    Test-CompressarrIsTVFile) to the matching base path - a lane's
+    tvShowBasePath for TV episodes, movieBasePath for everything else.
   #>
   param(
     [Parameter(Mandatory)] [string]$FileName,
-    [Parameter(Mandatory)] [string]$LaneName,
-    [Parameter(Mandatory)] [string]$OutputBase,
+    [Parameter(Mandatory)] [bool]$IsTV,
+    [Parameter(Mandatory)] [string]$TVShowBasePath,
+    [Parameter(Mandatory)] [string]$MovieBasePath,
     [Parameter(Mandatory)] [bool]$MoveFiles
   )
 
   if (-not $MoveFiles) { return $null }
 
-  switch ($LaneName) {
-    { $_ -in @('hdMovies', 'uhdMovies') } { return Move-CompressarrMovieFile -FileName $FileName -OutputBase $OutputBase }
-    { $_ -in @('hdTV', 'uhdTV') }         { return Move-CompressarrTVFile -FileName $FileName -OutputBase $OutputBase }
-    Default { throw "Compressarr: unknown lane '$LaneName' in Move-CompressarrRoutedFile." }
-  }
+  if ($IsTV) { return Move-CompressarrTVFile -FileName $FileName -OutputBase $TVShowBasePath }
+  return Move-CompressarrMovieFile -FileName $FileName -OutputBase $MovieBasePath
 }
 
 Export-ModuleMember -Function `
   Get-CompressarrEpisodeInfo, `
+  Test-CompressarrIsTVFile, `
   Move-CompressarrMovieFile, `
   Move-CompressarrTVFile, `
   Move-CompressarrRoutedFile

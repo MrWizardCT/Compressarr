@@ -36,7 +36,7 @@ param(
   [switch]$Once
 )
 
-$script:CompressarrVersion = '1.0.0-beta.3'
+$script:CompressarrVersion = '1.0.0-beta.4'
 
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
@@ -103,13 +103,15 @@ function Invoke-CompressarrRun {
 
     if ([string]::IsNullOrWhiteSpace($laneConfig.input)) { continue }
 
-    if ([string]::IsNullOrWhiteSpace($laneConfig.preset)) {
-      Write-CompressarrLog "Skipping lane [$laneDisplayName] - no preset configured." -Severity 'E'
+    if ([string]::IsNullOrWhiteSpace($laneConfig.tvPreset) -and [string]::IsNullOrWhiteSpace($laneConfig.moviePreset)) {
+      Write-CompressarrLog "Skipping lane [$laneDisplayName] - no TV or Movie preset configured." -Severity 'E'
       continue
     }
-    if (-not (Test-CompressarrPresetExists -PresetName $laneConfig.preset -PresetsPath $presetsPath)) {
-      Write-CompressarrLog "Skipping lane [$laneDisplayName] - preset '$($laneConfig.preset)' not found in presets.json." -Severity 'E'
-      continue
+    if ($laneConfig.tvPreset -and -not (Test-CompressarrPresetExists -PresetName $laneConfig.tvPreset -PresetsPath $presetsPath)) {
+      Write-CompressarrLog "Lane [$laneDisplayName] - TV preset '$($laneConfig.tvPreset)' not found in presets.json. TV episodes in this lane will be skipped." -Severity 'E'
+    }
+    if ($laneConfig.moviePreset -and -not (Test-CompressarrPresetExists -PresetName $laneConfig.moviePreset -PresetsPath $presetsPath)) {
+      Write-CompressarrLog "Lane [$laneDisplayName] - Movie preset '$($laneConfig.moviePreset)' not found in presets.json. Movies in this lane will be skipped." -Severity 'E'
     }
 
     Write-CompressarrLog "`nScanning lane [$laneDisplayName] - $(Expand-CompressarrPath $laneConfig.input)"
