@@ -6,11 +6,12 @@
   WinForms GUI, laid out with TableLayoutPanel + Dock/Anchor so the window
   resizes cleanly - unlike Paul's displayForm, which positions every control
   with a hardcoded System.Drawing.Point. One "General" tab for settings that
-  aren't per-lane, plus one tab per content lane (HD/SD, UHD). Each lane tab
-  has Input, Output, TV Preset, Movie Preset, TV Show Base Path, and Movie
-  Base Path - TV-vs-Movie is auto-detected per file (Paul's original
-  approach), not a separate lane. No SMTP/email fields anywhere - post-run
-  output is the Reporting module's HTML report, not an emailed log.
+  aren't per-lane, plus one "Paths" tab holding both lanes (HD/SD, UHD) on
+  the same page, separated by a section header + rule. Each lane has Input,
+  Output, TV Preset, Movie Preset, TV Show Base Path, and Movie Base Path -
+  TV-vs-Movie is auto-detected per file (Paul's original approach), not a
+  separate lane. No SMTP/email fields anywhere - post-run output is the
+  Reporting module's HTML report, not an emailed log.
 #>
 
 function Get-CompressarrAssetsPath {
@@ -28,6 +29,49 @@ function New-CompressarrFormPanel {
   $panel.RowCount = 0
   $panel.Padding = New-Object System.Windows.Forms.Padding(14)
   return $panel
+}
+
+function Add-CompressarrFillerRow {
+  <#
+    A trailing zero-content row with Percent(100) sizing, so any leftover
+    vertical space in the panel is absorbed here instead of stretching the
+    last real row's controls (a TableLayoutPanel quirk when total Absolute
+    row heights add up to less than the panel's actual height).
+  #>
+  param($Panel, [ref]$Row)
+  $Panel.RowCount = $Row.Value + 1
+  [void]$Panel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+  $Row.Value++
+}
+
+function Add-CompressarrSectionHeader {
+  <# A bold section title spanning the full row width, e.g. "HD/SD" / "UHD". #>
+  param($Panel, [ref]$Row, [string]$Text)
+  $Panel.RowCount = $Row.Value + 1
+  [void]$Panel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 34)))
+  $label = New-Object System.Windows.Forms.Label
+  $label.Text = $Text
+  $label.Dock = 'Fill'
+  $label.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+  $label.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
+  $Panel.Controls.Add($label, 0, $Row.Value)
+  $Panel.SetColumnSpan($label, 3)
+  $Row.Value++
+}
+
+function Add-CompressarrSeparator {
+  <# A thin horizontal rule spanning the full row width, between sections. #>
+  param($Panel, [ref]$Row)
+  $Panel.RowCount = $Row.Value + 1
+  [void]$Panel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 20)))
+  $line = New-Object System.Windows.Forms.Panel
+  $line.Height = 2
+  $line.Dock = 'Top'
+  $line.Margin = New-Object System.Windows.Forms.Padding(0, 9, 0, 9)
+  $line.BackColor = [System.Drawing.Color]::Gainsboro
+  $Panel.Controls.Add($line, 0, $Row.Value)
+  $Panel.SetColumnSpan($line, 3)
+  $Row.Value++
 }
 
 function Add-CompressarrRowLabel {
@@ -212,33 +256,39 @@ function Show-CompressarrMainForm {
   $postExecArgsBox  = Add-CompressarrTextRow  -Panel $generalPanel -Row ([ref]$row) -Label 'Post-execution arguments'           -Value $Config.postExec.args
   $repeatCountBox   = Add-CompressarrTextRow  -Panel $generalPanel -Row ([ref]$row) -Label 'Repeat run count'                   -Value $Config.repeat.count
   $monitorCheck     = Add-CompressarrCheckRow -Panel $generalPanel -Row ([ref]$row) -Label 'Monitor mode (keep watching for new files)' -Value ([bool]$Config.repeat.monitor)
+  Add-CompressarrFillerRow -Panel $generalPanel -Row ([ref]$row)
 
   $pathFields['handbrake.cliPath'] = $hbCliBox
   $pathFields['handbrake.presetsPath'] = $hbPresetsBox
   $pathFields['logging.logFilePath'] = $logPathBox
   $pathFields['report.reportPath'] = $reportPathBox
 
-  # ---- Lane tabs ----
+  # ---- Paths tab (both lanes, one page, separated by a rule) ----
   # Each lane auto-detects TV vs Movie per file (Test-CompressarrIsTVFile),
   # so every lane needs its own TV and Movie preset, plus separate
   # destination base paths used when "move files" relocates a converted
   # file into a Show/Movie folder structure.
+  $pathsTab = New-Object System.Windows.Forms.TabPage
+  $pathsTab.Text = 'Paths'
+  $tabs.TabPages.Add($pathsTab)
+  $pathsPanel = New-CompressarrFormPanel
+  $pathsTab.Controls.Add($pathsPanel)
+
   $laneControls = @{}
-  foreach ($laneName in (Get-CompressarrLaneNames)) {
-    $laneTab = New-Object System.Windows.Forms.TabPage
-    $laneTab.Text = Get-CompressarrLaneDisplayName -LaneName $laneName
-    $tabs.TabPages.Add($laneTab)
-    $lanePanel = New-CompressarrFormPanel
-    $laneTab.Controls.Add($lanePanel)
+  $prow = 0
+  $laneNames = Get-CompressarrLaneNames
+  for ($laneIndex = 0; $laneIndex -lt $laneNames.Count; $laneIndex++) {
+    $laneName = $laneNames[$laneIndex]
+    if ($laneIndex -gt 0) { Add-CompressarrSeparator -Panel $pathsPanel -Row ([ref]$prow) }
+    Add-CompressarrSectionHeader -Panel $pathsPanel -Row ([ref]$prow) -Text (Get-CompressarrLaneDisplayName -LaneName $laneName)
 
     $laneConfig = $Config.contentLanes.$laneName
-    $lrow = 0
-    $inputBox          = Add-CompressarrPathRow  -Panel $lanePanel -Row ([ref]$lrow) -Label 'Input folder' -Value $laneConfig.input -Browse Folder
-    $outputBox         = Add-CompressarrPathRow  -Panel $lanePanel -Row ([ref]$lrow) -Label 'Output folder' -Value $laneConfig.output -Browse Folder
-    $tvPresetCombo     = Add-CompressarrComboRow -Panel $lanePanel -Row ([ref]$lrow) -Label 'TV Show preset' -Items @() -Value $laneConfig.tvPreset -Editable
-    $moviePresetCombo  = Add-CompressarrComboRow -Panel $lanePanel -Row ([ref]$lrow) -Label 'Movie preset' -Items @() -Value $laneConfig.moviePreset -Editable
-    $tvShowBasePathBox = Add-CompressarrPathRow  -Panel $lanePanel -Row ([ref]$lrow) -Label 'TV Show base path (move to)' -Value $laneConfig.tvShowBasePath -Browse Folder
-    $movieBasePathBox  = Add-CompressarrPathRow  -Panel $lanePanel -Row ([ref]$lrow) -Label 'Movie base path (move to)' -Value $laneConfig.movieBasePath -Browse Folder
+    $inputBox          = Add-CompressarrPathRow  -Panel $pathsPanel -Row ([ref]$prow) -Label 'Input folder' -Value $laneConfig.input -Browse Folder
+    $outputBox         = Add-CompressarrPathRow  -Panel $pathsPanel -Row ([ref]$prow) -Label 'Output folder' -Value $laneConfig.output -Browse Folder
+    $tvPresetCombo     = Add-CompressarrComboRow -Panel $pathsPanel -Row ([ref]$prow) -Label 'TV Show preset' -Items @() -Value $laneConfig.tvPreset -Editable
+    $moviePresetCombo  = Add-CompressarrComboRow -Panel $pathsPanel -Row ([ref]$prow) -Label 'Movie preset' -Items @() -Value $laneConfig.moviePreset -Editable
+    $tvShowBasePathBox = Add-CompressarrPathRow  -Panel $pathsPanel -Row ([ref]$prow) -Label 'TV Show base path (move to)' -Value $laneConfig.tvShowBasePath -Browse Folder
+    $movieBasePathBox  = Add-CompressarrPathRow  -Panel $pathsPanel -Row ([ref]$prow) -Label 'Movie base path (move to)' -Value $laneConfig.movieBasePath -Browse Folder
 
     $pathFields["contentLanes.$laneName.input"] = $inputBox
     $pathFields["contentLanes.$laneName.output"] = $outputBox
@@ -256,6 +306,7 @@ function Show-CompressarrMainForm {
       MovieBasePath  = $movieBasePathBox
     }
   }
+  Add-CompressarrFillerRow -Panel $pathsPanel -Row ([ref]$prow)
 
   # ---- Preset dropdown population ----
   $refreshPresets = {
