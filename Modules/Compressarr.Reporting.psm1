@@ -127,7 +127,17 @@ function New-CompressarrReport {
 
   $laneSections = foreach ($laneName in @('hdMovies', 'hdTV', 'uhdMovies', 'uhdTV')) {
     $displayName = Get-CompressarrLaneDisplayName -LaneName $laneName
-    $results = if ($LaneResults.ContainsKey($laneName)) { $LaneResults[$laneName] } else { New-Object System.Collections.Generic.List[object] }
+
+    # Deliberately NOT `$results = if (...) {...} else {...}` - unlike a plain
+    # assignment, using an if/else *as an expression* to produce the value
+    # goes through the same pipeline-unrolling PowerShell applies to
+    # `return`: a lane that WAS processed but found zero files stores an
+    # empty (non-null) List[object] in $LaneResults, and reading it back out
+    # through that expression form collapses it to $null. Plain imperative
+    # assignment does not have this problem.
+    $results = New-Object System.Collections.Generic.List[object]
+    if ($LaneResults.ContainsKey($laneName)) { $results = $LaneResults[$laneName] }
+
     Get-CompressarrLaneReportSection -LaneDisplayName $displayName -Results $results
   }
 

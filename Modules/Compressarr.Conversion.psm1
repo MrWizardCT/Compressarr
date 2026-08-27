@@ -202,7 +202,11 @@ function Invoke-CompressarrLaneConversion {
 
     Clear-CompressarrTitleMetadata -FilePath $file.FullName
 
-    $destFolder = if ($Config.processing.outSameAsIn) { $file.DirectoryName } else { $outputBase }
+    $destFolder = $outputBase
+    if ($Config.processing.outSameAsIn) { $destFolder = $file.DirectoryName }
+    if (-not (Test-Path $destFolder)) {
+      New-Item -Path $destFolder -ItemType Directory -Force | Out-Null
+    }
     $newFileName = Join-Path -Path $destFolder -ChildPath ($file.BaseName + $extension)
 
     $presetArg = if ($presetName) { '--preset "' + $presetName + '"' } else { '' }
