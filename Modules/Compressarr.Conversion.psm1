@@ -125,7 +125,10 @@ function Import-CompressarrResumeState {
     $raw = Get-Content -Path $Path -Raw | ConvertFrom-Json
     foreach ($entry in @($raw)) { $list.Add($entry) }
   }
-  return $list
+  # The unary comma is required here: PowerShell unrolls a returned
+  # collection onto the pipeline, so an empty List[object] would otherwise
+  # come back to the caller as $null instead of an empty list.
+  return ,$list
 }
 
 function Export-CompressarrResumeState {
@@ -162,7 +165,7 @@ function Invoke-CompressarrLaneConversion {
   $inputPath = Expand-CompressarrPath $LaneConfig.input
   $outputBase = Expand-CompressarrPath $LaneConfig.outputBase
   if ([string]::IsNullOrWhiteSpace($inputPath) -or -not (Test-Path $inputPath)) {
-    return $results
+    return ,$results
   }
 
   $hbloc = Expand-CompressarrPath $Config.handbrake.cliPath
@@ -182,7 +185,7 @@ function Invoke-CompressarrLaneConversion {
   }
 
   $fileCount = ($videoFiles | Measure-Object).Count
-  if ($fileCount -eq 0) { return $results }
+  if ($fileCount -eq 0) { return ,$results }
 
   $padSize = ([string]$fileCount).Length
   $extension = Get-CompressarrPresetExtension -PresetName $presetName -PresetsPath $presetsPath
@@ -265,7 +268,7 @@ function Invoke-CompressarrLaneConversion {
     Write-CompressarrLog "**** COMPLETED [$laneDisplayName] $countMsg ****`n"
   }
 
-  return $results
+  return ,$results
 }
 
 Export-ModuleMember -Function `

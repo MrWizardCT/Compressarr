@@ -241,7 +241,10 @@ function Get-CompressarrPresetObjects {
     Walk-Node $tree.PresetList
   }
 
-  return $results
+  # Comma operator required: PowerShell unrolls a returned collection onto
+  # the pipeline, so an empty (or single-item) List[object] would otherwise
+  # come back to the caller as $null (or a bare scalar) instead of a list.
+  return ,$results
 }
 
 function Get-CompressarrPresetNames {
@@ -249,7 +252,11 @@ function Get-CompressarrPresetNames {
     [Parameter(Mandatory)] [string]$PresetsPath
   )
 
-  return (Get-CompressarrPresetObjects -PresetsPath $PresetsPath | ForEach-Object { $_.PresetName } | Sort-Object)
+  $names = New-Object System.Collections.Generic.List[object]
+  foreach ($n in (Get-CompressarrPresetObjects -PresetsPath $PresetsPath | ForEach-Object { $_.PresetName } | Sort-Object)) {
+    $names.Add($n)
+  }
+  return ,$names
 }
 
 function Test-CompressarrPresetExists {

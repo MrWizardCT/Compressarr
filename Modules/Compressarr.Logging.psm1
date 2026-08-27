@@ -162,9 +162,12 @@ function Get-CompressarrHistory {
     [Parameter(Mandatory)] [string]$LogFilePath
   )
 
+  # Comma operator required throughout: PowerShell unrolls a returned
+  # collection onto the pipeline, so an empty result here would otherwise
+  # come back to the caller as $null instead of an empty collection.
   $historyFile = Join-Path -Path $LogFilePath -ChildPath 'Compressarr_History.csv'
-  if (-not (Test-Path $historyFile)) { return @() }
-  return Import-Csv -Path $historyFile
+  if (-not (Test-Path $historyFile)) { return ,@() }
+  return ,@(Import-Csv -Path $historyFile)
 }
 
 Export-ModuleMember -Function `
