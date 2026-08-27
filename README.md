@@ -156,7 +156,7 @@ Settings that apply across both lanes:
 | Presets file | Path to `presets.json` (step 5 above) |
 | Extra HandBrake options | Any additional flags passed straight through to HandBrakeCLI |
 | Log folder | Where per-run summary and detail logs are written |
-| Log retention (days) | Logs older than this are cleaned up automatically |
+| Log & Reports Retention (Days) | Logs and HTML reports older than this are cleaned up automatically |
 | Report folder | Where the HTML report for each run is written |
 | Open report after run | `Always`, `Error` (only if something failed), or `Never` |
 | Video file types | Comma-separated extensions to scan for (default: `mkv,avi,mp4,mpg,ts,m4v`) |

@@ -189,27 +189,35 @@ function Remove-CompressarrFolder {
   }
 }
 
-function Remove-CompressarrOldLogs {
+function Remove-CompressarrOldFiles {
+  <#
+    Deletes/recycles files matching $Extensions in $Path older than
+    $RetentionDays. Shared by the Logs folder (.log/.txt) and the Reports
+    folder (.html) - both use the same logging.retentionDays setting
+    (surfaced in the GUI as "Log & Reports Retention (Days)").
+  #>
   param(
-    [Parameter(Mandatory)] [string]$LogFilePath,
+    [Parameter(Mandatory)] [string]$Path,
+    [Parameter(Mandatory)] [string[]]$Extensions,
     [int]$RetentionDays = 30,
-    [ValidateSet('Delete', 'Recycle')] [string]$Mode = 'Recycle'
+    [ValidateSet('Delete', 'Recycle')] [string]$Mode = 'Recycle',
+    [string]$Label = 'file'
   )
 
-  $oldLogs = Get-ChildItem -Path $LogFilePath -ErrorAction SilentlyContinue |
-    Where-Object { $_.Extension -in @('.log', '.txt') -and $_.CreationTime -lt (Get-Date).AddDays(-$RetentionDays) }
+  $oldFiles = Get-ChildItem -Path $Path -ErrorAction SilentlyContinue |
+    Where-Object { $_.Extension -in $Extensions -and $_.CreationTime -lt (Get-Date).AddDays(-$RetentionDays) }
 
-  $count = ($oldLogs | Measure-Object).Count
+  $count = ($oldFiles | Measure-Object).Count
   if ($count -eq 0) {
-    Write-CompressarrLog "`nNo logs to clean up"
+    Write-CompressarrLog "`nNo $Label files to clean up"
     return
   }
 
-  Write-CompressarrLog "`nNow cleaning up $count old log file(s)"
-  foreach ($log in $oldLogs) {
-    Remove-CompressarrItem -Path $log.FullName -Mode $Mode
+  Write-CompressarrLog "`nNow cleaning up $count old $Label file(s)"
+  foreach ($item in $oldFiles) {
+    Remove-CompressarrItem -Path $item.FullName -Mode $Mode
   }
-  Write-CompressarrLog "Cleaned up $count log file(s) that were > $RetentionDays days old"
+  Write-CompressarrLog "Cleaned up $count old $Label file(s) that were > $RetentionDays days old"
 }
 
 function Add-CompressarrHistoryRecord {
@@ -292,7 +300,7 @@ Export-ModuleMember -Function `
   Test-CompressarrFileLocked, `
   Remove-CompressarrItem, `
   Remove-CompressarrFolder, `
-  Remove-CompressarrOldLogs, `
+  Remove-CompressarrOldFiles, `
   Add-CompressarrHistoryRecord, `
   Get-CompressarrHistory, `
   Get-CompressarrRunCount, `

@@ -36,7 +36,7 @@ param(
   [switch]$Once
 )
 
-$script:CompressarrVersion = '1.0.0-beta.10'
+$script:CompressarrVersion = '1.0.0-beta.11'
 
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
@@ -134,7 +134,8 @@ function Invoke-CompressarrRun {
     Remove-Item -Path $resumeFilePath -ErrorAction SilentlyContinue
   }
 
-  Remove-CompressarrOldLogs -LogFilePath $logFilePath -RetentionDays $Config.logging.retentionDays -Mode 'Recycle'
+  Remove-CompressarrOldFiles -Path $logFilePath -Extensions @('.log', '.txt') -RetentionDays $Config.logging.retentionDays -Mode 'Recycle' -Label 'log'
+  Remove-CompressarrOldFiles -Path $reportPath -Extensions @('.html') -RetentionDays $Config.logging.retentionDays -Mode 'Recycle' -Label 'report'
 
   $endTime = Get-Date
   $runTime = Get-CompressarrTimeDiff -BeginTime $beginTime -EndTime $endTime

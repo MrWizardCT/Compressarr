@@ -350,7 +350,7 @@ function Show-CompressarrMainForm {
 
   $retentionBox = New-CompressarrCompactTextBox -Value $Config.logging.retentionDays -Width 60
   $openAfterRunCombo = New-CompressarrCompactComboBox -Items @('Always', 'Error', 'Never') -Value $Config.report.openAfterRun -Width 110
-  Add-CompressarrDualRow -Panel $generalPanel -Row ([ref]$row) -Label1 'Log retention (days)' -Control1 $retentionBox -Label2 'Open report after run' -Control2 $openAfterRunCombo
+  Add-CompressarrDualRow -Panel $generalPanel -Row ([ref]$row) -Label1 'Log & Reports Retention (Days)' -Control1 $retentionBox -Label2 'Open report after run' -Control2 $openAfterRunCombo
 
   $vidTypesBox = Add-CompressarrTextRow -Panel $generalPanel -Row ([ref]$row) -Label 'Video file types (comma-separated)' -Value ($Config.processing.vidTypes -join ',')
 
