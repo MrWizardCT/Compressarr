@@ -169,6 +169,10 @@ function Invoke-CompressarrLaneConversion {
   if ([string]::IsNullOrWhiteSpace($inputPath) -or -not (Test-Path $inputPath)) {
     return ,$results
   }
+  if ([string]::IsNullOrWhiteSpace($outputBase) -and -not $Config.processing.outSameAsIn) {
+    Write-CompressarrLog "Lane '$LaneName' has no Output folder configured and 'write output to same folder as input' is off - skipping." -Severity 'E'
+    return ,$results
+  }
 
   $hbloc = Expand-CompressarrPath $Config.handbrake.cliPath
   $presetsPath = Expand-CompressarrPath $Config.handbrake.presetsPath
@@ -262,8 +266,16 @@ function Invoke-CompressarrLaneConversion {
         Remove-CompressarrItem -Path $file.FullName -Mode $Config.processing.deleteAfterConvert
       }
 
-      Move-CompressarrRoutedFile -FileName $newFileName -IsTV $isTV -TVShowBasePath $tvShowBasePath `
-        -MovieBasePath $movieBasePath -MoveFiles $Config.processing.moveFiles | Out-Null
+      try {
+        Move-CompressarrRoutedFile -FileName $newFileName -IsTV $isTV -TVShowBasePath $tvShowBasePath `
+          -MovieBasePath $movieBasePath -MoveFiles $Config.processing.moveFiles | Out-Null
+      }
+      catch {
+        # The conversion itself already succeeded - a bad/blank base path
+        # shouldn't take down the whole run, just leave this file where
+        # HandBrake wrote it and note why the move step was skipped.
+        Write-CompressarrLog "  Move skipped: $($_.Exception.Message)" -Severity 'E'
+      }
 
       if ($resumeEntry) { $resumeEntry.status = 'Completed' }
     }

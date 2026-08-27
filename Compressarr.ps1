@@ -36,7 +36,7 @@ param(
   [switch]$Once
 )
 
-$script:CompressarrVersion = '1.0.0-beta.4'
+$script:CompressarrVersion = '1.0.0-beta.5'
 
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
@@ -78,14 +78,17 @@ function Invoke-CompressarrRun {
   Write-CompressarrLog "Compressarr v$script:CompressarrVersion - run started $timestamp"
   Write-CompressarrLog ('-' * 80)
 
+  # Test-CompressarrPath, not the raw Test-Path cmdlet - Test-Path's -Path
+  # parameter is mandatory and throws on an empty string, which a cleared
+  # config field would otherwise turn into a crash instead of this message.
   $hbloc = Expand-CompressarrPath $Config.handbrake.cliPath
-  if (-not (Test-Path $hbloc)) {
+  if (-not (Test-CompressarrPath $Config.handbrake.cliPath)) {
     Write-CompressarrLog "HandBrakeCLI.exe not found at $hbloc. Download it from https://handbrake.fr/downloads2.php" -Severity 'E'
     return $null
   }
 
   $presetsPath = Expand-CompressarrPath $Config.handbrake.presetsPath
-  if (-not (Test-Path $presetsPath)) {
+  if (-not (Test-CompressarrPath $Config.handbrake.presetsPath)) {
     Write-CompressarrLog "HandBrake presets file not found at $presetsPath" -Severity 'E'
     return $null
   }

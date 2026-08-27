@@ -81,8 +81,12 @@ function Move-CompressarrMovieFile {
   #>
   param(
     [Parameter(Mandatory)] [string]$FileName,
-    [Parameter(Mandatory)] [string]$OutputBase
+    [Parameter(Mandatory)] [AllowEmptyString()] [string]$OutputBase
   )
+
+  if ([string]::IsNullOrWhiteSpace($OutputBase)) {
+    throw "Compressarr: cannot move '$FileName' - Movie base path is not configured for this lane."
+  }
 
   if (-not (Test-Path $OutputBase)) {
     New-Item -Path $OutputBase -ItemType Directory -Force | Out-Null
@@ -130,8 +134,12 @@ function Move-CompressarrTVFile {
   #>
   param(
     [Parameter(Mandatory)] [string]$FileName,
-    [Parameter(Mandatory)] [string]$OutputBase
+    [Parameter(Mandatory)] [AllowEmptyString()] [string]$OutputBase
   )
+
+  if ([string]::IsNullOrWhiteSpace($OutputBase)) {
+    throw "Compressarr: cannot move '$FileName' - TV Show base path is not configured for this lane."
+  }
 
   $info = Get-CompressarrEpisodeInfo -FileName $FileName
 
@@ -160,8 +168,8 @@ function Move-CompressarrRoutedFile {
   param(
     [Parameter(Mandatory)] [string]$FileName,
     [Parameter(Mandatory)] [bool]$IsTV,
-    [Parameter(Mandatory)] [string]$TVShowBasePath,
-    [Parameter(Mandatory)] [string]$MovieBasePath,
+    [Parameter(Mandatory)] [AllowEmptyString()] [string]$TVShowBasePath,
+    [Parameter(Mandatory)] [AllowEmptyString()] [string]$MovieBasePath,
     [Parameter(Mandatory)] [bool]$MoveFiles
   )
 

@@ -18,6 +18,9 @@ function Initialize-CompressarrLogging {
     [Parameter(Mandatory)] [string]$Timestamp
   )
 
+  if ([string]::IsNullOrWhiteSpace($LogFilePath)) {
+    throw 'Compressarr: Log folder is not configured.'
+  }
   if (-not (Test-Path $LogFilePath)) {
     New-Item -Path $LogFilePath -ItemType Directory -Force | Out-Null
   }

@@ -96,14 +96,17 @@ function Add-CompressarrPathRow {
   $Panel.Controls.Add($browseBtn, 2, $Row.Value)
 
   $browseBtn.Add_Click({
+    # Test-CompressarrPath (not the raw Test-Path cmdlet) because Test-Path's
+    # -Path parameter is mandatory and throws on an empty string - and every
+    # one of these fields starts out empty until the user fills it in.
     if ($Browse -eq 'Folder') {
       $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-      if (Test-Path $box.Text) { $dlg.SelectedPath = $box.Text }
+      if (Test-CompressarrPath $box.Text) { $dlg.SelectedPath = $box.Text }
       if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $box.Text = $dlg.SelectedPath }
     }
     else {
       $dlg = New-Object System.Windows.Forms.OpenFileDialog
-      if (Test-Path $box.Text) {
+      if (Test-CompressarrPath $box.Text) {
         $dlg.InitialDirectory = Split-Path -Path $box.Text -Parent
         $dlg.FileName = Split-Path -Path $box.Text -Leaf
       }
