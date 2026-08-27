@@ -98,6 +98,108 @@ function Add-CompressarrTextRow {
   return $box
 }
 
+function New-CompressarrCompactTextBox {
+  param($Value, [int]$Width = 90)
+  $box = New-Object System.Windows.Forms.TextBox
+  $box.Text = [string]$Value
+  $box.Width = $Width
+  return $box
+}
+
+function New-CompressarrCompactComboBox {
+  param([string[]]$Items = @(), $Value, [int]$Width = 130)
+  $combo = New-Object System.Windows.Forms.ComboBox
+  $combo.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+  if ($Items -and $Items.Count -gt 0) { [void]$combo.Items.AddRange($Items) }
+  $combo.Text = [string]$Value
+  $combo.Width = $Width
+  return $combo
+}
+
+function Add-CompressarrDualRow {
+  <#
+    Packs two independent label+control pairs onto one row, each control
+    kept at its own natural/explicit size rather than stretched - for
+    compact fields (small numbers, short dropdowns) that don't need the
+    full row width Add-CompressarrTextRow/ComboRow give a single field.
+  #>
+  param($Panel, [ref]$Row, [string]$Label1, $Control1, [string]$Label2, $Control2)
+
+  $Panel.RowCount = $Row.Value + 1
+  [void]$Panel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 36)))
+
+  $inner = New-Object System.Windows.Forms.TableLayoutPanel
+  $inner.Dock = 'Fill'
+  $inner.ColumnCount = 5
+  [void]$inner.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
+  [void]$inner.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
+  [void]$inner.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
+  [void]$inner.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
+  [void]$inner.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+  $inner.RowCount = 1
+  [void]$inner.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+
+  $lbl1 = New-Object System.Windows.Forms.Label
+  $lbl1.Text = $Label1
+  $lbl1.AutoSize = $true
+  $lbl1.Anchor = [System.Windows.Forms.AnchorStyles]::Left
+  $lbl1.Margin = New-Object System.Windows.Forms.Padding(0, 7, 8, 0)
+  $inner.Controls.Add($lbl1, 0, 0)
+
+  $Control1.Margin = New-Object System.Windows.Forms.Padding(0, 3, 28, 3)
+  $Control1.Anchor = [System.Windows.Forms.AnchorStyles]::Left
+  $inner.Controls.Add($Control1, 1, 0)
+
+  $lbl2 = New-Object System.Windows.Forms.Label
+  $lbl2.Text = $Label2
+  $lbl2.AutoSize = $true
+  $lbl2.Anchor = [System.Windows.Forms.AnchorStyles]::Left
+  $lbl2.Margin = New-Object System.Windows.Forms.Padding(0, 7, 8, 0)
+  $inner.Controls.Add($lbl2, 2, 0)
+
+  $Control2.Margin = New-Object System.Windows.Forms.Padding(0, 3, 0, 3)
+  $Control2.Anchor = [System.Windows.Forms.AnchorStyles]::Left
+  $inner.Controls.Add($Control2, 3, 0)
+
+  $Panel.Controls.Add($inner, 0, $Row.Value)
+  $Panel.SetColumnSpan($inner, 3)
+  $Row.Value++
+}
+
+function Add-CompressarrCheckboxRow {
+  <#
+    Multiple checkboxes on a single row, each using the checkbox's own
+    .Text (no separate label column) - far more compact than one full row
+    per checkbox. Returns the CheckBox controls in the same order passed
+    in, via $Items = @(@{Label='...'; Value=$true}, ...).
+  #>
+  param($Panel, [ref]$Row, [array]$Items)
+
+  $Panel.RowCount = $Row.Value + 1
+  [void]$Panel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 30)))
+
+  $flow = New-Object System.Windows.Forms.FlowLayoutPanel
+  $flow.Dock = 'Fill'
+  $flow.FlowDirection = [System.Windows.Forms.FlowDirection]::LeftToRight
+  $flow.WrapContents = $true
+
+  $checkBoxes = New-Object System.Collections.Generic.List[object]
+  foreach ($item in $Items) {
+    $cb = New-Object System.Windows.Forms.CheckBox
+    $cb.Text = $item.Label
+    $cb.Checked = [bool]$item.Value
+    $cb.AutoSize = $true
+    $cb.Margin = New-Object System.Windows.Forms.Padding(0, 5, 26, 5)
+    $flow.Controls.Add($cb)
+    $checkBoxes.Add($cb)
+  }
+
+  $Panel.Controls.Add($flow, 0, $Row.Value)
+  $Panel.SetColumnSpan($flow, 3)
+  $Row.Value++
+  return ,$checkBoxes
+}
+
 function Add-CompressarrCheckRow {
   param($Panel, [ref]$Row, [string]$Label, [bool]$Value)
   Add-CompressarrRowLabel -Panel $Panel -Row $Row -LabelText $Label
@@ -239,23 +341,39 @@ function Show-CompressarrMainForm {
   $generalTab.Controls.Add($generalPanel)
 
   $row = 0
-  $hbCliBox         = Add-CompressarrPathRow  -Panel $generalPanel -Row ([ref]$row) -Label 'HandBrakeCLI.exe location'          -Value $Config.handbrake.cliPath -Browse File
-  $hbPresetsBox     = Add-CompressarrPathRow  -Panel $generalPanel -Row ([ref]$row) -Label 'Presets file (presets.json)'        -Value $Config.handbrake.presetsPath -Browse File
-  $hbOptsBox        = Add-CompressarrTextRow  -Panel $generalPanel -Row ([ref]$row) -Label 'Extra HandBrake options'            -Value $Config.handbrake.options
-  $logPathBox       = Add-CompressarrPathRow  -Panel $generalPanel -Row ([ref]$row) -Label 'Log folder'                        -Value $Config.logging.logFilePath -Browse Folder
-  $retentionBox     = Add-CompressarrTextRow  -Panel $generalPanel -Row ([ref]$row) -Label 'Log retention (days)'               -Value $Config.logging.retentionDays
-  $reportPathBox    = Add-CompressarrPathRow  -Panel $generalPanel -Row ([ref]$row) -Label 'Report folder'                     -Value $Config.report.reportPath -Browse Folder
-  $openAfterRunCombo = Add-CompressarrComboRow -Panel $generalPanel -Row ([ref]$row) -Label 'Open report after run' -Items @('Always', 'Error', 'Never') -Value $Config.report.openAfterRun
-  $vidTypesBox      = Add-CompressarrTextRow  -Panel $generalPanel -Row ([ref]$row) -Label 'Video file types (comma-separated)' -Value ($Config.processing.vidTypes -join ',')
-  $limitBox         = Add-CompressarrTextRow  -Panel $generalPanel -Row ([ref]$row) -Label 'Max files per run'                  -Value $Config.processing.limit
-  $minSizeBox       = Add-CompressarrTextRow  -Panel $generalPanel -Row ([ref]$row) -Label 'Minimum file size (e.g. 100mb)'      -Value $Config.processing.minSize
-  $outSameAsInCheck = Add-CompressarrCheckRow -Panel $generalPanel -Row ([ref]$row) -Label 'Write output to same folder as input' -Value ([bool]$Config.processing.outSameAsIn)
-  $moveFilesCheck   = Add-CompressarrCheckRow -Panel $generalPanel -Row ([ref]$row) -Label 'Move converted files into show/movie folders' -Value ([bool]$Config.processing.moveFiles)
-  $deleteCombo      = Add-CompressarrComboRow -Panel $generalPanel -Row ([ref]$row) -Label 'Original file after conversion' -Items @('Maintain', 'Delete', 'Recycle') -Value $Config.processing.deleteAfterConvert
-  $postExecCmdBox   = Add-CompressarrPathRow  -Panel $generalPanel -Row ([ref]$row) -Label 'Post-execution command (optional)'  -Value $Config.postExec.cmd -Browse File
-  $postExecArgsBox  = Add-CompressarrTextRow  -Panel $generalPanel -Row ([ref]$row) -Label 'Post-execution arguments'           -Value $Config.postExec.args
-  $repeatCountBox   = Add-CompressarrTextRow  -Panel $generalPanel -Row ([ref]$row) -Label 'Repeat run count'                   -Value $Config.repeat.count
-  $monitorCheck     = Add-CompressarrCheckRow -Panel $generalPanel -Row ([ref]$row) -Label 'Monitor mode (keep watching for new files)' -Value ([bool]$Config.repeat.monitor)
+  $hbCliBox      = Add-CompressarrPathRow -Panel $generalPanel -Row ([ref]$row) -Label 'HandBrakeCLI.exe location'   -Value $Config.handbrake.cliPath -Browse File
+  $hbPresetsBox  = Add-CompressarrPathRow -Panel $generalPanel -Row ([ref]$row) -Label 'Presets file (presets.json)' -Value $Config.handbrake.presetsPath -Browse File
+  $hbOptsBox     = Add-CompressarrTextRow -Panel $generalPanel -Row ([ref]$row) -Label 'Extra HandBrake options'     -Value $Config.handbrake.options
+
+  $logPathBox    = Add-CompressarrPathRow -Panel $generalPanel -Row ([ref]$row) -Label 'Log folder'    -Value $Config.logging.logFilePath -Browse Folder
+  $reportPathBox = Add-CompressarrPathRow -Panel $generalPanel -Row ([ref]$row) -Label 'Report folder' -Value $Config.report.reportPath -Browse Folder
+
+  $retentionBox = New-CompressarrCompactTextBox -Value $Config.logging.retentionDays -Width 60
+  $openAfterRunCombo = New-CompressarrCompactComboBox -Items @('Always', 'Error', 'Never') -Value $Config.report.openAfterRun -Width 110
+  Add-CompressarrDualRow -Panel $generalPanel -Row ([ref]$row) -Label1 'Log retention (days)' -Control1 $retentionBox -Label2 'Open report after run' -Control2 $openAfterRunCombo
+
+  $vidTypesBox = Add-CompressarrTextRow -Panel $generalPanel -Row ([ref]$row) -Label 'Video file types (comma-separated)' -Value ($Config.processing.vidTypes -join ',')
+
+  $limitBox = New-CompressarrCompactTextBox -Value $Config.processing.limit -Width 70
+  $minSizeBox = New-CompressarrCompactTextBox -Value $Config.processing.minSize -Width 90
+  Add-CompressarrDualRow -Panel $generalPanel -Row ([ref]$row) -Label1 'Max files per run' -Control1 $limitBox -Label2 'Minimum file size (e.g. 100mb)' -Control2 $minSizeBox
+
+  $generalChecks = Add-CompressarrCheckboxRow -Panel $generalPanel -Row ([ref]$row) -Items @(
+    @{ Label = 'Write output to same folder as input'; Value = [bool]$Config.processing.outSameAsIn },
+    @{ Label = 'Move converted files into show/movie folders'; Value = [bool]$Config.processing.moveFiles },
+    @{ Label = 'Monitor mode (keep watching for new files)'; Value = [bool]$Config.repeat.monitor }
+  )
+  $outSameAsInCheck = $generalChecks[0]
+  $moveFilesCheck = $generalChecks[1]
+  $monitorCheck = $generalChecks[2]
+
+  $deleteCombo = New-CompressarrCompactComboBox -Items @('Maintain', 'Delete', 'Recycle') -Value $Config.processing.deleteAfterConvert -Width 110
+  $repeatCountBox = New-CompressarrCompactTextBox -Value $Config.repeat.count -Width 60
+  Add-CompressarrDualRow -Panel $generalPanel -Row ([ref]$row) -Label1 'Original file after conversion' -Control1 $deleteCombo -Label2 'Repeat run count' -Control2 $repeatCountBox
+
+  $postExecCmdBox = Add-CompressarrPathRow -Panel $generalPanel -Row ([ref]$row) -Label 'Post-execution command (optional)' -Value $Config.postExec.cmd -Browse File
+  $postExecArgsBox = Add-CompressarrTextRow -Panel $generalPanel -Row ([ref]$row) -Label 'Post-execution arguments' -Value $Config.postExec.args
+
   Add-CompressarrFillerRow -Panel $generalPanel -Row ([ref]$row)
 
   $pathFields['handbrake.cliPath'] = $hbCliBox
@@ -312,7 +430,14 @@ function Show-CompressarrMainForm {
   $refreshPresets = {
     try {
       Clear-CompressarrPresetCache
-      $names = @(Get-CompressarrPresetNames -PresetsPath $hbPresetsBox.Text)
+      # NOT @(...) here - Get-CompressarrPresetNames already returns a
+      # single preserved List[object] (comma-operator return, so it
+      # doesn't unroll to $null when empty - see Compressarr.Config.psm1).
+      # Wrapping that in @() again produces a 1-element array whose only
+      # element IS the list, so AddRange added one "item" to the combo
+      # box whose displayed text was every preset name space-joined onto
+      # a single line. .ToArray() gives AddRange the real string[] it needs.
+      $names = (Get-CompressarrPresetNames -PresetsPath $hbPresetsBox.Text).ToArray()
       foreach ($combo in $presetFields.Values) {
         $current = $combo.Text
         $combo.Items.Clear()
