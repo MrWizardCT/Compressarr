@@ -36,7 +36,7 @@ param(
   [switch]$Once
 )
 
-$script:CompressarrVersion = '1.0.0-rc.2'
+$script:CompressarrVersion = '1.0.0-rc.3'
 
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
@@ -167,6 +167,21 @@ function Invoke-CompressarrRun {
   $report = New-CompressarrReport -ReportPath $reportPath -Timestamp $timestamp -LaneResults $laneResults `
     -RunTime $runTime -LogFilePath $logFilePath -SummaryLogFile $summaryLogFile -RunNumber $runNumber
   Show-CompressarrReport -ReportFile $report.Path -OpenAfterRun $Config.report.openAfterRun -ErrorCount $report.ErrorCount
+
+  # Toast fires independent of report.openAfterRun - that setting can be
+  # 'Never' or 'Error' (no errors), in which case the report never opens
+  # on its own and this is the only completion signal the user gets.
+  # Skipped entirely for an empty pass (e.g. a quiet monitor-mode poll
+  # that found nothing) - same gate as the run counter/history record
+  # above, so idle polling never spams a notification.
+  if ($totalFiles -gt 0) {
+    try {
+      Show-CompressarrToastNotification -ReportFile $report.Path -TotalFiles $totalFiles -BeginSizeGB $totalBeg -EndSizeGB $totalEnd -RunTime $runTime
+    }
+    catch {
+      Write-CompressarrLog "  Toast notification skipped: $($_.Exception.Message)" -Severity 'E'
+    }
+  }
 
   return $report
 }

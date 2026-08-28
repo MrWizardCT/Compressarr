@@ -219,7 +219,7 @@ function Invoke-CompressarrLaneConversion {
         LaneName = $LaneName; FileName = $file.Name; FullName = $file.FullName; NewFileName = $null
         ContentType = $contentType; PresetName = $presetName
         BeginSizeGB = $beginSizeGB; EndSizeGB = 0; Success = $false; DetailLogFile = $null
-        StartTime = $startTime; EndTime = (Get-Date)
+        StartTime = $startTime; EndTime = (Get-Date); ArrStatus = $null
       })
       continue
     }
@@ -269,6 +269,7 @@ function Invoke-CompressarrLaneConversion {
     }
 
     $endSizeGB = 0
+    $arrStatus = $null
 
     if ($success) {
       Clear-CompressarrTitleMetadata -FilePath $tempFileName
@@ -320,10 +321,14 @@ function Invoke-CompressarrLaneConversion {
       # an otherwise-successful conversion.
       try {
         $arrResult = Invoke-CompressarrArrUnmonitor -Config $Config -FileName $file.Name -IsTV $isTV
-        if ($arrResult) { Write-CompressarrLog "  $arrResult" }
+        if ($arrResult) {
+          Write-CompressarrLog "  $arrResult"
+          $arrStatus = $arrResult
+        }
       }
       catch {
         Write-CompressarrLog "  Arr unmonitor skipped: $($_.Exception.Message)" -Severity 'E'
+        $arrStatus = "Failed: $($_.Exception.Message)"
       }
 
       if ($resumeEntry) { $resumeEntry.status = 'Completed' }
@@ -352,6 +357,7 @@ function Invoke-CompressarrLaneConversion {
       DetailLogFile = $dtlLogFile
       StartTime     = $startTime
       EndTime       = $endTime
+      ArrStatus     = $arrStatus
     })
   }
 

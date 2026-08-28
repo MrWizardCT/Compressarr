@@ -4,12 +4,33 @@
 
 <br clear="left">
 
-A Windows PowerShell + [HandBrakeCLI](https://handbrake.fr/downloads2.php) batch
-video converter. A from-scratch rewrite of
+A complete, end-to-end Windows batch video conversion workflow - from the
+moment a file lands in a watched folder to the moment you're notified it's
+done, with nothing manual in between. Compressarr watches your folders,
+transcodes new video through
+[HandBrakeCLI](https://handbrake.fr/downloads2.php), automatically files
+the result into an organized TV Show/Movie library, cleans up after
+itself, optionally tells Sonarr/Radarr the item no longer needs
+monitoring, and finishes with a standalone report plus a desktop
+notification. A from-scratch rewrite of
 [VidMonHB](https://github.com/mrpaulwasserman/VidMonHB), keeping the same
-core idea - scan a folder, transcode matching video files, file the results
-into Show/Movie folders - while adding an independent UHD content lane and
-a modular codebase.
+core idea while adding an independent UHD content lane, Sonarr/Radarr
+integration, and a modular codebase.
+
+## The complete workflow
+
+```
+Watch folder → Detect TV/Movie → Convert (HandBrake) → File into library
+   → Clean up source → Unmonitor in Sonarr/Radarr → Report + toast
+```
+
+1. **Watch** - each lane's Input folder is scanned for new video files, either once per launch or continuously in Monitor mode.
+2. **Detect** - every file is auto-classified as a TV episode or a Movie from its filename, no separate lanes needed for each.
+3. **Convert** - HandBrakeCLI transcodes it using that content type's configured preset.
+4. **File it** - the converted file, plus any companion files (subtitles, `.nfo`, artwork), is routed into an organized `Show Name\Season NN\` or `Movie Title\` folder.
+5. **Clean up** - the original is deleted/recycled/kept per your setting, and now-empty source folders (including a TV show's own folder once its last season is gone) are removed.
+6. **Notify Sonarr/Radarr** *(optional)* - the matching episode/movie is unmonitored so it isn't re-grabbed.
+7. **Report** - a standalone HTML report is generated, and a desktop toast notification confirms the run is complete - click it to open the report, whether or not Compressarr is still running.
 
 ## What it does
 
@@ -52,13 +73,18 @@ in use), not a single cramped banner line.
 
 At the end of a run, Compressarr writes a **standalone HTML report** to the
 `Reports\` folder (no email/SMTP involved) covering per-lane results (with
-each file's type and preset), disk savings, any errors, and daily/monthly/
-yearly history rollups. The `report.openAfterRun` setting
-(`Always`/`Error`/`Never`) controls whether it opens automatically. Each
-report is labeled with a running run number (`Run #237: ...`) - a
-persistent, cumulative count of runs that actually processed at least one
-file (tracked in `compressarr.runcount.json`; empty scans, including quiet
-monitor-mode polls, don't count).
+each file's type, preset, and Sonarr/Radarr outcome), disk savings, any
+errors, and daily/monthly/yearly history rollups. The `report.openAfterRun`
+setting (`Always`/`Error`/`Never`) controls whether it opens automatically
+- independent of that setting, a desktop toast notification also confirms
+completion and opens the report when clicked (see **Completion toast**
+under the General tab, below). Each report is labeled with a running run
+number (`Run #237: ...`) - a persistent, cumulative count of runs that
+actually processed at least one file (tracked in
+`compressarr.runcount.json`; empty scans, including quiet monitor-mode
+polls, don't count).
+
+<img src="Assets/Screenshots/sample-report.png" alt="Sample Compressarr HTML report, showing both lanes and the Sonarr/Radarr column" width="700">
 
 ### Startup screen
 
@@ -68,6 +94,15 @@ configuration screen. Every launch after that shows a brief splash instead
 the config screen; if nothing is clicked before the countdown reaches zero,
 Compressarr runs automatically with whatever's already configured. The
 countdown length (default 10s) is itself a General tab setting.
+
+<img src="Assets/Screenshots/startup-splash.png" alt="Compressarr startup countdown splash" width="420">
+
+If a previous run left files tracked in `compressarr.resume.json` (killed
+mid-run, or a file that errored out), a similar prompt appears right
+after this one - a red warning showing how many files are still tracked,
+with **Clear Resume Cache** (discard them, start fresh) or **Finish
+Processing Files** (pick up where it left off) - again defaulting to
+Finish if left untouched.
 
 ---
 
@@ -125,21 +160,21 @@ Compressarr needs a `presets.json` to read preset definitions from (encoder
 settings, container format, etc.). The default location Compressarr looks
 for is `%appdata%\HandBrake\presets.json`.
 
-The default config (`Config\compressarr.settings.json`) is set up to use
-the presets from
-[MrWizardCT/Handbrake-Custom-Presets](https://github.com/MrWizardCT/Handbrake-Custom-Presets)
-- `PlexSTD2026` for the HD/SD lane, `PlexUHDAV1` for UHD. Import that
-preset file into HandBrake (or point `handbrake.presetsPath` at it
-directly) to use the config as shipped.
+The shipped default config's HD/SD lane preset is `VeryFastDDtoAAC`, one of
+HandBrake's own built-in presets - install the full
+[HandBrake GUI](https://handbrake.fr/downloads.php) once and it creates a
+`presets.json` with all the built-in presets already in it, so the config
+works as shipped with no further setup there. The UHD lane's preset is
+left blank, since a good UHD preset depends on your own hardware (HEVC/AV1
+encoder support, etc.) - pick one from your `presets.json` via the GUI's
+Paths tab once you've decided.
 
-Using your own presets instead is just as easy:
-
-- Install the full [HandBrake GUI](https://handbrake.fr/downloads.php) once,
-  which creates a `presets.json` automatically with its built-in presets, or
-  export your own presets from it.
-- Point `handbrake.presetsPath` in the config (or the "Presets file" field
-  in the GUI's General tab) at any `presets.json` you already have, and set
-  each lane's TV/Movie preset fields to match.
+Using your own custom presets instead is just as easy - export them from
+the HandBrake GUI, or start from
+[MrWizardCT/Handbrake-Custom-Presets](https://github.com/MrWizardCT/Handbrake-Custom-Presets).
+Point `handbrake.presetsPath` in the config (or the "Presets file" field in
+the GUI's General tab) at whichever `presets.json` you're using, and set
+each lane's TV/Movie preset fields to match.
 
 ### 6. (Optional) Title metadata clearing
 
@@ -161,6 +196,8 @@ If no config file exists yet at the default location
 defaults so there's something to edit and save.
 
 ### General tab
+
+<img src="Assets/Screenshots/general-tab.png" alt="Compressarr General tab" width="600">
 
 Settings that apply across both lanes:
 
@@ -184,11 +221,24 @@ Settings that apply across both lanes:
 | Change Settings countdown (seconds) | How long the startup splash waits before running automatically (see Startup screen above) |
 | Monitor mode | Keep watching the lane input folders and auto-run when new files show up |
 
-### HD/SD and UHD tabs
+**Completion toast**: independent of "Open report after run" (which can be
+set to `Error` or `Never`), every run that actually processed at least one
+file also shows a Windows toast notification in the lower-right corner -
+logo, file count, before/after size and savings, and duration. Clicking it
+opens the full report in your default browser, whether or not Compressarr
+is still running (useful for an unattended/scheduled run you check on
+later). The toast is sent under PowerShell's own notification identity
+rather than a Compressarr-specific one, so Action Center's sender/grouping
+UI shows "Windows PowerShell" even though the toast itself displays
+Compressarr's logo and content.
 
-Both lane tabs have the same six fields - fill in whichever lane(s) you
-actually plan to use; an empty **Input folder** means that lane is skipped
-entirely.
+### Paths tab
+
+<img src="Assets/Screenshots/paths-tab.png" alt="Compressarr Paths tab, showing the HD/SD and UHD lane sections" width="600">
+
+Both lane sections on this tab have the same six fields - fill in
+whichever lane(s) you actually plan to use; an empty **Input folder**
+means that lane is skipped entirely.
 
 | Field | What it's for |
 |---|---|
@@ -227,6 +277,8 @@ turns red/highlighted if it doesn't match anything in that file, or a path
 doesn't exist yet.
 
 ### ...arrs tab
+
+<img src="Assets/Screenshots/arrs-tab.png" alt="Compressarr ...arrs tab, with Sonarr and Radarr both enabled" width="600">
 
 Optional integration with [Sonarr](https://sonarr.tv/) and
 [Radarr](https://radarr.video/): after a file finishes converting

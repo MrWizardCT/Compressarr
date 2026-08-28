@@ -79,6 +79,13 @@ function Get-CompressarrLaneReportSection {
     $savings = [math]::Round($r.BeginSizeGB - $r.EndSizeGB, 3)
     $contentType = if ($r.ContentType) { $r.ContentType } else { '' }
     $presetName = if ($r.PresetName) { $r.PresetName } else { '' }
+    # Blank whenever Sonarr/Radarr integration wasn't attempted for this
+    # file - either the conversion itself failed, or neither service is
+    # enabled for this content type - not just when it succeeded/failed.
+    # [char]0x2014 (em dash), not a literal non-ASCII character in source -
+    # a literal here risks silent mojibake if this file is ever read back
+    # with a different encoding than it was saved with.
+    $arrStatus = if ($r.ArrStatus) { $r.ArrStatus } else { [string][char]0x2014 }
     @"
       <tr class="$statusClass">
         <td>$(ConvertTo-CompressarrHtmlEncoded $r.FileName)</td>
@@ -88,6 +95,7 @@ function Get-CompressarrLaneReportSection {
         <td>$($r.EndSizeGB) GB</td>
         <td>$savings GB</td>
         <td>$statusText</td>
+        <td>$(ConvertTo-CompressarrHtmlEncoded $arrStatus)</td>
       </tr>
 "@
   }
@@ -99,7 +107,7 @@ function Get-CompressarrLaneReportSection {
     <h3>$LaneDisplayName <span class="muted">($($Results.Count) file(s), $beg GB &rarr; $end GB)</span></h3>
     <div class="table-wrap">
     <table>
-      <thead><tr><th>File</th><th>Type</th><th>Preset</th><th>Before</th><th>After</th><th>Savings</th><th>Status</th></tr></thead>
+      <thead><tr><th>File</th><th>Type</th><th>Preset</th><th>Before</th><th>After</th><th>Savings</th><th>Status</th><th>Sonarr/Radarr</th></tr></thead>
       <tbody>
         $($rows -join "`n")
       </tbody>
@@ -253,9 +261,96 @@ function Show-CompressarrReport {
   }
 }
 
+function Show-CompressarrToastNotification {
+  <#
+    Shows a Windows toast (lower-right, Action Center) summarizing a
+    completed run - independent of report.openAfterRun, since that
+    setting can be 'Never' or 'Error' (no errors), in which case the
+    report never opens on its own and this is the only completion signal
+    the user gets. Clicking the toast opens the report in the default
+    browser.
+
+    Uses the native Windows.UI.Notifications WinRT API directly (no
+    BurntToast or any other external module - keeps Compressarr free of
+    PowerShell Gallery dependencies, consistent with the rest of the app).
+    The toast is registered under PowerShell's own well-known
+    AppUserModelID rather than a custom one Compressarr would have to
+    register via a Start Menu shortcut - the tradeoff is that Action
+    Center's summary/grouping UI shows "Windows PowerShell" as the
+    sending app, even though the toast's own content (logo, text) is
+    Compressarr's. The `launch`/activationType="protocol" attribute makes
+    the click-to-open-report behavior work via the OS shell directly, so
+    it still fires even if this PowerShell process has already exited by
+    the time the user clicks it (e.g. an overnight scheduled run).
+
+    Never throws on the caller's behalf for anything toast-related failing
+    (unsupported OS, no notification support, etc.) - callers should still
+    wrap this in their own try/catch per the same soft-fail pattern used
+    for the Sonarr/Radarr integration, since a completed conversion run
+    should never be treated as failed just because the notification step
+    couldn't display something.
+  #>
+  param(
+    [Parameter(Mandatory)] [string]$ReportFile,
+    [Parameter(Mandatory)] [int]$TotalFiles,
+    [Parameter(Mandatory)] [double]$BeginSizeGB,
+    [Parameter(Mandatory)] [double]$EndSizeGB,
+    [Parameter(Mandatory)] [TimeSpan]$RunTime
+  )
+
+  [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+  [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+  [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
+
+  $savingsGB = [math]::Round($BeginSizeGB - $EndSizeGB, 3)
+  $savingsPct = if ($BeginSizeGB -gt 0) { [math]::Round(100 - ($EndSizeGB / $BeginSizeGB) * 100, 2) } else { 0 }
+  $fileWord = if ($TotalFiles -eq 1) { 'file' } else { 'files' }
+  # [char]0x2192 (right arrow), not a literal non-ASCII character in
+  # source - see the same reasoning in Get-CompressarrLaneReportSection's
+  # em dash: a literal here risks silent mojibake if this file is ever
+  # read back with a different encoding than it was saved with.
+  $arrow = [string][char]0x2192
+
+  $line1 = "$TotalFiles $fileWord processed"
+  $line2 = "$BeginSizeGB GB $arrow $EndSizeGB GB (saved $savingsGB GB, $savingsPct%)"
+  $line3 = "Duration: $($RunTime.Hours)h $($RunTime.Minutes)m $($RunTime.Seconds)s"
+
+  $reportUri = ([uri]$ReportFile).AbsoluteUri
+  $logoPath = Join-Path -Path (Get-CompressarrAssetsPath) -ChildPath 'compressarr-logo.png'
+  $imageXml = ''
+  if (Test-Path $logoPath) {
+    $logoUri = ([uri]$logoPath).AbsoluteUri
+    $imageXml = "<image placement=`"appLogoOverride`" hint-crop=`"circle`" src=`"$([System.Security.SecurityElement]::Escape($logoUri))`"/>"
+  }
+
+  $toastXml = @"
+<toast activationType="protocol" launch="$([System.Security.SecurityElement]::Escape($reportUri))">
+  <visual>
+    <binding template="ToastGeneric">
+      $imageXml
+      <text>Compressarr - Run Complete</text>
+      <text>$([System.Security.SecurityElement]::Escape($line1))</text>
+      <text>$([System.Security.SecurityElement]::Escape($line2))</text>
+      <text>$([System.Security.SecurityElement]::Escape($line3))</text>
+    </binding>
+  </visual>
+</toast>
+"@
+
+  $xmlDoc = New-Object Windows.Data.Xml.Dom.XmlDocument
+  $xmlDoc.LoadXml($toastXml)
+  $toast = New-Object Windows.UI.Notifications.ToastNotification($xmlDoc)
+
+  # PowerShell's own registered AUMID - see the docstring above for why
+  # this is used instead of a Compressarr-specific one.
+  $aumid = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+  [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($aumid).Show($toast)
+}
+
 Export-ModuleMember -Function `
   Get-CompressarrHistoryRollups, `
   Get-CompressarrAssetsPath, `
   Get-CompressarrBase64Asset, `
   New-CompressarrReport, `
-  Show-CompressarrReport
+  Show-CompressarrReport, `
+  Show-CompressarrToastNotification
