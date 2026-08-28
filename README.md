@@ -242,7 +242,7 @@ means that lane is skipped entirely.
 
 | Field | What it's for |
 |---|---|
-| Input folder | Where Compressarr looks for source video files for this lane |
+| Input folder | Where Compressarr looks for source video files for this lane (This should be the folder where Sonarr/Radarr drops its files) |
 | Output folder | Where HandBrake writes the converted file initially |
 | TV Show preset | HandBrake preset used for files detected as TV episodes |
 | Movie preset | HandBrake preset used for everything else |
@@ -383,7 +383,7 @@ for the author's own preset set if you'd rather start from those.
   "logging": { "logFilePath": ".\\Logs", "retentionDays": 30 },
   "postExec": { "cmd": "", "args": "" },
   "report": { "reportPath": ".\\Reports", "openAfterRun": "Always" },
-  "repeat": { "count": 0, "monitor": false },
+  "repeat": { "count": 0, "monitor": true },
   "startup": { "countdownSeconds": 10 },
   "arrs": {
     "sonarr": { "enabled": false, "url": "http://localhost:8989", "apiKey": "" },

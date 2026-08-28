@@ -56,7 +56,7 @@ $script:DefaultConfigJson = @'
   },
   "repeat": {
     "count": 0,
-    "monitor": false
+    "monitor": true
   },
   "startup": {
     "countdownSeconds": 10
