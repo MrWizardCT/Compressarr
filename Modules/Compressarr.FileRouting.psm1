@@ -278,6 +278,18 @@ function Move-CompressarrCompanionFiles {
 
   if ($DeleteAfterConvert -eq 'Maintain') { return }
 
+  # Never sweep or remove the lane's Input root itself - even when a file
+  # was dropped there directly (no per-show/per-title subfolder) and it's
+  # now the only thing left in it. That folder is the lane's persistent
+  # watch folder for the next run, and may still hold other unrelated
+  # content this function never inspected (only $OriginalFileFullName's own
+  # siblings were considered above).
+  $inputRootFull = (Resolve-Path -Path $InputRoot -ErrorAction SilentlyContinue).Path
+  $originalDirFull = (Resolve-Path -Path $OriginalFileDirectory -ErrorAction SilentlyContinue).Path
+  if ($inputRootFull -and [string]::Equals($originalDirFull, $inputRootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+    return
+  }
+
   # Clear out anything still left (e.g. a subfolder, or an item a move
   # above couldn't complete), then remove the now-empty source folder
   # itself, leaving a clean workspace for the next run.
@@ -295,7 +307,6 @@ function Move-CompressarrCompanionFiles {
   # Cascade upward: check each parent folder in turn, removing it too as
   # long as it's now completely empty, stopping the moment we reach a
   # non-empty folder or the lane's Input root.
-  $inputRootFull = (Resolve-Path -Path $InputRoot -ErrorAction SilentlyContinue).Path
   if ($inputRootFull) {
     $current = Split-Path -Path $OriginalFileDirectory -Parent
     while ($current -and (Test-Path $current) -and

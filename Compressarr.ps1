@@ -36,7 +36,7 @@ param(
   [switch]$Once
 )
 
-$script:CompressarrVersion = '1.0.0-beta.14'
+$script:CompressarrVersion = '1.0.0-beta.15'
 
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
@@ -252,6 +252,12 @@ try {
           if ($foundAny) {
             Invoke-CompressarrRun -Config $config | Out-Null
           }
+
+          # Clear whatever scan/conversion output just scrolled past so the
+          # next countdown starts on a clean screen, same as the very first
+          # one does before this loop begins.
+          Clear-Host
+          Write-Host "`nMonitor mode enabled - watching lane input folders every 60 seconds. Press Ctrl+C to stop."
         }
       }
     }
