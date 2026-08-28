@@ -219,9 +219,8 @@ Input folder → HandBrake converts → Output folder → (if "Move files" is on
 If "Move files" is off, the base paths are never used - everything just
 stays wherever the Output folder put it. To end up with everything
 organized by show/movie in one step, point Output at a scratch/working
-folder and the base paths at your real library location - that's how the
-shipped default config is set up (`moveFiles` is on, with `output` and
-the base paths both pointing at `C:\Work\Processed\HD`/`...\UHD`).
+folder and the base paths at your real library location, then turn
+"Move files" on.
 
 Preset fields are dropdowns populated from your `presets.json`; a field
 turns red/highlighted if it doesn't match anything in that file, or a path
@@ -258,12 +257,14 @@ doesn't exist yet.
 
 Config is JSON (`Config\compressarr.settings.json` by default). Paths may
 contain `%ENVVAR%` tokens (e.g. `%ProgramFiles%`), expanded at the point of
-use so the same file works across machines. The `contentLanes` paths and
-preset names below are the shipped defaults, matching the author's own
-folder layout and the presets from
+use so the same file works across machines. The JSON below shows the
+shipped defaults - each lane's paths are left blank and the UHD preset is
+unset, since those are specific to your own folder layout and
+`presets.json`; fill them in via the GUI's Paths tab, or by hand here. The
+HD/SD preset defaults to HandBrake's built-in `VeryFastDDtoAAC` as a
+reasonable starting point. See
 [Handbrake-Custom-Presets](https://github.com/MrWizardCT/Handbrake-Custom-Presets)
-- change them (via the GUI's Paths tab, or by hand here) to match your
-own folders and presets.
+for the author's own preset set if you'd rather start from those.
 
 ```json
 {
@@ -274,27 +275,27 @@ own folders and presets.
   },
   "contentLanes": {
     "hdsd": {
-      "input": "C:\\Work\\HDSDContent",
-      "output": "C:\\Work\\Processed\\HD",
-      "tvPreset": "PlexSTD2026",
-      "moviePreset": "PlexSTD2026",
-      "tvShowBasePath": "C:\\Work\\Processed\\HD",
-      "movieBasePath": "C:\\Work\\Processed\\HD"
+      "input": "",
+      "output": "",
+      "tvPreset": "VeryFastDDtoAAC",
+      "moviePreset": "VeryFastDDtoAAC",
+      "tvShowBasePath": "",
+      "movieBasePath": ""
     },
     "uhd": {
-      "input": "C:\\Work\\UHDContent",
-      "output": "C:\\Work\\Processed\\UHD",
-      "tvPreset": "PlexUHDAV1",
-      "moviePreset": "PlexUHDAV1",
-      "tvShowBasePath": "C:\\Work\\Processed\\UHD",
-      "movieBasePath": "C:\\Work\\Processed\\UHD"
+      "input": "",
+      "output": "",
+      "tvPreset": "",
+      "moviePreset": "",
+      "tvShowBasePath": "",
+      "movieBasePath": ""
     }
   },
   "processing": {
     "vidTypes": ["mkv", "avi", "mp4", "mpg", "ts", "m4v"],
     "outSameAsIn": false,
     "deleteAfterConvert": "Maintain",
-    "moveFiles": true,
+    "moveFiles": false,
     "limit": 999,
     "minSize": "0gb"
   },

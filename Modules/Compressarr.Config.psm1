@@ -18,27 +18,27 @@ $script:DefaultConfigJson = @'
   },
   "contentLanes": {
     "hdsd": {
-      "input": "C:\\Work\\HDSDContent",
-      "output": "C:\\Work\\Processed\\HD",
-      "tvPreset": "PlexSTD2026",
-      "moviePreset": "PlexSTD2026",
-      "tvShowBasePath": "C:\\Work\\Processed\\HD",
-      "movieBasePath": "C:\\Work\\Processed\\HD"
+      "input": "",
+      "output": "",
+      "tvPreset": "VeryFastDDtoAAC",
+      "moviePreset": "VeryFastDDtoAAC",
+      "tvShowBasePath": "",
+      "movieBasePath": ""
     },
     "uhd": {
-      "input": "C:\\Work\\UHDContent",
-      "output": "C:\\Work\\Processed\\UHD",
-      "tvPreset": "PlexUHDAV1",
-      "moviePreset": "PlexUHDAV1",
-      "tvShowBasePath": "C:\\Work\\Processed\\UHD",
-      "movieBasePath": "C:\\Work\\Processed\\UHD"
+      "input": "",
+      "output": "",
+      "tvPreset": "",
+      "moviePreset": "",
+      "tvShowBasePath": "",
+      "movieBasePath": ""
     }
   },
   "processing": {
     "vidTypes": ["mkv", "avi", "mp4", "mpg", "ts", "m4v"],
     "outSameAsIn": false,
     "deleteAfterConvert": "Maintain",
-    "moveFiles": true,
+    "moveFiles": false,
     "limit": 999,
     "minSize": "0gb"
   },
