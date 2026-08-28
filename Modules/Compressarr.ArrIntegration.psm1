@@ -42,10 +42,20 @@ function Invoke-CompressarrSonarrUnmonitor {
   <#
     Parses $FileName via Sonarr's /api/v3/parse; if it matches a series
     and one or more episodes Sonarr already knows about, sets each
-    matched episode's monitored flag to $false. Returns $true if at least
-    one episode was changed, $false if nothing matched or everything
-    matched was already unmonitored. Throws on request failures (bad URL,
-    bad API key, Sonarr unreachable) - callers decide how to log that.
+    matched episode's monitored flag to $false, then triggers a
+    RescanSeries command. The rescan matters even when nothing needed
+    unmonitoring: Compressarr has already moved the file out of wherever
+    Sonarr originally scanned it from, so without a rescan Sonarr keeps
+    showing the episode as downloaded even though the file is gone from
+    that path - the rescan is what actually clears that stale state.
+
+    Returns [PSCustomObject]@{ Matched; Changed }. Matched is $true if
+    Sonarr's own parser matched this filename to a real episode (this is
+    also what gates the rescan). Changed is $true only if the monitored
+    flag actually had to flip - an episode matched but already
+    unmonitored still gets Matched=$true so the caller knows a rescan
+    happened. Throws on request failures (bad URL, bad API key, Sonarr
+    unreachable) - callers decide how to log that.
   #>
   param(
     [Parameter(Mandatory)] [string]$BaseUrl,
@@ -58,7 +68,7 @@ function Invoke-CompressarrSonarrUnmonitor {
   $parsed = Invoke-CompressarrArrRequest -Method 'Get' -Uri $parseUri -ApiKey $ApiKey
 
   if (-not $parsed -or -not $parsed.series -or -not $parsed.episodes -or $parsed.episodes.Count -eq 0) {
-    return $false
+    return [PSCustomObject]@{ Matched = $false; Changed = $false }
   }
 
   $changedAny = $false
@@ -69,13 +79,21 @@ function Invoke-CompressarrSonarrUnmonitor {
     Invoke-CompressarrArrRequest -Method 'Put' -Uri $episodeUri -ApiKey $ApiKey -Body $episode | Out-Null
     $changedAny = $true
   }
-  return $changedAny
+
+  $commandUri = "$base/api/v3/command"
+  Invoke-CompressarrArrRequest -Method 'Post' -Uri $commandUri -ApiKey $ApiKey `
+    -Body ([PSCustomObject]@{ name = 'RescanSeries'; seriesId = $parsed.series.id }) | Out-Null
+
+  return [PSCustomObject]@{ Matched = $true; Changed = $changedAny }
 }
 
 function Invoke-CompressarrRadarrUnmonitor {
   <#
     Same idea as Invoke-CompressarrSonarrUnmonitor, for Radarr's single
-    matched movie instead of a series/episode list.
+    matched movie instead of a series/episode list - unmonitors if
+    needed, then always triggers a RescanMovie command on any match so
+    Radarr's "has file" state gets cleared once Compressarr has moved the
+    file elsewhere.
   #>
   param(
     [Parameter(Mandatory)] [string]$BaseUrl,
@@ -88,16 +106,23 @@ function Invoke-CompressarrRadarrUnmonitor {
   $parsed = Invoke-CompressarrArrRequest -Method 'Get' -Uri $parseUri -ApiKey $ApiKey
 
   if (-not $parsed -or -not $parsed.movie -or -not $parsed.movie.id) {
-    return $false
+    return [PSCustomObject]@{ Matched = $false; Changed = $false }
   }
 
   $movie = $parsed.movie
-  if ($movie.monitored -eq $false) { return $false }
+  $changed = $false
+  if ($movie.monitored -ne $false) {
+    $movie.monitored = $false
+    $movieUri = "$base/api/v3/movie/$($movie.id)"
+    Invoke-CompressarrArrRequest -Method 'Put' -Uri $movieUri -ApiKey $ApiKey -Body $movie | Out-Null
+    $changed = $true
+  }
 
-  $movie.monitored = $false
-  $movieUri = "$base/api/v3/movie/$($movie.id)"
-  Invoke-CompressarrArrRequest -Method 'Put' -Uri $movieUri -ApiKey $ApiKey -Body $movie | Out-Null
-  return $true
+  $commandUri = "$base/api/v3/command"
+  Invoke-CompressarrArrRequest -Method 'Post' -Uri $commandUri -ApiKey $ApiKey `
+    -Body ([PSCustomObject]@{ name = 'RescanMovie'; movieId = $movie.id }) | Out-Null
+
+  return [PSCustomObject]@{ Matched = $true; Changed = $changed }
 }
 
 function Invoke-CompressarrArrUnmonitor {
@@ -105,11 +130,13 @@ function Invoke-CompressarrArrUnmonitor {
     Dispatches to Sonarr (TV) or Radarr (Movie) based on $IsTV, but only
     if that service is enabled in config. Returns $null if the matching
     service isn't enabled (nothing to do - not an error). Returns a short
-    status string describing the outcome (changed vs. no match) on
-    success. Throws if the service is enabled but not configured (blank
-    URL/API key), or if the request itself fails - callers wrap this in
-    their own try/catch, matching how Move-CompressarrRoutedFile and
-    Move-CompressarrCompanionFiles are already called.
+    status string describing the outcome on success - unmonitored (+
+    rescanned), already unmonitored (rescanned anyway, to clear a stale
+    "has file" state), or no match found at all. Throws if the service is
+    enabled but not configured (blank URL/API key), or if the request
+    itself fails - callers wrap this in their own try/catch, matching how
+    Move-CompressarrRoutedFile and Move-CompressarrCompanionFiles are
+    already called.
   #>
   param(
     [Parameter(Mandatory)] $Config,
@@ -126,16 +153,21 @@ function Invoke-CompressarrArrUnmonitor {
     throw "$serviceName is enabled but its URL or API key is not configured."
   }
 
-  $changed = $false
+  $result = $null
   if ($IsTV) {
-    $changed = Invoke-CompressarrSonarrUnmonitor -BaseUrl $svc.url -ApiKey $svc.apiKey -FileName $FileName
+    $result = Invoke-CompressarrSonarrUnmonitor -BaseUrl $svc.url -ApiKey $svc.apiKey -FileName $FileName
   }
   else {
-    $changed = Invoke-CompressarrRadarrUnmonitor -BaseUrl $svc.url -ApiKey $svc.apiKey -FileName $FileName
+    $result = Invoke-CompressarrRadarrUnmonitor -BaseUrl $svc.url -ApiKey $svc.apiKey -FileName $FileName
   }
 
-  if ($changed) { return "$serviceName`: unmonitored the matching $itemWord." }
-  return "$serviceName`: no matching monitored $itemWord found for '$FileName' - left unchanged."
+  if (-not $result.Matched) {
+    return "$serviceName`: no matching monitored $itemWord found for '$FileName' - left unchanged."
+  }
+  if ($result.Changed) {
+    return "$serviceName`: unmonitored the matching $itemWord and rescanned the library."
+  }
+  return "$serviceName`: already unmonitored - rescanned the library to clear its stale downloaded status."
 }
 
 Export-ModuleMember -Function `

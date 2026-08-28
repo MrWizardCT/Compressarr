@@ -278,10 +278,20 @@ function Show-CompressarrToastNotification {
     register via a Start Menu shortcut - the tradeoff is that Action
     Center's summary/grouping UI shows "Windows PowerShell" as the
     sending app, even though the toast's own content (logo, text) is
-    Compressarr's. The `launch`/activationType="protocol" attribute makes
-    the click-to-open-report behavior work via the OS shell directly, so
-    it still fires even if this PowerShell process has already exited by
-    the time the user clicks it (e.g. an overnight scheduled run).
+    Compressarr's.
+
+    Click-to-open is offered two ways, both handled by the OS shell
+    rather than this process (there is no in-process fallback for this -
+    Windows PowerShell 5.1's Register-ObjectEvent cannot subscribe to
+    WinRT events at all, so a live click handler here isn't possible):
+    - The toast body itself is clickable (`launch`/activationType=
+      "protocol" on the <toast> element).
+    - An explicit "Click To View Full Report" button (an <actions>
+      <action> with its own activationType="protocol"/arguments), for
+      discoverability and as a second, independent attempt at the same
+      protocol activation in case body-click behaves differently.
+    Reliability of either depends on OS/session specifics for a
+    non-packaged, borrowed-AUMID sender like this one.
 
     Never throws on the caller's behalf for anything toast-related failing
     (unsupported OS, no notification support, etc.) - callers should still
@@ -316,6 +326,7 @@ function Show-CompressarrToastNotification {
   $line3 = "Duration: $($RunTime.Hours)h $($RunTime.Minutes)m $($RunTime.Seconds)s"
 
   $reportUri = ([uri]$ReportFile).AbsoluteUri
+  $reportUriEscaped = [System.Security.SecurityElement]::Escape($reportUri)
   $logoPath = Join-Path -Path (Get-CompressarrAssetsPath) -ChildPath 'compressarr-logo.png'
   $imageXml = ''
   if (Test-Path $logoPath) {
@@ -324,7 +335,7 @@ function Show-CompressarrToastNotification {
   }
 
   $toastXml = @"
-<toast activationType="protocol" launch="$([System.Security.SecurityElement]::Escape($reportUri))">
+<toast activationType="protocol" launch="$reportUriEscaped">
   <visual>
     <binding template="ToastGeneric">
       $imageXml
@@ -334,6 +345,9 @@ function Show-CompressarrToastNotification {
       <text>$([System.Security.SecurityElement]::Escape($line3))</text>
     </binding>
   </visual>
+  <actions>
+    <action activationType="protocol" arguments="$reportUriEscaped" content="Click To View Full Report"/>
+  </actions>
 </toast>
 "@
 
