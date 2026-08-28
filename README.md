@@ -1,4 +1,8 @@
+<img src="Assets/compressarr-logo.png" width="96" alt="Compressarr logo" align="left">
+
 # Compressarr
+
+<br clear="left">
 
 A Windows PowerShell + [HandBrakeCLI](https://handbrake.fr/downloads2.php) batch
 video converter. A from-scratch rewrite of
@@ -194,6 +198,30 @@ entirely.
 | Movie preset | HandBrake preset used for everything else |
 | TV Show base path (move to) | Final destination for TV episodes, if "move files" is on - Compressarr creates `Show Name\Season NN\` under here |
 | Movie base path (move to) | Final destination for movies, if "move files" is on - bucketed into year-range subfolders |
+
+**Output folder vs. base path** - these do two different jobs in the
+pipeline:
+
+```
+Input folder → HandBrake converts → Output folder → (if "Move files" is on) → base path's organized folders
+```
+
+- **Output folder** is where HandBrake writes the converted file
+  immediately after encoding - just a working/staging location. If
+  "write output to same folder as input" is checked, this is skipped
+  entirely and the converted file lands next to the source instead.
+- **TV Show / Movie base path** only comes into play if "Move converted
+  files into show/movie folders" is checked. Once conversion succeeds,
+  the file is picked up from wherever it just landed (the Output folder,
+  or the source folder) and relocated into `Show Name\Season NN\` or a
+  year-range/movie-title folder under the base path.
+
+If "Move files" is off, the base paths are never used - everything just
+stays wherever the Output folder put it. To end up with everything
+organized by show/movie in one step, point Output at a scratch/working
+folder and the base paths at your real library location - that's how the
+shipped default config is set up (`moveFiles` is on, with `output` and
+the base paths both pointing at `C:\Work\Processed\HD`/`...\UHD`).
 
 Preset fields are dropdowns populated from your `presets.json`; a field
 turns red/highlighted if it doesn't match anything in that file, or a path

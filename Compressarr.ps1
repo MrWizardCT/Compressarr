@@ -36,7 +36,7 @@ param(
   [switch]$Once
 )
 
-$script:CompressarrVersion = '1.0.0-beta.13'
+$script:CompressarrVersion = '1.0.0-beta.14'
 
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
@@ -204,6 +204,21 @@ try {
     }
 
     if ($shouldExecute) {
+      # One-time check, before the first run of this session: if a
+      # previous run left files tracked in the resume file (killed
+      # mid-run, or a file that errored out), let the user decide whether
+      # to pick up where it left off or discard that tracking and start
+      # the next scan fresh. Repeats and monitor-mode passes below never
+      # re-prompt - only this first run of the session does.
+      $resumeFilePath = Join-Path -Path $scriptRoot -ChildPath 'compressarr.resume.json'
+      $resumeState = Import-CompressarrResumeState -Path $resumeFilePath
+      if ($resumeState.Count -gt 0) {
+        $resumePrompt = Show-CompressarrResumePromptForm -Config $config -Version $script:CompressarrVersion -PendingCount $resumeState.Count
+        if ($resumePrompt.Action -eq 'ClearCache') {
+          Remove-Item -Path $resumeFilePath -ErrorAction SilentlyContinue
+        }
+      }
+
       Invoke-CompressarrRun -Config $config | Out-Null
 
       $remainingRepeats = [int]$config.repeat.count
@@ -213,9 +228,18 @@ try {
       }
 
       if ($config.repeat.monitor -and -not $Once) {
+        Clear-Host
         Write-Host "`nMonitor mode enabled - watching lane input folders every 60 seconds. Press Ctrl+C to stop."
         while ($true) {
-          Start-Sleep -Seconds 60
+          $activity = 'Compressarr monitor mode'
+          $secondsRemaining = 60
+          do {
+            $secondsRemaining--
+            Write-Progress -Activity $activity -Status "Checking again in $secondsRemaining second(s) - Press Ctrl+C to stop" -PercentComplete ([math]::Round(($secondsRemaining / 60) * 100))
+            Start-Sleep -Seconds 1
+          } while ($secondsRemaining -gt 0)
+          Write-Progress -Activity $activity -Completed
+
           $foundAny = $false
           foreach ($laneName in (Get-CompressarrLaneNames)) {
             $laneConfig = $config.contentLanes.$laneName

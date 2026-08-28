@@ -722,4 +722,166 @@ function Show-CompressarrCountdownForm {
   return @{ Action = $state.Action }
 }
 
-Export-ModuleMember -Function Show-CompressarrMainForm, Show-CompressarrCountdownForm, Get-CompressarrAssetsPath
+function Show-CompressarrResumePromptForm {
+  <#
+    Shown once at startup, right before the first run of the session,
+    when compressarr.resume.json still has files tracked from a previous
+    run (killed mid-run, or a file that errored out - see
+    Import-CompressarrResumeState). Same look as Show-CompressarrCountdownForm
+    (logo, title, countdown), but the message is a red warning and the two
+    buttons decide whether to keep those tracked files (pick up where the
+    previous run left off) or discard the resume file and let the next scan
+    start fresh. Auto-proceeds as "Finish Processing Files" if left
+    untouched, so an unattended repeat/monitor-mode launch never blocks here.
+    Returns @{ Action = 'ClearCache' | 'Finish' }.
+  #>
+  param(
+    [Parameter(Mandatory)] $Config,
+    [string]$Version,
+    [Parameter(Mandatory)] [int]$PendingCount
+  )
+
+  Add-Type -AssemblyName System.Windows.Forms
+  Add-Type -AssemblyName System.Drawing
+  [System.Windows.Forms.Application]::EnableVisualStyles()
+
+  $assetsPath = Get-CompressarrAssetsPath
+  $iconPath = Join-Path -Path $assetsPath -ChildPath 'compressarr.ico'
+  $logoPath = Join-Path -Path $assetsPath -ChildPath 'compressarr-logo.png'
+
+  $seconds = 10
+  if ($Config.startup -and $Config.startup.countdownSeconds) { $seconds = [int]$Config.startup.countdownSeconds }
+  if ($seconds -le 0) { $seconds = 10 }
+
+  # Same mutable-hashtable pattern as Show-CompressarrCountdownForm - a
+  # bare captured scalar resets on every separate Timer.Tick invocation
+  # instead of counting down.
+  $state = @{ Remaining = $seconds; Action = 'Finish' }
+  $fileWord = if ($PendingCount -eq 1) { 'file' } else { 'files' }
+
+  $form = New-Object System.Windows.Forms.Form
+  $form.Text = if ($Version) { "Compressarr v$Version" } else { 'Compressarr' }
+  $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+  $form.MaximizeBox = $false
+  $form.MinimizeBox = $false
+  $form.StartPosition = 'CenterScreen'
+  # Wider/taller than Show-CompressarrCountdownForm's 400x190: this box
+  # carries a longer warning message, an explanatory line, and two buttons
+  # side by side (vs. that form's single short line and one button), so it
+  # needs the extra room - the labels below wrap within it rather than
+  # running off the edge of a narrower fixed-size window.
+  $form.ClientSize = New-Object System.Drawing.Size(480, 230)
+  if (Test-Path $iconPath) { $form.Icon = New-Object System.Drawing.Icon($iconPath) }
+
+  $layout = New-Object System.Windows.Forms.TableLayoutPanel
+  $layout.Dock = 'Fill'
+  $layout.Padding = New-Object System.Windows.Forms.Padding(20)
+  $layout.ColumnCount = 1
+  $layout.RowCount = 4
+  [void]$layout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 56)))
+  [void]$layout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 40)))
+  [void]$layout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+  [void]$layout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 40)))
+  $form.Controls.Add($layout)
+
+  $headerFlow = New-Object System.Windows.Forms.FlowLayoutPanel
+  $headerFlow.Dock = 'Fill'
+  $headerFlow.FlowDirection = [System.Windows.Forms.FlowDirection]::LeftToRight
+  $layout.Controls.Add($headerFlow, 0, 0)
+
+  if (Test-Path $logoPath) {
+    $logoBox = New-Object System.Windows.Forms.PictureBox
+    $logoBox.Image = [System.Drawing.Image]::FromFile($logoPath)
+    $logoBox.Size = New-Object System.Drawing.Size(48, 48)
+    $logoBox.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+    $logoBox.Margin = New-Object System.Windows.Forms.Padding(0, 0, 12, 0)
+    $headerFlow.Controls.Add($logoBox)
+  }
+
+  $titleLabel = New-Object System.Windows.Forms.Label
+  $titleLabel.Text = 'Compressarr'
+  $titleLabel.AutoSize = $true
+  $titleLabel.Font = New-Object System.Drawing.Font('Segoe UI', 14, [System.Drawing.FontStyle]::Bold)
+  $titleLabel.Margin = New-Object System.Windows.Forms.Padding(0, 8, 0, 0)
+  $headerFlow.Controls.Add($titleLabel)
+
+  # MaximumSize with a 0 height (plus AutoSize) makes a Label wrap within
+  # that width and grow vertically as needed, instead of running off the
+  # right edge of the fixed-width window.
+  $labelMaxSize = New-Object System.Drawing.Size(430, 0)
+
+  $warnLabel = New-Object System.Windows.Forms.Label
+  $warnLabel.Text = "$PendingCount $fileWord pending from a previous run - continuing in $($state.Remaining) second(s)..."
+  $warnLabel.AutoSize = $true
+  $warnLabel.MaximumSize = $labelMaxSize
+  $warnLabel.UseMnemonic = $false
+  $warnLabel.ForeColor = [System.Drawing.Color]::Red
+  $warnLabel.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+  $layout.Controls.Add($warnLabel, 0, 1)
+
+  $bodyLabel = New-Object System.Windows.Forms.Label
+  $bodyLabel.Text = "Clear Resume Cache to discard them and start fresh, or Finish Processing Files to pick up where the previous run left off."
+  $bodyLabel.AutoSize = $true
+  $bodyLabel.MaximumSize = $labelMaxSize
+  $bodyLabel.UseMnemonic = $false
+  $bodyLabel.ForeColor = [System.Drawing.Color]::DimGray
+  $layout.Controls.Add($bodyLabel, 0, 2)
+
+  $buttonPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+  $buttonPanel.Dock = 'Fill'
+  $buttonPanel.FlowDirection = [System.Windows.Forms.FlowDirection]::RightToLeft
+  $layout.Controls.Add($buttonPanel, 0, 3)
+
+  # RightToLeft flow: the first control added lands rightmost (the
+  # conventional "primary/default" slot) - Finish Processing Files is the
+  # auto-proceed default, so it goes first/rightmost.
+  $finishBtn = New-Object System.Windows.Forms.Button
+  $finishBtn.Text = 'Finish Processing Files'
+  $finishBtn.AutoSize = $true
+  $buttonPanel.Controls.Add($finishBtn)
+
+  $clearBtn = New-Object System.Windows.Forms.Button
+  $clearBtn.Text = 'Clear Resume Cache'
+  $clearBtn.AutoSize = $true
+  $buttonPanel.Controls.Add($clearBtn)
+
+  $form.AcceptButton = $finishBtn
+
+  $timer = New-Object System.Windows.Forms.Timer
+  $timer.Interval = 1000
+
+  $clearBtn.Add_Click({
+    $state.Action = 'ClearCache'
+    $timer.Stop()
+    $form.Close()
+  }.GetNewClosure())
+
+  $finishBtn.Add_Click({
+    $state.Action = 'Finish'
+    $timer.Stop()
+    $form.Close()
+  }.GetNewClosure())
+
+  $timer.Add_Tick({
+    $state.Remaining--
+    if ($state.Remaining -le 0) {
+      $state.Action = 'Finish'
+      $timer.Stop()
+      $form.Close()
+    }
+    else {
+      $warnLabel.Text = "$PendingCount $fileWord pending from a previous run - continuing in $($state.Remaining) second(s)..."
+    }
+  }.GetNewClosure())
+
+  $form.Add_Shown({ $timer.Start() }.GetNewClosure())
+  $form.Add_FormClosing({ $timer.Stop() }.GetNewClosure())
+
+  [void]$form.ShowDialog()
+  $timer.Dispose()
+  $form.Dispose()
+
+  return @{ Action = $state.Action }
+}
+
+Export-ModuleMember -Function Show-CompressarrMainForm, Show-CompressarrCountdownForm, Show-CompressarrResumePromptForm, Get-CompressarrAssetsPath

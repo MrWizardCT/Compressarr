@@ -303,7 +303,8 @@ function Invoke-CompressarrLaneConversion {
         try {
           $routedDestFolder = Split-Path -Path $routedDestPath -Parent
           Move-CompressarrCompanionFiles -OriginalFileFullName $file.FullName -OriginalFileDirectory $file.DirectoryName `
-            -DestinationFolder $routedDestFolder -VidTypes $Config.processing.vidTypes -DeleteAfterConvert $Config.processing.deleteAfterConvert
+            -DestinationFolder $routedDestFolder -VidTypes $Config.processing.vidTypes -DeleteAfterConvert $Config.processing.deleteAfterConvert `
+            -InputRoot $inputPath
         }
         catch {
           Write-CompressarrLog "  Companion file handling skipped: $($_.Exception.Message)" -Severity 'E'

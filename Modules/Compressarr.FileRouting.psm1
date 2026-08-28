@@ -227,13 +227,23 @@ function Move-CompressarrCompanionFiles {
     video files share that folder (a flat/shared folder rather than one
     dedicated to this item), nothing here is touched - only the file that
     was actually converted gets handled, everywhere else in the module.
+
+    In Delete/Recycle mode, once the source folder itself is removed, its
+    ancestors are also checked and removed as long as each is now completely
+    empty - e.g. "MASH\Season 01\" being removed after its last episode is
+    processed should also remove "MASH\" if that was Season 01's only
+    remaining content. This walks upward one folder at a time and stops the
+    instant it hits a non-empty folder, or $InputRoot itself (the lane's
+    configured watch folder is never removed, even if briefly empty, since
+    it has to still exist for the next run to find new files in).
   #>
   param(
     [Parameter(Mandatory)] [string]$OriginalFileFullName,
     [Parameter(Mandatory)] [string]$OriginalFileDirectory,
     [Parameter(Mandatory)] [string]$DestinationFolder,
     [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]]$VidTypes,
-    [Parameter(Mandatory)] [ValidateSet('Maintain', 'Delete', 'Recycle')] [string]$DeleteAfterConvert
+    [Parameter(Mandatory)] [ValidateSet('Maintain', 'Delete', 'Recycle')] [string]$DeleteAfterConvert,
+    [Parameter(Mandatory)] [string]$InputRoot
   )
 
   if (-not (Test-Path $OriginalFileDirectory)) { return }
@@ -281,6 +291,21 @@ function Move-CompressarrCompanionFiles {
     }
   }
   Remove-CompressarrFolder -Path $OriginalFileDirectory -Mode $DeleteAfterConvert
+
+  # Cascade upward: check each parent folder in turn, removing it too as
+  # long as it's now completely empty, stopping the moment we reach a
+  # non-empty folder or the lane's Input root.
+  $inputRootFull = (Resolve-Path -Path $InputRoot -ErrorAction SilentlyContinue).Path
+  if ($inputRootFull) {
+    $current = Split-Path -Path $OriginalFileDirectory -Parent
+    while ($current -and (Test-Path $current) -and
+           -not [string]::Equals($current, $inputRootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+      $currentContents = @(Get-ChildItem -Path $current -Force -ErrorAction SilentlyContinue)
+      if ($currentContents.Count -gt 0) { break }
+      Remove-CompressarrFolder -Path $current -Mode $DeleteAfterConvert
+      $current = Split-Path -Path $current -Parent
+    }
+  }
 }
 
 Export-ModuleMember -Function `
