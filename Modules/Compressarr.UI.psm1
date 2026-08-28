@@ -441,6 +441,48 @@ function Show-CompressarrMainForm {
   }
   Add-CompressarrFillerRow -Panel $pathsPanel -Row ([ref]$prow)
 
+  # ---- ...arrs tab (Sonarr + Radarr, same page) ----
+  # Optional: after a file converts successfully, tell whichever app is
+  # enabled to stop monitoring the matching episode/movie so it isn't
+  # re-grabbed. Each service's own section is independent - either, both,
+  # or neither can be enabled. See Compressarr.ArrIntegration.psm1.
+  $arrsTab = New-Object System.Windows.Forms.TabPage
+  $arrsTab.Text = '...arrs'
+  $tabs.TabPages.Add($arrsTab)
+  $arrsPanel = New-CompressarrFormPanel
+  $arrsTab.Controls.Add($arrsPanel)
+
+  $sonarrCfg = if ($Config.arrs -and $Config.arrs.sonarr) { $Config.arrs.sonarr } else { [PSCustomObject]@{ enabled = $false; url = ''; apiKey = '' } }
+  $radarrCfg = if ($Config.arrs -and $Config.arrs.radarr) { $Config.arrs.radarr } else { [PSCustomObject]@{ enabled = $false; url = ''; apiKey = '' } }
+
+  $arow = 0
+  Add-CompressarrSectionHeader -Panel $arrsPanel -Row ([ref]$arow) -Text 'Sonarr'
+  $sonarrChecks = Add-CompressarrCheckboxRow -Panel $arrsPanel -Row ([ref]$arow) -Items @(
+    @{ Label = 'Enable - unmonitor the matching episode after a successful conversion'; Value = [bool]$sonarrCfg.enabled }
+  )
+  $sonarrEnableCheck = $sonarrChecks[0]
+  $sonarrUrlBox = Add-CompressarrTextRow -Panel $arrsPanel -Row ([ref]$arow) -Label 'Sonarr URL' -Value $sonarrCfg.url
+  $sonarrApiKeyBox = Add-CompressarrTextRow -Panel $arrsPanel -Row ([ref]$arow) -Label 'Sonarr API Key' -Value $sonarrCfg.apiKey
+  $sonarrApiKeyBox.UseSystemPasswordChar = $true
+
+  Add-CompressarrSeparator -Panel $arrsPanel -Row ([ref]$arow)
+
+  Add-CompressarrSectionHeader -Panel $arrsPanel -Row ([ref]$arow) -Text 'Radarr'
+  $radarrChecks = Add-CompressarrCheckboxRow -Panel $arrsPanel -Row ([ref]$arow) -Items @(
+    @{ Label = 'Enable - unmonitor the matching movie after a successful conversion'; Value = [bool]$radarrCfg.enabled }
+  )
+  $radarrEnableCheck = $radarrChecks[0]
+  $radarrUrlBox = Add-CompressarrTextRow -Panel $arrsPanel -Row ([ref]$arow) -Label 'Radarr URL' -Value $radarrCfg.url
+  $radarrApiKeyBox = Add-CompressarrTextRow -Panel $arrsPanel -Row ([ref]$arow) -Label 'Radarr API Key' -Value $radarrCfg.apiKey
+  $radarrApiKeyBox.UseSystemPasswordChar = $true
+
+  Add-CompressarrFillerRow -Panel $arrsPanel -Row ([ref]$arow)
+
+  $arrServiceFields = @(
+    [PSCustomObject]@{ Enable = $sonarrEnableCheck; Url = $sonarrUrlBox; ApiKey = $sonarrApiKeyBox },
+    [PSCustomObject]@{ Enable = $radarrEnableCheck; Url = $radarrUrlBox; ApiKey = $radarrApiKeyBox }
+  )
+
   # ---- Preset dropdown population ----
   $refreshPresets = {
     try {
@@ -497,12 +539,33 @@ function Show-CompressarrMainForm {
         $allValid = $false
       }
     }
+    foreach ($svc in $arrServiceFields) {
+      # URL/API Key only need a value if this service is actually enabled -
+      # an unchecked service's blank fields aren't an error.
+      foreach ($tb in @($svc.Url, $svc.ApiKey)) {
+        $ok = (-not $svc.Enable.Checked) -or (-not [string]::IsNullOrWhiteSpace($tb.Text))
+        if ($ok) {
+          $tb.BackColor = [System.Drawing.Color]::White
+          $tb.ForeColor = [System.Drawing.Color]::Black
+        }
+        else {
+          $tb.BackColor = [System.Drawing.Color]::LightYellow
+          $tb.ForeColor = [System.Drawing.Color]::Firebrick
+          $allValid = $false
+        }
+      }
+    }
     $statusLabel.Text = if ($allValid) { '' } else { 'Some fields need attention (highlighted).' }
     return $allValid
   }.GetNewClosure()
 
   foreach ($tb in $pathFields.Values) { $tb.Add_Leave({ & $validateAll | Out-Null }.GetNewClosure()) }
   $hbPresetsBox.Add_Leave({ & $refreshPresets; & $validateAll | Out-Null }.GetNewClosure())
+  foreach ($svc in $arrServiceFields) {
+    $svc.Enable.Add_CheckedChanged({ & $validateAll | Out-Null }.GetNewClosure())
+    $svc.Url.Add_Leave({ & $validateAll | Out-Null }.GetNewClosure())
+    $svc.ApiKey.Add_Leave({ & $validateAll | Out-Null }.GetNewClosure())
+  }
 
   # ---- Build a config object from current form state ----
   $buildConfigFromForm = {
@@ -532,6 +595,13 @@ function Show-CompressarrMainForm {
     $newConfig.repeat.monitor = $monitorCheck.Checked
 
     $newConfig.startup.countdownSeconds = [int]($countdownBox.Text)
+
+    $newConfig.arrs.sonarr.enabled = $sonarrEnableCheck.Checked
+    $newConfig.arrs.sonarr.url = $sonarrUrlBox.Text
+    $newConfig.arrs.sonarr.apiKey = $sonarrApiKeyBox.Text
+    $newConfig.arrs.radarr.enabled = $radarrEnableCheck.Checked
+    $newConfig.arrs.radarr.url = $radarrUrlBox.Text
+    $newConfig.arrs.radarr.apiKey = $radarrApiKeyBox.Text
 
     foreach ($laneName in (Get-CompressarrLaneNames)) {
       $lc = $laneControls[$laneName]

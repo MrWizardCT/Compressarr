@@ -311,6 +311,21 @@ function Invoke-CompressarrLaneConversion {
         }
       }
 
+      # Optional Sonarr/Radarr integration: tell whichever app tracks this
+      # content to stop monitoring the matching episode/movie now that a
+      # converted copy exists, so it isn't re-grabbed. Runs regardless of
+      # whether "move files"/routing happened - unrelated to local
+      # cleanup, only to the conversion having succeeded. Soft-fails: a
+      # disabled/unreachable/misconfigured *arr instance never takes down
+      # an otherwise-successful conversion.
+      try {
+        $arrResult = Invoke-CompressarrArrUnmonitor -Config $Config -FileName $file.Name -IsTV $isTV
+        if ($arrResult) { Write-CompressarrLog "  $arrResult" }
+      }
+      catch {
+        Write-CompressarrLog "  Arr unmonitor skipped: $($_.Exception.Message)" -Severity 'E'
+      }
+
       if ($resumeEntry) { $resumeEntry.status = 'Completed' }
     }
     else {

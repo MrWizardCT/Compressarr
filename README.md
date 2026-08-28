@@ -226,6 +226,35 @@ Preset fields are dropdowns populated from your `presets.json`; a field
 turns red/highlighted if it doesn't match anything in that file, or a path
 doesn't exist yet.
 
+### ...arrs tab
+
+Optional integration with [Sonarr](https://sonarr.tv/) and
+[Radarr](https://radarr.video/): after a file finishes converting
+successfully, Compressarr can tell whichever app tracks it to stop
+monitoring that specific episode or movie, so it doesn't get re-grabbed
+later. Sonarr and Radarr are each configured independently - enable
+either, both, or neither.
+
+| Field | What it's for |
+|---|---|
+| Enable | Turns this service's unmonitor step on/off - everything else on this tab is ignored while unchecked |
+| URL | The app's base URL, e.g. `http://localhost:8989` (Sonarr) or `http://localhost:7878` (Radarr) |
+| API Key | Found in the app's own **Settings → General** page |
+
+Matching is done entirely through the app's own `/api/v3/parse` endpoint -
+Compressarr hands it the original filename, and the app's own parser
+(the same one it uses for manual imports) reports back which series/episode
+or movie it matches, if any. Compressarr doesn't attempt any matching of
+its own: if the app can't match the filename to something already in its
+library, nothing is changed - a miss is always treated as "leave it alone,"
+never as a guess. This step runs after every successful conversion,
+independent of whether "Move converted files into show/movie folders" is
+on - it's about the conversion having finished, not about local file
+organization.
+
+If a service is enabled but its URL or API key is left blank, the field is
+highlighted the same way an invalid path or preset would be.
+
 ### Saving and running
 
 - **Save Config** writes your changes back to the config file without
@@ -303,7 +332,11 @@ for the author's own preset set if you'd rather start from those.
   "postExec": { "cmd": "", "args": "" },
   "report": { "reportPath": ".\\Reports", "openAfterRun": "Always" },
   "repeat": { "count": 0, "monitor": false },
-  "startup": { "countdownSeconds": 10 }
+  "startup": { "countdownSeconds": 10 },
+  "arrs": {
+    "sonarr": { "enabled": false, "url": "http://localhost:8989", "apiKey": "" },
+    "radarr": { "enabled": false, "url": "http://localhost:7878", "apiKey": "" }
+  }
 }
 ```
 
@@ -314,6 +347,10 @@ as the final destination once a file's type has been detected.
 The output file extension is derived from whichever preset was selected
 (its `FileFormat` value in `presets.json`, mapping `av_mp4`/`mp4` to `.mp4`
 and `av_mkv`/`mkv` to `.mkv`) rather than being hardcoded.
+
+`arrs.sonarr`/`arrs.radarr` are both off by default; see the
+[...arrs tab](#arrs-tab) section above for what they do and how matching
+works.
 
 ## Project layout
 

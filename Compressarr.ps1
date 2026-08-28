@@ -36,7 +36,7 @@ param(
   [switch]$Once
 )
 
-$script:CompressarrVersion = '1.0.0-rc.1'
+$script:CompressarrVersion = '1.0.0-rc.2'
 
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
@@ -49,6 +49,7 @@ Import-Module (Join-Path -Path $moduleRoot -ChildPath 'Compressarr.Config.psm1')
 Import-Module (Join-Path -Path $moduleRoot -ChildPath 'Compressarr.Logging.psm1') -Force
 Import-Module (Join-Path -Path $moduleRoot -ChildPath 'Compressarr.FileRouting.psm1') -Force
 Import-Module (Join-Path -Path $moduleRoot -ChildPath 'Compressarr.Conversion.psm1') -Force
+Import-Module (Join-Path -Path $moduleRoot -ChildPath 'Compressarr.ArrIntegration.psm1') -Force
 Import-Module (Join-Path -Path $moduleRoot -ChildPath 'Compressarr.Reporting.psm1') -Force
 if (-not $NoGui) {
   Import-Module (Join-Path -Path $moduleRoot -ChildPath 'Compressarr.UI.psm1') -Force

@@ -60,6 +60,18 @@ $script:DefaultConfigJson = @'
   },
   "startup": {
     "countdownSeconds": 10
+  },
+  "arrs": {
+    "sonarr": {
+      "enabled": false,
+      "url": "http://localhost:8989",
+      "apiKey": ""
+    },
+    "radarr": {
+      "enabled": false,
+      "url": "http://localhost:7878",
+      "apiKey": ""
+    }
   }
 }
 '@
