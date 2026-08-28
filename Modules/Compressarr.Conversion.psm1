@@ -300,25 +300,19 @@ function Invoke-CompressarrLaneConversion {
         Write-CompressarrLog "  Move skipped: $($_.Exception.Message)" -Severity 'E'
       }
 
-      if ($routedDestPath) {
-        try {
-          $routedDestFolder = Split-Path -Path $routedDestPath -Parent
-          Move-CompressarrCompanionFiles -OriginalFileFullName $file.FullName -OriginalFileDirectory $file.DirectoryName `
-            -DestinationFolder $routedDestFolder -VidTypes $Config.processing.vidTypes -DeleteAfterConvert $Config.processing.deleteAfterConvert `
-            -InputRoot $inputPath
-        }
-        catch {
-          Write-CompressarrLog "  Companion file handling skipped: $($_.Exception.Message)" -Severity 'E'
-        }
-      }
-
       # Optional Sonarr/Radarr integration: tell whichever app tracks this
-      # content to stop monitoring the matching episode/movie now that a
-      # converted copy exists, so it isn't re-grabbed. Runs regardless of
-      # whether "move files"/routing happened - unrelated to local
-      # cleanup, only to the conversion having succeeded. Soft-fails: a
+      # content to stop monitoring the matching episode/movie, then
+      # rescan its library so the app notices the file is gone from
+      # wherever it originally scanned it. Runs regardless of whether
+      # "move files"/routing happened - unrelated to local cleanup, only
+      # to the conversion having succeeded. Soft-fails: a
       # disabled/unreachable/misconfigured *arr instance never takes down
       # an otherwise-successful conversion.
+      #
+      # Deliberately BEFORE the companion-file/folder cleanup below: the
+      # rescan should see the source folder still on disk (even if it's
+      # about to become empty and get removed) rather than already gone -
+      # unmonitor, then rescan, then remove folders, in that order.
       try {
         $arrResult = Invoke-CompressarrArrUnmonitor -Config $Config -FileName $file.Name -IsTV $isTV
         if ($arrResult) {
@@ -329,6 +323,18 @@ function Invoke-CompressarrLaneConversion {
       catch {
         Write-CompressarrLog "  Arr unmonitor skipped: $($_.Exception.Message)" -Severity 'E'
         $arrStatus = "Failed: $($_.Exception.Message)"
+      }
+
+      if ($routedDestPath) {
+        try {
+          $routedDestFolder = Split-Path -Path $routedDestPath -Parent
+          Move-CompressarrCompanionFiles -OriginalFileFullName $file.FullName -OriginalFileDirectory $file.DirectoryName `
+            -DestinationFolder $routedDestFolder -VidTypes $Config.processing.vidTypes -DeleteAfterConvert $Config.processing.deleteAfterConvert `
+            -InputRoot $inputPath
+        }
+        catch {
+          Write-CompressarrLog "  Companion file handling skipped: $($_.Exception.Message)" -Severity 'E'
+        }
       }
 
       if ($resumeEntry) { $resumeEntry.status = 'Completed' }

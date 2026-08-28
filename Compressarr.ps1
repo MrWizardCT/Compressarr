@@ -36,7 +36,7 @@ param(
   [switch]$Once
 )
 
-$script:CompressarrVersion = '1.0.0-rc.4'
+$script:CompressarrVersion = '1.0.0-rc.5'
 
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
