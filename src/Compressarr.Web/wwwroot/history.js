@@ -34,5 +34,35 @@ async function loadHistory() {
   ].join('');
 }
 
+function reportRow(entry) {
+  const saved = entry.beforeGb > 0 ? Math.round((1 - entry.afterGb / entry.beforeGb) * 1000) / 10 : 0;
+  const date = new Date(entry.date).toLocaleDateString();
+  const url = `/api/reports/${encodeURIComponent(entry.reportFileName)}`;
+  return `<tr>
+    <td>${entry.runNumber}</td>
+    <td><a href="${url}" target="_blank" rel="noopener">${date} report</a></td>
+    <td>${entry.fileCount}</td>
+    <td>${entry.beforeGb.toFixed(2)} GB</td>
+    <td>${entry.afterGb.toFixed(2)} GB</td>
+    <td>${saved}%</td>
+  </tr>`;
+}
+
+async function loadReports() {
+  const res = await fetch('/api/history/reports');
+  const entries = await res.json();
+
+  const reportsStatus = document.getElementById('reportsStatus');
+  if (entries.length === 0) {
+    document.getElementById('reportsRows').innerHTML = '';
+    reportsStatus.textContent = 'No reports within the current retention period.';
+    return;
+  }
+
+  reportsStatus.textContent = '';
+  document.getElementById('reportsRows').innerHTML = entries.map(reportRow).join('');
+}
+
 applyVisibility();
 loadHistory();
+loadReports();

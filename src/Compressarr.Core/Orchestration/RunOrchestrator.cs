@@ -152,13 +152,18 @@ public sealed class RunOrchestrator : IRunOrchestrator
         var totalFiles = allResults.Count;
 
         var runCountPath = AppPaths.GetRunCountFilePath();
+        var reportFileName = $"Compressarr_{timestamp}_Report.html";
         if (totalFiles > 0)
         {
             var totalBeg = allResults.Sum(r => r.BeginSizeGb);
             var totalEnd = allResults.Sum(r => r.EndSizeGb);
+            // The run's own permanent number is "how many runs came before it, plus one" - read
+            // before IncrementRunCount below so the record and the counter agree on the same value.
+            var runNumber = _historyStore.GetRunCount(runCountPath) + 1;
             _historyStore.AppendRun(logFilePath, new RunHistoryRecord(
                 endTime.Year, endTime.Month, endTime.Day, totalBeg, totalEnd, totalFiles,
-                runTime.Hours, runTime.Minutes, runTime.Seconds));
+                runTime.Hours, runTime.Minutes, runTime.Seconds,
+                RunNumber: runNumber, ReportFileName: reportFileName));
 
             // Only a pass that actually processed files counts as a "run" - an empty scan
             // (including every quiet monitor-mode poll) never moves this counter.
@@ -192,7 +197,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         };
 
         Directory.CreateDirectory(reportPath);
-        var reportFilePath = Path.Combine(reportPath, $"Compressarr_{timestamp}_Report.html");
+        var reportFilePath = Path.Combine(reportPath, reportFileName);
         var html = _reportGenerator.Generate(reportModel, logoPngBytes: null);
         File.WriteAllText(reportFilePath, html);
 

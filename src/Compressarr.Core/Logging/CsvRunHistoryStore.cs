@@ -9,7 +9,11 @@ namespace Compressarr.Core.Logging;
 public sealed class CsvRunHistoryStore : IRunHistoryStore
 {
     private const string HistoryFileName = "Compressarr_History.csv";
-    private static readonly string[] Header = { "yyyy", "mm", "dd", "BegSize", "EndSize", "FileCount", "ProcessHours", "ProcessMinutes", "ProcessSeconds" };
+    private static readonly string[] Header =
+    {
+        "yyyy", "mm", "dd", "BegSize", "EndSize", "FileCount", "ProcessHours", "ProcessMinutes", "ProcessSeconds",
+        "RunNumber", "ReportFileName"
+    };
 
     public void AppendRun(string logFilePath, RunHistoryRecord record)
     {
@@ -33,7 +37,9 @@ public sealed class CsvRunHistoryStore : IRunHistoryStore
             record.FileCount.ToString(CultureInfo.InvariantCulture),
             record.ProcessHours.ToString(CultureInfo.InvariantCulture),
             record.ProcessMinutes.ToString(CultureInfo.InvariantCulture),
-            record.ProcessSeconds.ToString(CultureInfo.InvariantCulture)
+            record.ProcessSeconds.ToString(CultureInfo.InvariantCulture),
+            record.RunNumber.ToString(CultureInfo.InvariantCulture),
+            record.ReportFileName
         };
         writer.WriteLine(string.Join(",", fields));
     }
@@ -52,6 +58,11 @@ public sealed class CsvRunHistoryStore : IRunHistoryStore
             var parts = line.Split(',');
             if (parts.Length < 9) continue;
 
+            // RunNumber/ReportFileName were added later - rows written before then simply don't
+            // have columns 9/10, so default them rather than rejecting/mis-parsing older rows.
+            var runNumber = parts.Length > 9 && int.TryParse(parts[9], NumberStyles.Integer, CultureInfo.InvariantCulture, out var rn) ? rn : 0;
+            var reportFileName = parts.Length > 10 ? parts[10] : "";
+
             results.Add(new RunHistoryRecord(
                 Year: int.Parse(parts[0], CultureInfo.InvariantCulture),
                 Month: int.Parse(parts[1], CultureInfo.InvariantCulture),
@@ -61,7 +72,9 @@ public sealed class CsvRunHistoryStore : IRunHistoryStore
                 FileCount: int.Parse(parts[5], CultureInfo.InvariantCulture),
                 ProcessHours: int.Parse(parts[6], CultureInfo.InvariantCulture),
                 ProcessMinutes: int.Parse(parts[7], CultureInfo.InvariantCulture),
-                ProcessSeconds: int.Parse(parts[8], CultureInfo.InvariantCulture)));
+                ProcessSeconds: int.Parse(parts[8], CultureInfo.InvariantCulture),
+                RunNumber: runNumber,
+                ReportFileName: reportFileName));
         }
 
         return results;

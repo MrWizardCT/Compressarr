@@ -9,7 +9,16 @@ public sealed record RunHistoryRecord(
     int FileCount,
     int ProcessHours,
     int ProcessMinutes,
-    int ProcessSeconds);
+    int ProcessSeconds,
+    /// <summary>The persistent, permanent "this was the Nth run ever" number (matches
+    /// IRunHistoryStore.GetRunCount at the moment this run was recorded) - 0 for rows written
+    /// before this field existed, since old CSV rows don't carry it.</summary>
+    int RunNumber = 0,
+    /// <summary>Just the report's file name (e.g. "Compressarr_2026-08-29_12-00-00_Report.html"),
+    /// not a full path - the web UI resolves it against the *current* Report.ReportPath at
+    /// request time, so a later change to that setting doesn't strand old links. Empty for rows
+    /// written before this field existed.</summary>
+    string ReportFileName = "");
 
 /// <summary>
 /// Narrow history/run-count interface — deliberately not the final schema. Phase 4 (web-based
