@@ -236,12 +236,13 @@ Compressarr's logo and content.
 
 <img src="Assets/Screenshots/paths-tab.png" alt="Compressarr Paths tab, showing the HD/SD and UHD lane sections" width="600">
 
-Both lane sections on this tab have the same six fields - fill in
+Both lane sections on this tab have the same seven fields - fill in
 whichever lane(s) you actually plan to use; an empty **Input folder**
-means that lane is skipped entirely.
+means that lane is skipped entirely, same as unchecking **Enable Lane**.
 
 | Field | What it's for |
 |---|---|
+| Enable Lane | Turns this lane's processing on/off - uncheck to suspend a lane without clearing its configured paths/presets |
 | Input folder | Where Compressarr looks for source video files for this lane (This should be the folder where Sonarr/Radarr drops its files) |
 | Output folder | Where HandBrake writes the converted file initially |
 | TV Show preset | HandBrake preset used for files detected as TV episodes |
@@ -356,6 +357,7 @@ for the author's own preset set if you'd rather start from those.
   },
   "contentLanes": {
     "hdsd": {
+      "enabled": true,
       "input": "",
       "output": "",
       "tvPreset": "VeryFastDDtoAAC",
@@ -364,6 +366,7 @@ for the author's own preset set if you'd rather start from those.
       "movieBasePath": ""
     },
     "uhd": {
+      "enabled": true,
       "input": "",
       "output": "",
       "tvPreset": "",

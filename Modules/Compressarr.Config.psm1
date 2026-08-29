@@ -18,6 +18,7 @@ $script:DefaultConfigJson = @'
   },
   "contentLanes": {
     "hdsd": {
+      "enabled": true,
       "input": "",
       "output": "",
       "tvPreset": "VeryFastDDtoAAC",
@@ -26,6 +27,7 @@ $script:DefaultConfigJson = @'
       "movieBasePath": ""
     },
     "uhd": {
+      "enabled": true,
       "input": "",
       "output": "",
       "tvPreset": "",

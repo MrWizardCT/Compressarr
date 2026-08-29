@@ -36,7 +36,7 @@ param(
   [switch]$Once
 )
 
-$script:CompressarrVersion = '1.0.0'
+$script:CompressarrVersion = '1.1.0'
 
 $scriptRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
@@ -110,6 +110,11 @@ function Invoke-CompressarrRun {
   foreach ($laneName in (Get-CompressarrLaneNames)) {
     $laneConfig = $Config.contentLanes.$laneName
     $laneDisplayName = Get-CompressarrLaneDisplayName -LaneName $laneName
+
+    if (-not $laneConfig.enabled) {
+      Write-CompressarrLog "Skipping lane [$laneDisplayName] - lane is disabled."
+      continue
+    }
 
     if ([string]::IsNullOrWhiteSpace($laneConfig.input)) { continue }
 
@@ -259,6 +264,7 @@ try {
           $foundAny = $false
           foreach ($laneName in (Get-CompressarrLaneNames)) {
             $laneConfig = $config.contentLanes.$laneName
+            if (-not $laneConfig.enabled) { continue }
             if ([string]::IsNullOrWhiteSpace($laneConfig.input)) { continue }
             $inputPath = Expand-CompressarrPath $laneConfig.input
             if (-not (Test-Path $inputPath)) { continue }

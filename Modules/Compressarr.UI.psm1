@@ -416,6 +416,10 @@ function Show-CompressarrMainForm {
     Add-CompressarrSectionHeader -Panel $pathsPanel -Row ([ref]$prow) -Text (Get-CompressarrLaneDisplayName -LaneName $laneName)
 
     $laneConfig = $Config.contentLanes.$laneName
+    $laneEnabledChecks = Add-CompressarrCheckboxRow -Panel $pathsPanel -Row ([ref]$prow) -Items @(
+      @{ Label = 'Enable Lane - uncheck to suspend processing for this lane'; Value = [bool]$laneConfig.enabled }
+    )
+    $enabledCheck      = $laneEnabledChecks[0]
     $inputBox          = Add-CompressarrPathRow  -Panel $pathsPanel -Row ([ref]$prow) -Label 'Input folder' -Value $laneConfig.input -Browse Folder
     $outputBox         = Add-CompressarrPathRow  -Panel $pathsPanel -Row ([ref]$prow) -Label 'Output folder' -Value $laneConfig.output -Browse Folder
     $tvPresetCombo     = Add-CompressarrComboRow -Panel $pathsPanel -Row ([ref]$prow) -Label 'TV Show preset' -Items @() -Value $laneConfig.tvPreset -Editable
@@ -431,6 +435,7 @@ function Show-CompressarrMainForm {
     $presetFields["$laneName.movie"] = $moviePresetCombo
 
     $laneControls[$laneName] = [PSCustomObject]@{
+      Enabled        = $enabledCheck
       Input          = $inputBox
       Output         = $outputBox
       TVPreset       = $tvPresetCombo
@@ -515,8 +520,20 @@ function Show-CompressarrMainForm {
 
   $validateAll = {
     $allValid = $true
-    foreach ($tb in $pathFields.Values) {
-      if (Test-CompressarrPath $tb.Text) {
+    foreach ($key in $pathFields.Keys) {
+      $tb = $pathFields[$key]
+      # A lane's own path fields (contentLanes.<lane>.*) only need to be
+      # valid while that lane is enabled - a disabled lane isn't
+      # processed at all, so its blank/invalid paths aren't an error,
+      # same idea as the arrs services below only needing a URL/API Key
+      # while enabled.
+      $laneEnabled = $true
+      if ($key -like 'contentLanes.*') {
+        $laneNameForField = ($key -split '\.')[1]
+        $laneEnabled = $laneControls[$laneNameForField].Enabled.Checked
+      }
+      $ok = (-not $laneEnabled) -or (Test-CompressarrPath $tb.Text)
+      if ($ok) {
         $tb.BackColor = [System.Drawing.Color]::White
         $tb.ForeColor = [System.Drawing.Color]::Black
       }
@@ -526,10 +543,14 @@ function Show-CompressarrMainForm {
         $allValid = $false
       }
     }
-    foreach ($combo in $presetFields.Values) {
+    foreach ($presetKey in $presetFields.Keys) {
+      $combo = $presetFields[$presetKey]
+      $laneNameForPreset = ($presetKey -split '\.')[0]
+      $laneEnabled = $laneControls[$laneNameForPreset].Enabled.Checked
       $presetOk = $false
       try { $presetOk = Test-CompressarrPresetExists -PresetName $combo.Text -PresetsPath $hbPresetsBox.Text } catch { $presetOk = $false }
-      if ($presetOk) {
+      $ok = (-not $laneEnabled) -or $presetOk
+      if ($ok) {
         $combo.BackColor = [System.Drawing.Color]::White
         $combo.ForeColor = [System.Drawing.Color]::Black
       }
@@ -561,6 +582,9 @@ function Show-CompressarrMainForm {
 
   foreach ($tb in $pathFields.Values) { $tb.Add_Leave({ & $validateAll | Out-Null }.GetNewClosure()) }
   $hbPresetsBox.Add_Leave({ & $refreshPresets; & $validateAll | Out-Null }.GetNewClosure())
+  foreach ($lc in $laneControls.Values) {
+    $lc.Enabled.Add_CheckedChanged({ & $validateAll | Out-Null }.GetNewClosure())
+  }
   foreach ($svc in $arrServiceFields) {
     $svc.Enable.Add_CheckedChanged({ & $validateAll | Out-Null }.GetNewClosure())
     $svc.Url.Add_Leave({ & $validateAll | Out-Null }.GetNewClosure())
@@ -605,6 +629,7 @@ function Show-CompressarrMainForm {
 
     foreach ($laneName in (Get-CompressarrLaneNames)) {
       $lc = $laneControls[$laneName]
+      $newConfig.contentLanes.$laneName.enabled = $lc.Enabled.Checked
       $newConfig.contentLanes.$laneName.input = $lc.Input.Text
       $newConfig.contentLanes.$laneName.output = $lc.Output.Text
       $newConfig.contentLanes.$laneName.tvPreset = $lc.TVPreset.Text
