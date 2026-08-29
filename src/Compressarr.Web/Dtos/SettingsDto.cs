@@ -1,0 +1,26 @@
+namespace Compressarr.Web.Dtos;
+
+public sealed record SettingsDto(
+    string HandBrakeCliPath,
+    string PresetsPath,
+    string HandBrakeOptions,
+    List<string> VidTypes,
+    bool OutSameAsIn,
+    string DeleteAfterConvert,
+    bool MoveFiles,
+    int Limit,
+    long MinSizeBytes,
+    string LogFilePath,
+    int RetentionDays,
+    string PostExecCmd,
+    string PostExecArgs,
+    string ReportPath,
+    string OpenAfterRun,
+    int RepeatCount,
+    bool RepeatMonitor,
+    int PollIntervalSeconds,
+    ArrServiceDto Sonarr,
+    ArrServiceDto Radarr,
+    int WebPort);
+
+public sealed record ArrServiceDto(bool Enabled, string Url, string ApiKey);

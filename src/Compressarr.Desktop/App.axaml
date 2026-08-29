@@ -1,15 +1,29 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Compressarr.Desktop.ViewModels"
              x:Class="Compressarr.Desktop.App"
              xmlns:local="using:Compressarr.Desktop"
              RequestedThemeVariant="Default">
              <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
-    <Application.DataTemplates>
-        <local:ViewLocator />
-    </Application.DataTemplates>
-
     <Application.Styles>
         <FluentTheme />
     </Application.Styles>
+
+    <TrayIcon.Icons>
+        <TrayIcons>
+            <TrayIcon Icon="/Assets/CompressarrIcon.ico" ToolTipText="Compressarr" x:DataType="vm:AppTrayViewModel">
+                <TrayIcon.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Open Web UI" Command="{Binding OpenWebUiCommand}" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Start Monitoring" Command="{Binding StartMonitoringCommand}" IsEnabled="{Binding !IsMonitoring}" />
+                        <NativeMenuItem Header="Stop Monitoring" Command="{Binding StopMonitoringCommand}" IsEnabled="{Binding IsMonitoring}" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Exit" Command="{Binding ExitCommand}" />
+                    </NativeMenu>
+                </TrayIcon.Menu>
+            </TrayIcon>
+        </TrayIcons>
+    </TrayIcon.Icons>
 </Application>

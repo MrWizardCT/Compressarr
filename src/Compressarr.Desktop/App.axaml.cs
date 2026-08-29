@@ -1,9 +1,14 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Compressarr.Core;
+using Compressarr.Core.Config;
+using Compressarr.Core.Notifications;
 using Compressarr.Desktop.ViewModels;
-using Compressarr.Desktop.Views;
+using Compressarr.Web;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Compressarr.Desktop;
@@ -12,6 +17,8 @@ public partial class App : Application
 {
     public IServiceProvider Services { get; private set; } = null!;
 
+    private WebApplication? _webApp;
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -19,18 +26,45 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        var services = new ServiceCollection();
-        services.AddCompressarrCore();
-        services.AddSingleton<MainViewModel>();
-        Services = services.BuildServiceProvider();
+        // A lightweight, direct config read (same pattern the old MainViewModel's design-time
+        // constructor used) just to know which port to bind before the DI container exists -
+        // MainViewModel's replacement endpoints reload config themselves per-request afterward.
+        var earlyConfig = new JsonConfigStore().Load(AppPaths.GetConfigFilePath());
+        var port = earlyConfig.Web.Port;
+        var webUrl = $"http://localhost:{port}/";
+
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
+        builder.Services.AddCompressarrCore();
+        builder.Services.AddCompressarrWeb();
+        builder.Services.AddSingleton(sp => new AppTrayViewModel(
+            sp.GetRequiredService<IConfigStore>(),
+            sp.GetRequiredService<Compressarr.Core.Orchestration.IRunLoopController>(),
+            webUrl));
+#if WINDOWS
+        builder.Services.AddSingleton<INotificationService, Notifications.WindowsNotificationService>();
+#endif
+
+        _webApp = builder.Build();
+        _webApp.UseDefaultFiles();
+        _webApp.UseStaticFiles();
+        _webApp.MapCompressarrEndpoints();
+
+        Services = _webApp.Services;
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            desktop.MainWindow = new MainWindow
-            {
-                DataContext = Services.GetRequiredService<MainViewModel>(),
-            };
+            desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            desktop.ShutdownRequested += (_, _) => _webApp.StopAsync().GetAwaiter().GetResult();
+
+            // TrayIcon is declared in App.axaml via the Application-level TrayIcon.Icons attached
+            // property, so it inherits its DataContext from the Application's own logical tree -
+            // setting it here is what makes the NativeMenuItem Command bindings resolve.
+            DataContext = Services.GetRequiredService<AppTrayViewModel>();
         }
+
+        _ = WebMonitorStartup.StartAsync(_webApp, Services.GetRequiredService<Compressarr.Core.Logging.IRunLogger>());
 
         base.OnFrameworkInitializationCompleted();
     }

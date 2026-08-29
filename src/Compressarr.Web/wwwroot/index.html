@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Compressarr - Settings</title>
+  <link rel="icon" href="/assets/favicon.ico" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main>
+    <h2>HandBrake</h2>
+    <div class="field-row">
+      <label for="hbCliPath">HandBrakeCLI path</label>
+      <input type="text" id="hbCliPath" />
+      <button id="checkHandBrakeBtn">Check/Install</button>
+    </div>
+    <div class="field-row">
+      <label for="presetsPath">presets.json path</label>
+      <input type="text" id="presetsPath" />
+      <button id="installPresetsBtn">Install/Merge Presets</button>
+    </div>
+    <div class="field-row">
+      <label for="hbOptions">Extra CLI options</label>
+      <input type="text" id="hbOptions" />
+    </div>
+
+    <h2>Processing</h2>
+    <div class="field-row">
+      <label for="vidTypes">Video extensions (comma-separated)</label>
+      <input type="text" id="vidTypes" />
+    </div>
+    <div class="field-row">
+      <label for="minSizeBytes">Minimum size (bytes)</label>
+      <input type="number" id="minSizeBytes" min="0" />
+    </div>
+    <div class="field-row">
+      <label for="limit">Max files per run (0 = no limit)</label>
+      <input type="number" id="limit" min="0" />
+    </div>
+    <div class="field-row">
+      <label>Write output to same folder as input</label>
+      <input type="checkbox" id="outSameAsIn" />
+    </div>
+    <div class="field-row">
+      <label>Move converted files into show/movie folders</label>
+      <input type="checkbox" id="moveFiles" />
+    </div>
+    <div class="field-row">
+      <label for="deleteAfterConvert">Original file after convert</label>
+      <select id="deleteAfterConvert">
+        <option value="Maintain">Maintain</option>
+        <option value="Delete">Delete</option>
+        <option value="Recycle">Recycle</option>
+      </select>
+    </div>
+
+    <h2>Logging &amp; Reports</h2>
+    <div class="field-row">
+      <label for="logFilePath">Log folder</label>
+      <input type="text" id="logFilePath" />
+    </div>
+    <div class="field-row">
+      <label for="reportPath">Report folder</label>
+      <input type="text" id="reportPath" />
+    </div>
+    <div class="field-row">
+      <label for="retentionDays">Log/report retention (days)</label>
+      <input type="number" id="retentionDays" min="0" />
+    </div>
+    <div class="field-row">
+      <label for="openAfterRun">Open report after run</label>
+      <select id="openAfterRun">
+        <option value="Always">Always</option>
+        <option value="OnError">On Error</option>
+        <option value="Never">Never</option>
+      </select>
+    </div>
+
+    <h2>Monitoring</h2>
+    <div class="field-row">
+      <label for="pollIntervalSeconds">Poll interval (seconds)</label>
+      <input type="number" id="pollIntervalSeconds" min="5" />
+    </div>
+
+    <h2>Post-execution command</h2>
+    <div class="field-row">
+      <label for="postExecCmd">Command</label>
+      <input type="text" id="postExecCmd" />
+    </div>
+    <div class="field-row">
+      <label for="postExecArgs">Arguments</label>
+      <input type="text" id="postExecArgs" />
+    </div>
+
+    <h2>Sonarr</h2>
+    <div class="field-row">
+      <label>Enabled</label>
+      <input type="checkbox" id="sonarrEnabled" />
+    </div>
+    <div class="field-row">
+      <label for="sonarrUrl">URL</label>
+      <input type="text" id="sonarrUrl" />
+    </div>
+    <div class="field-row">
+      <label for="sonarrApiKey">API Key</label>
+      <input type="password" id="sonarrApiKey" />
+    </div>
+
+    <h2>Radarr</h2>
+    <div class="field-row">
+      <label>Enabled</label>
+      <input type="checkbox" id="radarrEnabled" />
+    </div>
+    <div class="field-row">
+      <label for="radarrUrl">URL</label>
+      <input type="text" id="radarrUrl" />
+    </div>
+    <div class="field-row">
+      <label for="radarrApiKey">API Key</label>
+      <input type="password" id="radarrApiKey" />
+    </div>
+
+    <h2>Web UI</h2>
+    <div class="field-row">
+      <label for="webPort">Port (requires restart to take effect)</label>
+      <input type="number" id="webPort" min="1" max="65535" />
+    </div>
+
+    <div class="field-row">
+      <button id="saveBtn" class="primary">Save Settings</button>
+      <button id="runOnceBtn">Run Once</button>
+    </div>
+    <div class="status" id="status"></div>
+  </main>
+
+  <script src="/nav.js"></script>
+  <script src="/settings.js"></script>
+</body>
+</html>

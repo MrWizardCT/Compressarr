@@ -1,18 +1,24 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
     <!-- Self-contained deployment (locked in for v2): bundles the .NET runtime so the app runs
-         without a separately-installed SDK/runtime on the target machine, at the cost of a
-         larger publish size. Publish for a specific platform with:
-           dotnet publish -c Release -r win-x64
-           dotnet publish -c Release -r linux-x64
-           dotnet publish -c Release -r osx-x64
-           dotnet publish -c Release -r osx-arm64
-         (SelfContained is already true below, so it doesn't need to be passed on the command line.) -->
-    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
+         without a separately-installed SDK/runtime on the target machine. Multi-targeted so the
+         Windows build can carry a real Windows.UI.Notifications toast implementation (needs a
+         windows-flavored TFM to reference the raw .winmd metadata) while macOS/Linux stay on the
+         plain cross-platform TFM. -->
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net10.0-windows10.0.19041.0;net10.0</TargetFrameworks>
     <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)'=='net10.0-windows10.0.19041.0'">
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)'=='net10.0'">
+    <RuntimeIdentifiers>linux-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +26,11 @@
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
+  <!-- Windows-only toast notification source, excluded from the plain net10.0 (macOS/Linux) build
+       since Windows.UI.Notifications types won't compile there at all. -->
+  <ItemGroup Condition="'$(TargetFramework)'=='net10.0'">
+    <Compile Remove="Notifications\WindowsNotificationService.cs" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.1" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
@@ -35,5 +46,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Compressarr.Core\Compressarr.Core.csproj" />
+    <ProjectReference Include="..\Compressarr.Web\Compressarr.Web.csproj" />
   </ItemGroup>
 </Project>

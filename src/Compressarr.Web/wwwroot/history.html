@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Compressarr - History</title>
+  <link rel="icon" href="/assets/favicon.ico" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main>
+    <div class="field-row">
+      <h2 style="flex:1; margin:0;">History</h2>
+      <button id="toggleHistoryBtn">Hide History</button>
+    </div>
+
+    <div class="stat-grid">
+      <div class="stat"><div class="label">Total Runs</div><div class="value" id="totalRunCount">-</div></div>
+    </div>
+
+    <div id="historySection">
+      <table>
+        <thead>
+          <tr><th>Period</th><th>Files</th><th>Before</th><th>After</th><th>Saved</th></tr>
+        </thead>
+        <tbody id="historyRows"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script src="/nav.js"></script>
+  <script src="/history.js"></script>
+</body>
+</html>
