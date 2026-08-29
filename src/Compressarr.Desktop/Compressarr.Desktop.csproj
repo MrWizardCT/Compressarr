@@ -2,6 +2,17 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- Self-contained deployment (locked in for v2): bundles the .NET runtime so the app runs
+         without a separately-installed SDK/runtime on the target machine, at the cost of a
+         larger publish size. Publish for a specific platform with:
+           dotnet publish -c Release -r win-x64
+           dotnet publish -c Release -r linux-x64
+           dotnet publish -c Release -r osx-x64
+           dotnet publish -c Release -r osx-arm64
+         (SelfContained is already true below, so it doesn't need to be passed on the command line.) -->
+    <RuntimeIdentifiers>win-x64;linux-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
+    <SelfContained>true</SelfContained>
   </PropertyGroup>
 
   <ItemGroup>
