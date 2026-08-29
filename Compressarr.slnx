@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Compressarr.Core/Compressarr.Core.csproj" />
+    <Project Path="src/Compressarr.Desktop/Compressarr.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Compressarr.Core.Tests/Compressarr.Core.Tests.csproj" />
+  </Folder>
+</Solution>
