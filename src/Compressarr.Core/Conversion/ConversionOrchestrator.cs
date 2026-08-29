@@ -1,6 +1,7 @@
 using Compressarr.Core.Arr;
 using Compressarr.Core.Config;
 using Compressarr.Core.Logging;
+using Compressarr.Core.Orchestration;
 using Compressarr.Core.Presets;
 using Compressarr.Core.Routing;
 
@@ -37,6 +38,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
     private readonly ITrashService _trash;
     private readonly IRunLogger _logger;
     private readonly IResumeStateStore _resumeStore;
+    private readonly IRunProgressReporter _progress;
 
     public ConversionOrchestrator(
         IPathExpander pathExpander,
@@ -49,7 +51,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         IArrUnmonitorService arrUnmonitor,
         ITrashService trash,
         IRunLogger logger,
-        IResumeStateStore resumeStore)
+        IResumeStateStore resumeStore,
+        IRunProgressReporter progress)
     {
         _pathExpander = pathExpander;
         _scanner = scanner;
@@ -62,6 +65,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         _trash = trash;
         _logger = logger;
         _resumeStore = resumeStore;
+        _progress = progress;
     }
 
     public async Task<IReadOnlyList<ConversionResult>> ProcessLaneAsync(
@@ -126,6 +130,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             var startTime = DateTime.Now;
 
             _logger.FileStart(lane.DisplayName, i, fileCount, file.Name, beginSizeGb, contentType, presetName);
+            _progress.FileStarted(lane.Id, i, fileCount, file.Name);
 
             var resumeEntry = resumeState.FirstOrDefault(e => e.LaneId == lane.Id && e.FullName == file.FullName);
 
@@ -252,6 +257,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             if (duration < TimeSpan.Zero) duration = duration.Negate();
 
             _logger.FileComplete(finalFileName ?? newFileName, beginSizeGb, endSizeGb, duration, success, detailLogFile);
+            _progress.FileCompleted(lane.Id, finalFileName ?? newFileName, success);
 
             _resumeStore.Save(resumeState, resumeFilePath);
 

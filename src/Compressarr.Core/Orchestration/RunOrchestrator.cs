@@ -38,6 +38,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
     private readonly IReportLauncher _reportLauncher;
     private readonly INotificationService _notifications;
     private readonly ITrashService _trash;
+    private readonly IRunProgressReporter _progress;
 
     public RunOrchestrator(
         IPathExpander pathExpander,
@@ -50,7 +51,8 @@ public sealed class RunOrchestrator : IRunOrchestrator
         IHtmlReportGenerator reportGenerator,
         IReportLauncher reportLauncher,
         INotificationService notifications,
-        ITrashService trash)
+        ITrashService trash,
+        IRunProgressReporter progress)
     {
         _pathExpander = pathExpander;
         _presets = presets;
@@ -63,6 +65,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         _reportLauncher = reportLauncher;
         _notifications = notifications;
         _trash = trash;
+        _progress = progress;
     }
 
     public async Task<RunResult?> RunOnceAsync(CompressarrConfig config)
@@ -76,11 +79,13 @@ public sealed class RunOrchestrator : IRunOrchestrator
 
         _logger.Log($"Compressarr - run started {timestamp}");
         _logger.Log(new string('-', 80));
+        _progress.RunStarted(timestamp);
 
         var hbloc = _pathExpander.Expand(config.HandBrake.CliPath);
         if (!_pathExpander.PathExists(config.HandBrake.CliPath))
         {
             _logger.Log($"HandBrakeCLI.exe not found at {hbloc}. Download it from https://handbrake.fr/downloads2.php", LogSeverity.Error);
+            _progress.RunCompleted(0);
             return null;
         }
 
@@ -88,6 +93,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         if (!_pathExpander.PathExists(config.HandBrake.PresetsPath))
         {
             _logger.Log($"HandBrake presets file not found at {presetsPath}", LogSeverity.Error);
+            _progress.RunCompleted(0);
             return null;
         }
 
@@ -124,6 +130,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
             }
 
             _logger.Log($"\nScanning lane [{lane.DisplayName}] - {_pathExpander.Expand(lane.Input)}");
+            _progress.LaneStarted(lane.Id, lane.DisplayName);
             var results = await _conversionOrchestrator.ProcessLaneAsync(lane, config, logFilePath, timestamp, resumeState, resumeFilePath);
             laneResults[lane.Id] = results;
         }
@@ -144,7 +151,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         var allResults = laneResults.Values.SelectMany(r => r).ToList();
         var totalFiles = allResults.Count;
 
-        var runCountPath = Path.Combine(AppPaths.GetAppDataDirectory(), "compressarr.runcount.json");
+        var runCountPath = AppPaths.GetRunCountFilePath();
         if (totalFiles > 0)
         {
             var totalBeg = allResults.Sum(r => r.BeginSizeGb);
@@ -210,6 +217,8 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 $"{totalFiles} file(s) processed in {runTime.Hours}h {runTime.Minutes}m {runTime.Seconds}s.",
                 reportFilePath);
         }
+
+        _progress.RunCompleted(totalFiles);
 
         return new RunResult
         {

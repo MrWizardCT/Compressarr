@@ -2,6 +2,7 @@ using Compressarr.Core.Arr;
 using Compressarr.Core.Config;
 using Compressarr.Core.Conversion;
 using Compressarr.Core.Dependencies;
+using Compressarr.Core.Diagnostics;
 using Compressarr.Core.Logging;
 using Compressarr.Core.Notifications;
 using Compressarr.Core.Orchestration;
@@ -41,13 +42,17 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRunLogger, FileRunLogger>();
         services.AddSingleton<IRunHistoryStore, CsvRunHistoryStore>();
         services.AddSingleton<IHistoryRollupCalculator, HistoryRollupCalculator>();
+        services.AddSingleton<IWebHistoryRollupCalculator, WebHistoryRollupCalculator>();
+        services.AddSingleton<ICpuUsageSampler>(_ => CpuUsageSamplerFactory.CreateForCurrentPlatform());
 
         services.AddSingleton<IHtmlReportGenerator, HtmlReportGenerator>();
         services.AddSingleton<IReportLauncher, ReportLauncher>();
         services.AddSingleton<INotificationService, NoOpNotificationService>();
+        services.AddSingleton<IRunProgressReporter, NullRunProgressReporter>();
 
         services.AddSingleton<IConversionOrchestrator, ConversionOrchestrator>();
         services.AddSingleton<IRunOrchestrator, RunOrchestrator>();
+        services.AddSingleton<IRunLoopController, RunLoopController>();
 
         return services;
     }

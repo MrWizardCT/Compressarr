@@ -25,6 +25,7 @@ public sealed class CompressarrConfig
     public RepeatSettings Repeat { get; set; } = new();
     public StartupSettings Startup { get; set; } = new();
     public ArrSettings Arrs { get; set; } = new();
+    public WebSettings Web { get; set; } = new();
 }
 
 public sealed class HandBrakeSettings
@@ -87,6 +88,10 @@ public sealed class RepeatSettings
 {
     public int Count { get; set; } = 0;
     public bool Monitor { get; set; } = false;
+
+    /// <summary>Cadence for IRunLoopController's monitor-mode loop - matches v1's original 60s
+    /// countdown between polls.</summary>
+    public int PollIntervalSeconds { get; set; } = 60;
 }
 
 public sealed class StartupSettings
@@ -105,4 +110,14 @@ public sealed class ArrServiceSettings
     public bool Enabled { get; set; } = false;
     public string Url { get; set; } = "";
     public string ApiKey { get; set; } = "";
+}
+
+public sealed class WebSettings
+{
+    /// <summary>Port the embedded web UI/API listens on, bound to all interfaces (0.0.0.0) so
+    /// it's reachable from other devices on the LAN - the whole point of the web-first design.
+    /// User-configurable from the settings page so it can be changed if it collides with
+    /// something else already running on the machine. No authentication in v2.0.0 (matches
+    /// Radarr/Sonarr's own default posture).</summary>
+    public int Port { get; set; } = 1212;
 }
