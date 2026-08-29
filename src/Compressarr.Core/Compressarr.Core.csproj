@@ -7,4 +7,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Compressarr.Core.Tests" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\compressarr-presets.json" />
+  </ItemGroup>
 </Project>

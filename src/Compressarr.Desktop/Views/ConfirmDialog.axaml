@@ -10,7 +10,7 @@
         <TextBlock x:Name="MessageText" TextWrapping="Wrap" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
             <Button Content="Cancel" Click="OnCancelClick" />
-            <Button Content="Remove" Click="OnConfirmClick" />
+            <Button x:Name="ConfirmButton" Content="OK" Click="OnConfirmClick" />
         </StackPanel>
     </StackPanel>
 </Window>

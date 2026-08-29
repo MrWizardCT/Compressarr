@@ -10,10 +10,11 @@ public partial class ConfirmDialog : Window
         InitializeComponent();
     }
 
-    public static Task<bool> AskAsync(Window owner, string message)
+    public static Task<bool> AskAsync(Window owner, string message, string confirmText = "OK", string title = "Confirm")
     {
-        var dialog = new ConfirmDialog();
+        var dialog = new ConfirmDialog { Title = title };
         dialog.FindControl<TextBlock>("MessageText")!.Text = message;
+        dialog.FindControl<Button>("ConfirmButton")!.Content = confirmText;
         return dialog.ShowDialog<bool>(owner);
     }
 

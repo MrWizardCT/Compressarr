@@ -38,6 +38,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="presets.json path:" Width="140" VerticalAlignment="Center" />
                         <TextBox Text="{Binding PresetsPath}" Width="500" />
+                        <Button Content="Install/Merge Compressarr Presets" Click="OnInstallPresetsClick" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="Extra CLI options:" Width="140" VerticalAlignment="Center" />

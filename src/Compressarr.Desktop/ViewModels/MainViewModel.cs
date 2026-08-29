@@ -15,6 +15,8 @@ public partial class MainViewModel : ViewModelBase
     private readonly IRunOrchestrator _runOrchestrator;
     private readonly IHandBrakePresetService _presetService;
     private readonly IRunLogger _logger;
+    private readonly IPresetInstaller _presetInstaller;
+    private readonly IPathExpander _pathExpander;
 
     [ObservableProperty]
     public partial string HandBrakeCliPath { get; set; } = "";
@@ -53,12 +55,20 @@ public partial class MainViewModel : ViewModelBase
     public ObservableCollection<string> LogLines { get; } = new();
     public IReadOnlyList<DeleteAfterConvertMode> DeleteModes { get; } = Enum.GetValues<DeleteAfterConvertMode>();
 
-    public MainViewModel(IConfigStore configStore, IRunOrchestrator runOrchestrator, IHandBrakePresetService presetService, IRunLogger logger)
+    public MainViewModel(
+        IConfigStore configStore,
+        IRunOrchestrator runOrchestrator,
+        IHandBrakePresetService presetService,
+        IRunLogger logger,
+        IPresetInstaller presetInstaller,
+        IPathExpander pathExpander)
     {
         _configStore = configStore;
         _runOrchestrator = runOrchestrator;
         _presetService = presetService;
         _logger = logger;
+        _presetInstaller = presetInstaller;
+        _pathExpander = pathExpander;
 
         _logger.LineWritten += OnLineWritten;
 
@@ -66,7 +76,7 @@ public partial class MainViewModel : ViewModelBase
     }
 
     // Parameterless constructor for the XAML previewer only.
-    public MainViewModel() : this(new JsonConfigStore(), null!, new HandBrakePresetService(), new FileRunLogger()) { }
+    public MainViewModel() : this(new JsonConfigStore(), null!, new HandBrakePresetService(), new FileRunLogger(), new PresetInstaller(), new PathExpander()) { }
 
     private void OnLineWritten(string line, LogSeverity severity)
     {
@@ -106,6 +116,25 @@ public partial class MainViewModel : ViewModelBase
 
     [RelayCommand]
     private void RefreshPresets() => RefreshAllPresets();
+
+    /// <summary>Checked by MainWindow's code-behind before calling InstallPresetsFresh/
+    /// MergePresets, to decide whether the user needs a confirmation prompt first (the prompt
+    /// itself is a UI concern and lives in the view, same pattern as lane removal).</summary>
+    public bool PresetsFileNeedsMergePrompt() => _presetInstaller.NeedsMergePrompt(_pathExpander.Expand(PresetsPath));
+
+    public void InstallPresetsFresh()
+    {
+        _presetInstaller.InstallFresh(_pathExpander.Expand(PresetsPath));
+        RefreshAllPresets();
+        StatusMessage = "Compressarr's presets installed.";
+    }
+
+    public void MergePresets()
+    {
+        _presetInstaller.Merge(_pathExpander.Expand(PresetsPath));
+        RefreshAllPresets();
+        StatusMessage = "Compressarr's presets merged into your existing presets.json.";
+    }
 
     [RelayCommand]
     private void AddLane()
