@@ -34,6 +34,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="HandBrakeCLI path:" Width="140" VerticalAlignment="Center" />
                         <TextBox Text="{Binding HandBrakeCliPath}" Width="500" />
+                        <Button Content="Check/Install HandBrakeCLI" Click="OnCheckHandBrakeClick" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="presets.json path:" Width="140" VerticalAlignment="Center" />

@@ -46,4 +46,39 @@ public partial class MainWindow : Window
             mainViewModel.InstallPresetsFresh();
         }
     }
+
+    private async void OnCheckHandBrakeClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel mainViewModel) return;
+
+        if (mainViewModel.HandBrakeCliExists())
+        {
+            await ConfirmDialog.AskAsync(this,
+                $"HandBrakeCLI is already found at the configured path - nothing to install.",
+                confirmText: "OK", title: "HandBrakeCLI");
+            return;
+        }
+
+        var release = await mainViewModel.GetHandBrakeReleaseInfoAsync();
+        if (release is null)
+        {
+            await ConfirmDialog.AskAsync(this,
+                "No downloadable HandBrakeCLI build was found for this platform.\n\nOn Linux, install HandBrakeCLI via your distro's package manager (e.g. apt, dnf) or Flatpak, then point the HandBrakeCLI path above at it.",
+                confirmText: "OK", title: "HandBrakeCLI");
+            return;
+        }
+
+        var confirmed = await ConfirmDialog.AskAsync(this,
+            $"Download and install HandBrakeCLI {release.Version}?\n\n" +
+            $"File: {release.AssetName}\n" +
+            $"Source: github.com/HandBrake/HandBrake releases\n" +
+            $"Size: {release.SizeBytes / 1024 / 1024} MB\n\n" +
+            "It installs into Compressarr's own folder and won't touch any existing HandBrake installation.",
+            confirmText: "Download & Install", title: "Install HandBrakeCLI");
+
+        if (confirmed)
+        {
+            await mainViewModel.InstallHandBrakeAsync(release);
+        }
+    }
 }

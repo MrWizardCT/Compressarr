@@ -1,6 +1,7 @@
 using Compressarr.Core.Arr;
 using Compressarr.Core.Config;
 using Compressarr.Core.Conversion;
+using Compressarr.Core.Dependencies;
 using Compressarr.Core.Logging;
 using Compressarr.Core.Notifications;
 using Compressarr.Core.Orchestration;
@@ -24,6 +25,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPathExpander, PathExpander>();
         services.AddSingleton<IHandBrakePresetService, HandBrakePresetService>();
         services.AddSingleton<IPresetInstaller, PresetInstaller>();
+        services.AddSingleton<IHandBrakeInstaller, HandBrakeInstaller>();
 
         services.AddSingleton<IVideoFileScanner, VideoFileScanner>();
         services.AddSingleton<IHandBrakeProcessRunner, HandBrakeProcessRunner>();

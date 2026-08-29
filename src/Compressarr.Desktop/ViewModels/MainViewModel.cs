@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using Compressarr.Core.Config;
+using Compressarr.Core.Dependencies;
 using Compressarr.Core.Logging;
 using Compressarr.Core.Orchestration;
 using Compressarr.Core.Presets;
@@ -17,6 +18,7 @@ public partial class MainViewModel : ViewModelBase
     private readonly IRunLogger _logger;
     private readonly IPresetInstaller _presetInstaller;
     private readonly IPathExpander _pathExpander;
+    private readonly IHandBrakeInstaller _handBrakeInstaller;
 
     [ObservableProperty]
     public partial string HandBrakeCliPath { get; set; } = "";
@@ -61,7 +63,8 @@ public partial class MainViewModel : ViewModelBase
         IHandBrakePresetService presetService,
         IRunLogger logger,
         IPresetInstaller presetInstaller,
-        IPathExpander pathExpander)
+        IPathExpander pathExpander,
+        IHandBrakeInstaller handBrakeInstaller)
     {
         _configStore = configStore;
         _runOrchestrator = runOrchestrator;
@@ -69,6 +72,7 @@ public partial class MainViewModel : ViewModelBase
         _logger = logger;
         _presetInstaller = presetInstaller;
         _pathExpander = pathExpander;
+        _handBrakeInstaller = handBrakeInstaller;
 
         _logger.LineWritten += OnLineWritten;
 
@@ -76,7 +80,7 @@ public partial class MainViewModel : ViewModelBase
     }
 
     // Parameterless constructor for the XAML previewer only.
-    public MainViewModel() : this(new JsonConfigStore(), null!, new HandBrakePresetService(), new FileRunLogger(), new PresetInstaller(), new PathExpander()) { }
+    public MainViewModel() : this(new JsonConfigStore(), null!, new HandBrakePresetService(), new FileRunLogger(), new PresetInstaller(), new PathExpander(), null!) { }
 
     private void OnLineWritten(string line, LogSeverity severity)
     {
@@ -134,6 +138,20 @@ public partial class MainViewModel : ViewModelBase
         _presetInstaller.Merge(_pathExpander.Expand(PresetsPath));
         RefreshAllPresets();
         StatusMessage = "Compressarr's presets merged into your existing presets.json.";
+    }
+
+    public bool HandBrakeCliExists() => _pathExpander.PathExists(HandBrakeCliPath);
+
+    public Task<HandBrakeReleaseInfo?> GetHandBrakeReleaseInfoAsync() => _handBrakeInstaller.GetLatestReleaseAsync();
+
+    public async Task InstallHandBrakeAsync(HandBrakeReleaseInfo release)
+    {
+        var installDir = Path.Combine(AppPaths.GetAppDataDirectory(), "HandBrakeCLI");
+        var progress = new Progress<string>(msg => StatusMessage = msg);
+
+        var installedPath = await _handBrakeInstaller.InstallAsync(release, installDir, progress);
+        HandBrakeCliPath = installedPath;
+        StatusMessage = $"HandBrakeCLI {release.Version} installed at {installedPath}.";
     }
 
     [RelayCommand]
