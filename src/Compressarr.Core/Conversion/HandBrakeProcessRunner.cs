@@ -56,14 +56,22 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
             File.WriteAllText(detailLogFile, stderr);
         }
 
-        var success = false;
-        if (File.Exists(tempOutputPath))
-        {
-            var hasFinishedLine = File.ReadLines(detailLogFile).Any(l => l.Contains("Finished work at", StringComparison.Ordinal));
-            var nonEmpty = new FileInfo(tempOutputPath).Length > 0;
-            success = hasFinishedLine && nonEmpty;
-        }
+        return new HandBrakeRunResult(DetermineSuccess(tempOutputPath, detailLogFile), detailLogFile);
+    }
 
-        return new HandBrakeRunResult(success, detailLogFile);
+    /// <summary>Success requires ALL of: the temp output file exists, is non-empty, AND the
+    /// detail log contains a line matching "*Finished work at*" (HandBrake's own completion
+    /// banner). Deliberately no process exit-code check — ported as-is for parity with v1.
+    /// Extracted as an internal static method so the two conditions can be tested
+    /// independently of actually invoking a process.</summary>
+    internal static bool DetermineSuccess(string tempOutputPath, string detailLogFile)
+    {
+        if (!File.Exists(tempOutputPath)) return false;
+
+        var hasFinishedLine = File.Exists(detailLogFile) &&
+            File.ReadLines(detailLogFile).Any(l => l.Contains("Finished work at", StringComparison.Ordinal));
+        var nonEmpty = new FileInfo(tempOutputPath).Length > 0;
+
+        return hasFinishedLine && nonEmpty;
     }
 }
