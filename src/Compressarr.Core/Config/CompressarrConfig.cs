@@ -54,7 +54,7 @@ public sealed class ProcessingSettings
     /// <summary>Extensions without a leading dot (matches v1's stored format — a dot is
     /// prepended at point-of-use when building glob patterns).</summary>
     public List<string> VidTypes { get; set; } = new() { "mkv", "avi", "mp4", "mpg", "ts", "m4v" };
-    public bool OutSameAsIn { get; set; } = true;
+    public bool OutSameAsIn { get; set; } = false;
     public DeleteAfterConvertMode DeleteAfterConvert { get; set; } = DeleteAfterConvertMode.Recycle;
     public bool MoveFiles { get; set; } = true;
     public int Limit { get; set; } = 0;
