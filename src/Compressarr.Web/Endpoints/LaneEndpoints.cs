@@ -18,44 +18,38 @@ public static class LaneEndpoints
 
         app.MapPost("/api/lanes", (IConfigStore configStore) =>
         {
-            var configPath = AppPaths.GetConfigFilePath();
-            var config = configStore.Load(configPath);
-
-            var lane = new LaneConfig
+            var dto = configStore.Update(AppPaths.GetConfigFilePath(), config =>
             {
-                DisplayName = $"New Lane {config.Lanes.Count + 1}",
-                Enabled = true
-            };
-            config.Lanes.Add(lane);
-            configStore.Save(config, configPath);
+                var lane = new LaneConfig
+                {
+                    DisplayName = $"New Lane {config.Lanes.Count + 1}",
+                    Enabled = true
+                };
+                config.Lanes.Add(lane);
+                return ConfigMapping.ToLaneDto(lane);
+            });
 
-            return Results.Json(ConfigMapping.ToLaneDto(lane));
+            return Results.Json(dto);
         });
 
         app.MapPut("/api/lanes/{id}", (string id, LaneDto dto, IConfigStore configStore) =>
         {
-            var configPath = AppPaths.GetConfigFilePath();
-            var config = configStore.Load(configPath);
+            var result = configStore.Update(AppPaths.GetConfigFilePath(), config =>
+            {
+                var lane = config.Lanes.FirstOrDefault(l => l.Id == id);
+                if (lane is null) return null;
 
-            var lane = config.Lanes.FirstOrDefault(l => l.Id == id);
-            if (lane is null) return Results.NotFound();
+                ConfigMapping.ApplyLaneDto(lane, dto);
+                return ConfigMapping.ToLaneDto(lane);
+            });
 
-            ConfigMapping.ApplyLaneDto(lane, dto);
-            configStore.Save(config, configPath);
-
-            return Results.Json(ConfigMapping.ToLaneDto(lane));
+            return result is null ? Results.NotFound() : Results.Json(result);
         });
 
         app.MapDelete("/api/lanes/{id}", (string id, IConfigStore configStore) =>
         {
-            var configPath = AppPaths.GetConfigFilePath();
-            var config = configStore.Load(configPath);
-
-            var removed = config.Lanes.RemoveAll(l => l.Id == id);
-            if (removed == 0) return Results.NotFound();
-
-            configStore.Save(config, configPath);
-            return Results.NoContent();
+            var removed = configStore.Update(AppPaths.GetConfigFilePath(), config => config.Lanes.RemoveAll(l => l.Id == id));
+            return removed == 0 ? Results.NotFound() : Results.NoContent();
         });
     }
 }

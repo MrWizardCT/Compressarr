@@ -66,6 +66,51 @@ public class JsonConfigStoreTests : IDisposable
     }
 
     [Fact]
+    public void Update_ReturnsMutateResult_AndPersistsTheChange()
+    {
+        var store = new JsonConfigStore();
+        store.Save(DefaultConfigFactory.Create(), ConfigPath);
+
+        var newCount = store.Update(ConfigPath, config =>
+        {
+            config.Lanes.Add(new LaneConfig { Id = "extra", DisplayName = "Extra" });
+            return config.Lanes.Count;
+        });
+
+        Assert.Equal(3, newCount);
+        Assert.Equal(3, store.Load(ConfigPath).Lanes.Count);
+    }
+
+    [Fact]
+    public async Task Update_ConcurrentCalls_DoNotLoseEitherChange()
+    {
+        // Reproduces the "Save All Lanes" race this test guards against: two concurrent
+        // load-mutate-save cycles against different lanes must not clobber each other, and must
+        // not throw a file-in-use IOException from racing directly on the file write.
+        var store = new JsonConfigStore();
+        store.Save(DefaultConfigFactory.Create(), ConfigPath);
+
+        var task1 = Task.Run(() => store.Update(ConfigPath, config =>
+        {
+            var lane = config.Lanes.Single(l => l.Id == "hdsd");
+            lane.DisplayName = "Updated HD/SD";
+            return true;
+        }));
+        var task2 = Task.Run(() => store.Update(ConfigPath, config =>
+        {
+            var lane = config.Lanes.Single(l => l.Id == "uhd");
+            lane.DisplayName = "Updated UHD";
+            return true;
+        }));
+
+        await Task.WhenAll(task1, task2);
+
+        var final = store.Load(ConfigPath);
+        Assert.Equal("Updated HD/SD", final.Lanes.Single(l => l.Id == "hdsd").DisplayName);
+        Assert.Equal("Updated UHD", final.Lanes.Single(l => l.Id == "uhd").DisplayName);
+    }
+
+    [Fact]
     public void Load_PartialOverrideFile_FillsRemainingFieldsFromDefaults()
     {
         File.WriteAllText(ConfigPath, """{"processing":{"retentionDays":99}}""");

@@ -47,15 +47,36 @@ function readLaneCard(node) {
   };
 }
 
-async function saveLane(node) {
-  const dto = readLaneCard(node);
-  setStatus(`Saving lane "${dto.displayName}"...`);
+async function putLane(dto) {
   const res = await fetch(`/api/lanes/${dto.id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(dto)
   });
-  setStatus(res.ok ? `Lane "${dto.displayName}" saved.` : 'Failed to save lane.');
+  return res.ok;
+}
+
+async function saveLane(node) {
+  const dto = readLaneCard(node);
+  setStatus(`Saving lane "${dto.displayName}"...`);
+  const ok = await putLane(dto);
+  setStatus(ok ? `Lane "${dto.displayName}" saved.` : 'Failed to save lane.');
+}
+
+async function saveAllLanes() {
+  const cards = lanesContainer.querySelectorAll('.lane-card');
+  if (cards.length === 0) {
+    setStatus('No lanes to save.');
+    return;
+  }
+
+  setStatus(`Saving ${cards.length} lane(s)...`);
+  const results = await Promise.all(Array.from(cards).map(node => putLane(readLaneCard(node))));
+  const failedCount = results.filter(ok => !ok).length;
+
+  setStatus(failedCount === 0
+    ? `All ${cards.length} lane(s) saved.`
+    : `Saved ${cards.length - failedCount} of ${cards.length} lane(s) - ${failedCount} failed.`);
 }
 
 async function removeLane(node) {
@@ -99,6 +120,8 @@ document.getElementById('addLaneBtn').addEventListener('click', async () => {
   lanesContainer.appendChild(laneCardFromDto(dto));
   setStatus(`Lane "${dto.displayName}" added.`);
 });
+
+document.getElementById('saveAllLanesBtn').addEventListener('click', saveAllLanes);
 
 populatePresetList();
 loadLanes();

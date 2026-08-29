@@ -18,11 +18,12 @@ public static class SettingsEndpoints
 
         app.MapPut("/api/settings", (SettingsDto dto, IConfigStore configStore) =>
         {
-            var configPath = AppPaths.GetConfigFilePath();
-            var config = configStore.Load(configPath);
-            ConfigMapping.ApplySettingsDto(config, dto);
-            configStore.Save(config, configPath);
-            return Results.Json(ConfigMapping.ToSettingsDto(config));
+            var result = configStore.Update(AppPaths.GetConfigFilePath(), config =>
+            {
+                ConfigMapping.ApplySettingsDto(config, dto);
+                return ConfigMapping.ToSettingsDto(config);
+            });
+            return Results.Json(result);
         });
     }
 }

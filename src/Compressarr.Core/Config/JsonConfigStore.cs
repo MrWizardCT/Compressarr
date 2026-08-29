@@ -12,6 +12,15 @@ public interface IConfigStore
     CompressarrConfig Load(string path);
 
     void Save(CompressarrConfig config, string path);
+
+    /// <summary>Atomically loads config, applies mutate, and saves the result — all under one
+    /// lock. Multiple HTTP requests (the web UI's endpoints) can call Load+mutate-in-memory+Save
+    /// concurrently; without serializing the whole cycle, two concurrent updates race on both the
+    /// file write itself (one gets "file in use") and, more subtly, on the read: each starts from
+    /// the same pre-mutation snapshot, so the second Save silently clobbers the first's change
+    /// (a lost update) even when neither request throws. Every endpoint that changes config
+    /// should go through this instead of separate Load()/Save() calls.</summary>
+    T Update<T>(string path, Func<CompressarrConfig, T> mutate);
 }
 
 public sealed class JsonConfigStore : IConfigStore
@@ -21,6 +30,8 @@ public sealed class JsonConfigStore : IConfigStore
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter() }
     };
+
+    private readonly SemaphoreSlim _lock = new(1, 1);
 
     public CompressarrConfig Load(string path)
     {
@@ -59,6 +70,28 @@ public sealed class JsonConfigStore : IConfigStore
         }
 
         var json = JsonSerializer.Serialize(config, SerializerOptions);
-        File.WriteAllText(path, json);
+
+        // Write to a temp file and swap it into place rather than writing the target file
+        // directly, so a concurrent Load() never observes a partially-written/torn file even if
+        // it happens to run outside the Update() lock below.
+        var tempPath = path + ".tmp-" + Guid.NewGuid().ToString("N")[..8];
+        File.WriteAllText(tempPath, json);
+        File.Move(tempPath, path, overwrite: true);
+    }
+
+    public T Update<T>(string path, Func<CompressarrConfig, T> mutate)
+    {
+        _lock.Wait();
+        try
+        {
+            var config = Load(path);
+            var result = mutate(config);
+            Save(config, path);
+            return result;
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 }

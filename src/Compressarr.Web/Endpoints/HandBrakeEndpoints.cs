@@ -42,10 +42,11 @@ public static class HandBrakeEndpoints
             var installDir = Path.Combine(AppPaths.GetAppDataDirectory(), "HandBrakeCLI");
             var installedPath = await installer.InstallAsync(release, installDir);
 
-            var configPath = AppPaths.GetConfigFilePath();
-            var config = configStore.Load(configPath);
-            config.HandBrake.CliPath = installedPath;
-            configStore.Save(config, configPath);
+            configStore.Update(AppPaths.GetConfigFilePath(), config =>
+            {
+                config.HandBrake.CliPath = installedPath;
+                return true;
+            });
 
             return Results.Json(new { installedPath, version = release.Version });
         });
