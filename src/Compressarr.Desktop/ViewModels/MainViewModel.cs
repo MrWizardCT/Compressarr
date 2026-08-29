@@ -107,6 +107,23 @@ public partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void RefreshPresets() => RefreshAllPresets();
 
+    [RelayCommand]
+    private void AddLane()
+    {
+        var lane = new LaneViewModel(new LaneConfig
+        {
+            DisplayName = $"New Lane {Lanes.Count + 1}",
+            Enabled = true
+        });
+        lane.RefreshPresets(_presetService, PresetsPath);
+        Lanes.Add(lane);
+    }
+
+    /// <summary>Called from MainWindow's code-behind after the user has confirmed removal via
+    /// ConfirmDialog - the confirmation prompt itself lives in the view, not here, since it's
+    /// purely a UI concern (nothing about the Core data model needs to know about it).</summary>
+    public void RemoveLane(LaneViewModel lane) => Lanes.Remove(lane);
+
     [RelayCommand(CanExecute = nameof(CanRunOnce))]
     private async Task RunOnceAsync()
     {
