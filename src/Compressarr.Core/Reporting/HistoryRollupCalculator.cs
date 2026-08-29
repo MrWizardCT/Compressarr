@@ -1,0 +1,40 @@
+using Compressarr.Core.Logging;
+
+namespace Compressarr.Core.Reporting;
+
+public interface IHistoryRollupCalculator
+{
+    (HistoryRollup Today, HistoryRollup ThisMonth, HistoryRollup ThisYear) Calculate(string logFilePath);
+}
+
+/// <summary>Ported from Get-CompressarrHistoryRollups.</summary>
+public sealed class HistoryRollupCalculator : IHistoryRollupCalculator
+{
+    private readonly IRunHistoryStore _historyStore;
+
+    public HistoryRollupCalculator(IRunHistoryStore historyStore)
+    {
+        _historyStore = historyStore;
+    }
+
+    public (HistoryRollup Today, HistoryRollup ThisMonth, HistoryRollup ThisYear) Calculate(string logFilePath)
+    {
+        var history = _historyStore.GetHistory(logFilePath);
+        var now = DateTime.Now;
+
+        HistoryRollup Rollup(IEnumerable<RunHistoryRecord> rows)
+        {
+            var rowList = rows.ToList();
+            return new HistoryRollup(
+                FileCount: rowList.Sum(r => r.FileCount),
+                BeforeGb: Math.Round(rowList.Sum(r => r.BeginSizeGb), 3),
+                AfterGb: Math.Round(rowList.Sum(r => r.EndSizeGb), 3));
+        }
+
+        var today = Rollup(history.Where(r => r.Year == now.Year && r.Month == now.Month && r.Day == now.Day));
+        var thisMonth = Rollup(history.Where(r => r.Year == now.Year && r.Month == now.Month));
+        var thisYear = Rollup(history.Where(r => r.Year == now.Year));
+
+        return (today, thisMonth, thisYear);
+    }
+}

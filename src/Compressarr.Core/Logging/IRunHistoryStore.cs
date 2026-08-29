@@ -1,0 +1,33 @@
+namespace Compressarr.Core.Logging;
+
+public sealed record RunHistoryRecord(
+    int Year,
+    int Month,
+    int Day,
+    double BeginSizeGb,
+    double EndSizeGb,
+    int FileCount,
+    int ProcessHours,
+    int ProcessMinutes,
+    int ProcessSeconds);
+
+/// <summary>
+/// Narrow history/run-count interface — deliberately not the final schema. Phase 4 (web-based
+/// real-time monitoring, running totals, run count) swaps CsvRunHistoryStore for a proper
+/// structured store (most likely SQLite) behind this same interface, without touching callers.
+/// </summary>
+public interface IRunHistoryStore
+{
+    /// <summary>Appends one row for a run that processed at least one file — an empty pass is
+    /// never recorded, mirroring v1's Invoke-CompressarrRun gating.</summary>
+    void AppendRun(string logFilePath, RunHistoryRecord record);
+
+    IReadOnlyList<RunHistoryRecord> GetHistory(string logFilePath);
+
+    /// <summary>Persistent, cumulative count of runs that processed at least one file. Returns 0
+    /// if never run before — also how the app recognizes "first launch ever" to decide which UI
+    /// to show.</summary>
+    int GetRunCount(string runCountPath);
+
+    void IncrementRunCount(string runCountPath);
+}
