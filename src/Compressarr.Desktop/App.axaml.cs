@@ -33,7 +33,17 @@ public partial class App : Application
         var port = earlyConfig.Web.Port;
         var webUrl = $"http://localhost:{port}/";
 
-        var builder = WebApplication.CreateBuilder();
+        // ContentRootPath must be pinned to the assembly's own directory, not left to default to
+        // Directory.GetCurrentDirectory() - `dotnet run` sets the working directory to the
+        // project's *source* folder (no wwwroot there at all; wwwroot only exists in the build
+        // output), which made UseStaticFiles()/UseDefaultFiles() 404 on everything when launched
+        // that way. AppContext.BaseDirectory always points at the running assembly's own folder
+        // regardless of how the process was started (dotnet run, double-click, Start-Process with
+        // no explicit working directory, etc).
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            ContentRootPath = AppContext.BaseDirectory
+        });
         builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
         builder.Services.AddCompressarrCore();
