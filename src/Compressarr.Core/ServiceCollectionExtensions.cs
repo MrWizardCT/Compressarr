@@ -44,6 +44,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IHistoryRollupCalculator, HistoryRollupCalculator>();
         services.AddSingleton<IWebHistoryRollupCalculator, WebHistoryRollupCalculator>();
         services.AddSingleton<ICpuUsageSampler>(_ => CpuUsageSamplerFactory.CreateForCurrentPlatform());
+        services.AddSingleton<IFileSystemBrowser, FileSystemBrowser>();
 
         services.AddSingleton<IHtmlReportGenerator, HtmlReportGenerator>();
         services.AddSingleton<IReportLauncher, ReportLauncher>();

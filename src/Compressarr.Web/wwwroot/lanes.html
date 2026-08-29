@@ -28,8 +28,10 @@
       <div class="field-row">
         <label>Input</label>
         <input type="text" class="f-input" />
+        <button class="browse-btn" data-target="f-input">Browse...</button>
         <label>Output</label>
         <input type="text" class="f-output" />
+        <button class="browse-btn" data-target="f-output">Browse...</button>
       </div>
       <div class="field-row">
         <label>TV preset</label>
@@ -40,14 +42,17 @@
       <div class="field-row">
         <label>TV base path</label>
         <input type="text" class="f-tvShowBasePath" />
+        <button class="browse-btn" data-target="f-tvShowBasePath">Browse...</button>
         <label>Movie base path</label>
         <input type="text" class="f-movieBasePath" />
+        <button class="browse-btn" data-target="f-movieBasePath">Browse...</button>
       </div>
     </div>
   </template>
   <datalist id="preset-list"></datalist>
 
   <script src="/nav.js"></script>
+  <script src="/browse.js"></script>
   <script src="/lanes.js"></script>
 </body>
 </html>

@@ -23,6 +23,13 @@ function laneCardFromDto(dto) {
   node.querySelector('.save-lane-btn').addEventListener('click', () => saveLane(node));
   node.querySelector('.remove-lane-btn').addEventListener('click', () => removeLane(node));
 
+  for (const btn of node.querySelectorAll('.browse-btn')) {
+    btn.addEventListener('click', () => {
+      const targetField = node.querySelector(`.${btn.dataset.target}`);
+      openFolderBrowser(targetField.value, chosenPath => { targetField.value = chosenPath; });
+    });
+  }
+
   return node;
 }
 
