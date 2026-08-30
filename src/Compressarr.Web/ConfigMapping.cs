@@ -16,6 +16,7 @@ internal static class ConfigMapping
         OutSameAsIn: config.Processing.OutSameAsIn,
         DeleteAfterConvert: config.Processing.DeleteAfterConvert.ToString(),
         MoveFiles: config.Processing.MoveFiles,
+        ClearTitleMetadata: config.Processing.ClearTitleMetadata,
         Limit: config.Processing.Limit,
         MinSizeBytes: config.Processing.MinSizeBytes,
         LogFilePath: config.Logging.LogFilePath,
@@ -41,6 +42,7 @@ internal static class ConfigMapping
         config.Processing.OutSameAsIn = dto.OutSameAsIn;
         config.Processing.DeleteAfterConvert = Enum.Parse<DeleteAfterConvertMode>(dto.DeleteAfterConvert);
         config.Processing.MoveFiles = dto.MoveFiles;
+        config.Processing.ClearTitleMetadata = dto.ClearTitleMetadata;
         config.Processing.Limit = dto.Limit;
         config.Processing.MinSizeBytes = dto.MinSizeBytes;
         config.Logging.LogFilePath = dto.LogFilePath;

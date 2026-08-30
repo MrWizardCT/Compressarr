@@ -59,6 +59,12 @@ public sealed class ProcessingSettings
     public bool MoveFiles { get; set; } = true;
     public int Limit { get; set; } = 0;
 
+    /// <summary>Strips the embedded title tag from converted files via TagLib-Sharp so a media
+    /// server reads the filename instead of stale/incorrect metadata. Defaults to true since v2
+    /// bundles TagLib-Sharp unconditionally (v1.1 only did this if a taglib-sharp.dll happened to
+    /// be present next to the script).</summary>
+    public bool ClearTitleMetadata { get; set; } = true;
+
     /// <summary>Typed byte count. v1 stored this as a unit-suffix string ("0gb"/"500mb"); v2's
     /// own config file doesn't need to preserve that shape, so this is a plain long, with
     /// ByteSizeParser/ByteSizeFormatter available for UI display and for parsing a hand-edited

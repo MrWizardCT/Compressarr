@@ -47,6 +47,10 @@
       <input type="checkbox" id="moveFiles" />
     </div>
     <div class="field-row">
+      <label>Clear title metadata<span class="help-tag" tabindex="0" title="Strips the embedded title tag from converted files (via TagLib-Sharp) so a media server reads the filename instead of stale or incorrect metadata.">?<span class="help-tip">Strips the embedded title tag from converted files (via TagLib-Sharp) so a media server reads the filename instead of stale or incorrect metadata.</span></span></label>
+      <input type="checkbox" id="clearTitleMetadata" />
+    </div>
+    <div class="field-row">
       <label for="deleteAfterConvert">Original file after convert<span class="help-tag" tabindex="0" title="What happens to the source file once conversion succeeds: keep it, delete it, or send it to the Recycle Bin.">?<span class="help-tip">What happens to the source file once conversion succeeds: keep it, delete it, or send it to the Recycle Bin.</span></span></label>
       <select id="deleteAfterConvert">
         <option value="Maintain">Maintain</option>

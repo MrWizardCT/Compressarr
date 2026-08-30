@@ -30,6 +30,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
     private readonly IPathExpander _pathExpander;
     private readonly IHandBrakePresetService _presets;
     private readonly IConversionOrchestrator _conversionOrchestrator;
+    private readonly IMetadataService _metadata;
     private readonly IResumeStateStore _resumeStore;
     private readonly IRunLogger _logger;
     private readonly IRunHistoryStore _historyStore;
@@ -45,6 +46,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         IPathExpander pathExpander,
         IHandBrakePresetService presets,
         IConversionOrchestrator conversionOrchestrator,
+        IMetadataService metadata,
         IResumeStateStore resumeStore,
         IRunLogger logger,
         IRunHistoryStore historyStore,
@@ -59,6 +61,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         _pathExpander = pathExpander;
         _presets = presets;
         _conversionOrchestrator = conversionOrchestrator;
+        _metadata = metadata;
         _resumeStore = resumeStore;
         _logger = logger;
         _historyStore = historyStore;
@@ -119,6 +122,8 @@ public sealed class RunOrchestrator : IRunOrchestrator
         {
             _logger.Log($"Resuming previous incomplete run ({resumeState.Count} file(s) tracked).");
         }
+
+        _metadata.Enabled = config.Processing.ClearTitleMetadata;
 
         var laneResults = new Dictionary<string, IReadOnlyList<ConversionResult>>();
         try

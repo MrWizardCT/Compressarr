@@ -15,6 +15,7 @@ function fillForm(dto) {
   document.getElementById('limit').value = dto.limit;
   document.getElementById('outSameAsIn').checked = dto.outSameAsIn;
   document.getElementById('moveFiles').checked = dto.moveFiles;
+  document.getElementById('clearTitleMetadata').checked = dto.clearTitleMetadata;
   document.getElementById('deleteAfterConvert').value = dto.deleteAfterConvert;
   document.getElementById('logFilePath').value = dto.logFilePath;
   document.getElementById('reportPath').value = dto.reportPath;
@@ -43,6 +44,7 @@ function readForm() {
     outSameAsIn: document.getElementById('outSameAsIn').checked,
     deleteAfterConvert: document.getElementById('deleteAfterConvert').value,
     moveFiles: document.getElementById('moveFiles').checked,
+    clearTitleMetadata: document.getElementById('clearTitleMetadata').checked,
     limit: parseInt(document.getElementById('limit').value, 10) || 0,
     minSizeBytes: parseInt(document.getElementById('minSizeBytes').value, 10) || 0,
     logFilePath: document.getElementById('logFilePath').value,

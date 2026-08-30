@@ -148,6 +148,7 @@ these pages has a small **?** next to it with a tooltip explaining what it does.
 | Max files per run | Caps how many files are picked up in one pass (0 = no limit) |
 | Write output to same folder as input | Convert in place instead of using each lane's Output folder |
 | Move converted files into show/movie folders | Turns on the TV/Movie filing step described above |
+| Clear title metadata | Strips the embedded title tag (via TagLib-Sharp) so a media server reads the filename instead of stale/incorrect metadata - on by default |
 | Original file after convert | Maintain, Delete, or Recycle the source file once conversion succeeds |
 | Log folder / Report folder | Where run logs, the history CSV, and HTML reports are written |
 | Log/report retention (days) | Logs and reports older than this are cleaned up automatically |
@@ -292,6 +293,7 @@ from the Lanes page.
     "OutSameAsIn": false,
     "DeleteAfterConvert": "Recycle",
     "MoveFiles": true,
+    "ClearTitleMetadata": true,
     "Limit": 0,
     "MinSizeBytes": 0
   },
@@ -323,13 +325,15 @@ installer/
   Compressarr.iss           Inno Setup script that packages the self-contained publish output
 tests/
   Compressarr.Core.Tests/   xUnit tests for Core
+CHANGELOG.md               Release history
 ```
 
 ## TagLib-Sharp (metadata handling)
 
 Compressarr uses [TagLib-Sharp](https://github.com/mono/taglib-sharp) to strip the embedded title
 tag from converted files, so a media server reads the filename instead of a stale/incorrect title
-baked into the file's metadata.
+baked into the file's metadata. This is controlled by the **Clear title metadata** setting on the
+Settings page (on by default).
 
 - **What it is**: an open-source, cross-platform .NET library for reading and writing media file
   tags.

@@ -8,6 +8,7 @@ public sealed record SettingsDto(
     bool OutSameAsIn,
     string DeleteAfterConvert,
     bool MoveFiles,
+    bool ClearTitleMetadata,
     int Limit,
     long MinSizeBytes,
     string LogFilePath,
