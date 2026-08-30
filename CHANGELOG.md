@@ -4,6 +4,17 @@ All notable changes to Compressarr are documented in this file. Pre-release/RC b
 to v1.0.0 are omitted here - see [GitHub Releases](https://github.com/MrWizardCT/Compressarr/releases)
 for that full history.
 
+## [2.0.3] - 2026-08-30
+
+### Fixed
+- The installer could hang trying to close a running Compressarr instance before updating it,
+  leaving the app running but unresponsive to its own tray Exit command and requiring a manual
+  End Task. Caused by Windows Restart Manager's graceful close handshake, which is unreliable
+  against a tray-only app that's never had a window shown or interacted with. The installer now
+  force-closes any running instance directly before touching files, sidestepping that handshake
+  entirely - safe since Compressarr saves settings to disk immediately rather than holding
+  anything unsaved in memory.
+
 ## [2.0.2] - 2026-08-30
 
 ### Fixed

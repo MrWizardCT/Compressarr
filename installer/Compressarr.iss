@@ -5,7 +5,7 @@
 ; Build with: ISCC.exe installer\Compressarr.iss
 
 #define MyAppName "Compressarr"
-#define MyAppVersion "2.0.2"
+#define MyAppVersion "2.0.3"
 #define MyAppPublisher "Mark Wasserman"
 #define MyAppURL "https://github.com/MrWizardCT/Compressarr"
 #define MyAppExeName "Compressarr.Desktop.exe"
@@ -31,9 +31,12 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; Detects a running Compressarr.Desktop.exe (dev testing hit this constantly - a locked exe
-; fails the whole install) and offers to close it before copying files, then relaunches it
-; afterward if it was running.
+; Fallback only - PrepareToInstall below force-kills Compressarr.Desktop.exe directly and runs
+; before this, so in practice there's nothing left for Restart Manager to find. Left in as a
+; defensive no-op rather than relied on: RestartManager's graceful WM_QUERYENDSESSION handshake
+; is unreliable against a tray-only app that's never had a window shown/interacted with (a known
+; Inno/RestartManager limitation), and a botched close attempt left the app running but with its
+; message loop wedged - unresponsive even to its own tray Exit command, requiring Task Manager.
 CloseApplications=yes
 CloseApplicationsFilter={#MyAppExeName}
 RestartApplications=yes
@@ -58,3 +61,17 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 ; Compressarr has no window of its own - it's a tray icon whose only UI is the browser, so
 ; "launch after install" is the equivalent of a normal app opening its main window on first run.
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Result := '';
+  // Force-close any running instance before Setup's own CloseApplications/Restart Manager check
+  // ever runs (PrepareToInstall always executes first). Compressarr saves settings to disk
+  // immediately, so nothing is lost by killing it outright - and doing so here sidesteps Restart
+  // Manager's WM_QUERYENDSESSION handshake entirely, which is what used to leave the app running
+  // with a wedged message loop that couldn't even be closed via its own tray Exit command.
+  Exec('taskkill.exe', '/IM "{#MyAppExeName}" /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
