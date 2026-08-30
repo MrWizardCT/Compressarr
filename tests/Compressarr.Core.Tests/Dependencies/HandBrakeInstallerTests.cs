@@ -31,6 +31,7 @@ public class HandBrakeInstallerTests
     private const string SampleReleaseJson = """
         {
           "tag_name": "1.11.2",
+          "html_url": "https://github.com/HandBrake/HandBrake/releases/tag/1.11.2",
           "assets": [
             { "name": "HandBrakeCLI-1.11.2-win-x86_64.zip", "browser_download_url": "https://github.com/HandBrake/HandBrake/releases/download/1.11.2/HandBrakeCLI-1.11.2-win-x86_64.zip", "size": 25721458 },
             { "name": "HandBrakeCLI-1.11.2-win-aarch64.zip", "browser_download_url": "https://github.com/HandBrake/HandBrake/releases/download/1.11.2/HandBrakeCLI-1.11.2-win-aarch64.zip", "size": 24000000 },
@@ -82,6 +83,7 @@ public class HandBrakeInstallerTests
 
         Assert.NotNull(release);
         Assert.Equal("1.11.2", release!.Version);
+        Assert.Equal("https://github.com/HandBrake/HandBrake/releases/tag/1.11.2", release.ReleaseUrl);
         if (OperatingSystem.IsWindows())
         {
             Assert.Equal("HandBrakeCLI-1.11.2-win-x86_64.zip", release.AssetName);

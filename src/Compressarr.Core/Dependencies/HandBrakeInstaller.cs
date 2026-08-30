@@ -6,7 +6,7 @@ using System.Text.Json.Nodes;
 
 namespace Compressarr.Core.Dependencies;
 
-public sealed record HandBrakeReleaseInfo(string Version, string AssetName, string DownloadUrl, long SizeBytes);
+public sealed record HandBrakeReleaseInfo(string Version, string AssetName, string DownloadUrl, long SizeBytes, string ReleaseUrl);
 
 public interface IHandBrakeInstaller
 {
@@ -21,6 +21,12 @@ public interface IHandBrakeInstaller
     /// this download with the user (name, version, size) before calling - this method itself
     /// performs no prompting.</summary>
     Task<string> InstallAsync(HandBrakeReleaseInfo release, string installDir, IProgress<string>? progress = null);
+
+    /// <summary>Runs the HandBrakeCLI binary at cliPath with --version and parses the version
+    /// number out of its own output. Returns null (never throws) if the file doesn't exist, isn't
+    /// runnable, or its output doesn't contain anything version-shaped - the caller (an About-page
+    /// display) should treat that as "unknown", not fail.</summary>
+    Task<string?> GetInstalledVersionAsync(string cliPath);
 }
 
 public sealed class HandBrakeInstaller : IHandBrakeInstaller
@@ -45,6 +51,7 @@ public sealed class HandBrakeInstaller : IHandBrakeInstaller
         response.EnsureSuccessStatusCode();
         var release = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
         var version = release["tag_name"]!.GetValue<string>();
+        var releaseUrl = release["html_url"]!.GetValue<string>();
         var assets = release["assets"]!.AsArray();
 
         var assetNamePattern = GetExpectedAssetName(version);
@@ -60,11 +67,42 @@ public sealed class HandBrakeInstaller : IHandBrakeInstaller
                     Version: version,
                     AssetName: name,
                     DownloadUrl: asset["browser_download_url"]!.GetValue<string>(),
-                    SizeBytes: asset["size"]!.GetValue<long>());
+                    SizeBytes: asset["size"]!.GetValue<long>(),
+                    ReleaseUrl: releaseUrl);
             }
         }
 
         return null;
+    }
+
+    public async Task<string?> GetInstalledVersionAsync(string cliPath)
+    {
+        if (!File.Exists(cliPath)) return null;
+
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo(cliPath, "--version")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            })!;
+
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            var output = (await stdoutTask) + (await stderrTask);
+
+            // HandBrakeCLI prints something like "HandBrake 1.8.2 (...)" - pull out the first
+            // dotted version number rather than assuming the exact surrounding wording.
+            var match = System.Text.RegularExpressions.Regex.Match(output, @"\d+\.\d+(\.\d+)?");
+            return match.Success ? match.Value : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     internal static string? GetExpectedAssetName(string version)

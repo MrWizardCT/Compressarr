@@ -17,6 +17,14 @@ public static class HandBrakeEndpoints
             return Results.Json(new { exists });
         });
 
+        app.MapGet("/api/handbrake/installed-version", async (IConfigStore configStore, IPathExpander pathExpander, IHandBrakeInstaller installer) =>
+        {
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+            var cliPath = pathExpander.Expand(config.HandBrake.CliPath);
+            var version = await installer.GetInstalledVersionAsync(cliPath);
+            return Results.Json(new { version });
+        });
+
         app.MapGet("/api/handbrake/latest-release", async (IHandBrakeInstaller installer) =>
         {
             var release = await installer.GetLatestReleaseAsync();
@@ -27,6 +35,7 @@ public static class HandBrakeEndpoints
                 available = true,
                 release.Version,
                 release.AssetName,
+                release.ReleaseUrl,
                 sizeMb = release.SizeBytes / 1024 / 1024
             });
         });

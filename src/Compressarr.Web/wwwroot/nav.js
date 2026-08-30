@@ -41,7 +41,8 @@ function renderNav(activePage) {
   const nav = document.createElement('nav');
   nav.innerHTML = links
     .map(l => `<a href="${l.href}"${l.page === activePage ? ' class="active"' : ''}>${l.label}</a>`)
-    .join('');
+    .join('') +
+    `<a href="/about.html" class="nav-right${activePage === 'about' ? ' active' : ''}">About</a>`;
 
   document.body.prepend(nav);
   document.body.prepend(header);
