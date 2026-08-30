@@ -184,6 +184,49 @@ Every path field has a **Browse...** button that opens a server-side folder pick
 browser's native file picker can't see the server's filesystem. **Save All Lanes** saves every
 lane on the page in one click.
 
+### How files move through a lane
+
+**Output** is a transient staging spot, not a final destination - it's just where HandBrake
+writes the converted file the moment encoding finishes. If **Move converted files into
+show/movie folders** is on, the file (and any companion subtitles/`.nfo`/artwork) is picked up
+from there and relocated into the lane's TV/Movie base path; if that setting is off, everything
+just stays wherever Output put it.
+
+```
+D:\Media\Input\                              (before a run)
+├── Breaking Bad S01E01.mkv
+├── Breaking Bad S01E01.eng.srt
+├── Breaking Bad S01E02.mkv
+├── Breaking Bad S01E02.eng.srt
+├── Caddyshack (1980).mkv
+└── Caddyshack (1980).nfo
+
+        │  HandBrake converts each file with the lane's TV/Movie
+        │  preset, writing the result to Output - then, since Move
+        │  converted files is on, each one is relocated below.
+        ▼
+
+D:\Media\TV\                                 (this lane's TV base path)
+└── Breaking Bad\
+    └── Season 01\
+        ├── Breaking Bad S01E01.mkv
+        ├── Breaking Bad S01E01.eng.srt
+        ├── Breaking Bad S01E02.mkv
+        └── Breaking Bad S01E02.eng.srt
+
+D:\Media\Movies\                             (this lane's Movie base path)
+└── Caddyshack (1980)\
+    ├── Caddyshack (1980).mkv
+    └── Caddyshack (1980).nfo
+
+D:\Media\Input\                              (after - now empty, ready
+                                               for the next batch)
+```
+
+Originals are deleted, recycled, or kept per **Original file after convert**; if a source
+subfolder ends up with nothing left to convert, it's removed too - including a TV show's own
+folder once its last episode has been converted.
+
 ### Custom presets
 
 Compressarr ships with two of its own HandBrake presets, installed via **Install/Merge Presets**
