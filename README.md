@@ -340,8 +340,6 @@ baked into the file's metadata.
   automatically by `dotnet restore`/`dotnet publish`, then bundled inside the self-contained
   installer along with everything else - end users never touch it. This is different from v1.1,
   which loaded a manually-downloaded `taglib-sharp.dll` via PowerShell's `Import-Module`.
-- **Building from source**: no extra setup step needed - a normal `dotnet restore` on the solution
-  pulls it in like any other dependency.
 
 ## Differences from v1.1
 
