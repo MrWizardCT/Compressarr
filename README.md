@@ -33,7 +33,8 @@ Watch folder → Detect TV/Movie → Convert (HandBrake) → File into library
 4. **File it** - the converted file, plus any companion files (subtitles, `.nfo`, artwork), is
    routed into an organized `Show Name\Season NN\` or `Movie Title\` folder.
 5. **Clean up** - the original is deleted/recycled/kept per your setting, and now-empty source
-   folders (including a TV show's own folder once its last season is gone) are removed.
+   folders (including a TV show's own folder once its last file is converted) are removed from
+   the source folder, leaving you with a clean workspace.
 6. **Notify Sonarr/Radarr** *(optional)* - the matching episode/movie is unmonitored so it isn't
    re-grabbed.
 7. **Report** - a standalone HTML report is generated, and a Windows toast notification confirms
