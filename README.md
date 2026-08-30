@@ -354,6 +354,13 @@ baked into the file's metadata.
   against HandBrake's own releases), and credits.
 - v1.1 (PowerShell) itself remains available on the [`1.x`](https://github.com/MrWizardCT/Compressarr/tree/1.x) branch.
 
+## Disclaimer
+
+Compressarr is intended for personal use only, with media files you legally own or otherwise have
+the right to compress and manage. You are solely responsible for ensuring your use complies with
+applicable copyright law and any licensing terms attached to your media. This tool is provided
+as-is, with no warranty of any kind - use it at your own risk.
+
 ## License
 
 Compressarr is licensed under the [GNU General Public License v3.0](LICENSE).
