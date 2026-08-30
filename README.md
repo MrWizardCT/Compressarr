@@ -325,6 +325,24 @@ tests/
   Compressarr.Core.Tests/   xUnit tests for Core
 ```
 
+## TagLib-Sharp (metadata handling)
+
+Compressarr uses [TagLib-Sharp](https://github.com/mono/taglib-sharp) to strip the embedded title
+tag from converted files, so a media server reads the filename instead of a stale/incorrect title
+baked into the file's metadata.
+
+- **What it is**: an open-source, cross-platform .NET library for reading and writing media file
+  tags.
+- **Where to get it**: it's distributed as a NuGet package -
+  [TagLibSharp on NuGet.org](https://www.nuget.org/packages/TagLibSharp/).
+- **Where it goes**: nowhere, by hand. It's declared as a `PackageReference` in
+  [Compressarr.Core.csproj](src/Compressarr.Core/Compressarr.Core.csproj) and is restored
+  automatically by `dotnet restore`/`dotnet publish`, then bundled inside the self-contained
+  installer along with everything else - end users never touch it. This is different from v1.1,
+  which loaded a manually-downloaded `taglib-sharp.dll` via PowerShell's `Import-Module`.
+- **Building from source**: no extra setup step needed - a normal `dotnet restore` on the solution
+  pulls it in like any other dependency.
+
 ## Differences from v1.1
 
 - Entire UI moved to the browser (Radarr/Sonarr-style) - no desktop settings window, reachable
