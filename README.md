@@ -71,6 +71,8 @@ HandBrakeCLI process is currently running and stops monitoring outright - as opp
 Monitoring**, which finishes the current pass before stopping. The recent-log panel and CPU
 usage update live while a pass runs.
 
+<img src="Assets/Screenshots/monitor-page.png" alt="Compressarr Monitor page, showing a real conversion in progress with live percent/fps/ETA" width="700">
+
 ### Reports and notifications
 
 At the end of a run, Compressarr writes a **standalone HTML report** covering per-lane results
@@ -82,6 +84,9 @@ report is labeled with a running run number (`Run #237: ...`) - a persistent, cu
 of runs that actually processed at least one file. The History page also lists every report
 still within your configured retention window, with columns for files, before/after size, and
 percent saved.
+
+<img src="Assets/Screenshots/sample-report.png" alt="Sample Compressarr HTML report" width="700">
+<img src="Assets/Screenshots/history-page.png" alt="Compressarr History page, showing rolling totals and the Reports table" width="700">
 
 ---
 
@@ -124,6 +129,8 @@ these pages has a small **?** next to it with a tooltip explaining what it does.
 
 ### Settings page
 
+<img src="Assets/Screenshots/settings-page.png" alt="Compressarr Settings page" width="600">
+
 | Field | What it's for |
 |---|---|
 | HandBrakeCLI path | Path to `HandBrakeCLI.exe` - Check/Install finds or downloads it |
@@ -153,6 +160,8 @@ series/episode or movie it matches, if any. A miss is always treated as "leave i
 as a guess.
 
 ### Lanes page
+
+<img src="Assets/Screenshots/lanes-page.png" alt="Compressarr Lanes page, showing two configured lanes" width="700">
 
 Add, remove, rename, and enable/disable lanes freely - there's no fixed limit. Each lane has:
 
