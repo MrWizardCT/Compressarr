@@ -1,11 +1,16 @@
 namespace Compressarr.Core.Notifications;
 
+public sealed record RunCompletionSummary(int TotalFiles, double BeginSizeGb, double EndSizeGb, TimeSpan Duration);
+
 public interface INotificationService
 {
-    /// <summary>Fires a best-effort OS notification. Implementations must never throw — a
-    /// failed/unsupported notification must never fail an otherwise-successful run, matching
-    /// v1's toast call being wrapped in try/catch and only fired when files were processed.</summary>
-    void Notify(string title, string message, string? launchPath);
+    /// <summary>Fires a best-effort OS notification summarizing a completed run. Implementations
+    /// must never throw — a failed/unsupported notification must never fail an otherwise-
+    /// successful run, matching v1's toast call being wrapped in try/catch and only fired when
+    /// files were processed. Structured (rather than a pre-formatted string) so each
+    /// implementation can lay the numbers out however suits its platform's notification
+    /// system.</summary>
+    void NotifyRunComplete(RunCompletionSummary summary, string? launchPath);
 }
 
 /// <summary>Default fallback everywhere for Phase 1. A native Windows toast (Windows.UI.Notifications)
@@ -17,5 +22,5 @@ public interface INotificationService
 /// seam is what lets any of them land later without touching callers.</summary>
 public sealed class NoOpNotificationService : INotificationService
 {
-    public void Notify(string title, string message, string? launchPath) { }
+    public void NotifyRunComplete(RunCompletionSummary summary, string? launchPath) { }
 }

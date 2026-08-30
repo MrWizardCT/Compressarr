@@ -81,7 +81,7 @@ public sealed class PostExecSettings
 public sealed class ReportSettings
 {
     public string ReportPath { get; set; } = "%CompressarrAppData%\\Reports";
-    public OpenReportMode OpenAfterRun { get; set; } = OpenReportMode.Always;
+    public OpenReportMode OpenAfterRun { get; set; } = OpenReportMode.OnError;
 }
 
 public sealed class RepeatSettings
@@ -97,6 +97,11 @@ public sealed class RepeatSettings
 public sealed class StartupSettings
 {
     public int CountdownSeconds { get; set; } = 10;
+
+    /// <summary>When true, the tray host registers itself to launch at Windows login (a per-user
+    /// registry Run-key entry - no admin rights needed). Applied by IStartupRegistrationService
+    /// whenever settings are saved; no-op on non-Windows platforms.</summary>
+    public bool RunAtLogin { get; set; } = false;
 }
 
 public sealed class ArrSettings

@@ -29,7 +29,8 @@ internal static class ConfigMapping
         PollIntervalSeconds: config.Repeat.PollIntervalSeconds,
         Sonarr: new ArrServiceDto(config.Arrs.Sonarr.Enabled, config.Arrs.Sonarr.Url, config.Arrs.Sonarr.ApiKey),
         Radarr: new ArrServiceDto(config.Arrs.Radarr.Enabled, config.Arrs.Radarr.Url, config.Arrs.Radarr.ApiKey),
-        WebPort: config.Web.Port);
+        WebPort: config.Web.Port,
+        RunAtLogin: config.Startup.RunAtLogin);
 
     public static void ApplySettingsDto(CompressarrConfig config, SettingsDto dto)
     {
@@ -54,6 +55,7 @@ internal static class ConfigMapping
         config.Arrs.Sonarr = new ArrServiceSettings { Enabled = dto.Sonarr.Enabled, Url = dto.Sonarr.Url, ApiKey = dto.Sonarr.ApiKey };
         config.Arrs.Radarr = new ArrServiceSettings { Enabled = dto.Radarr.Enabled, Url = dto.Radarr.Url, ApiKey = dto.Radarr.ApiKey };
         config.Web.Port = dto.WebPort;
+        config.Startup.RunAtLogin = dto.RunAtLogin;
     }
 
     public static LaneDto ToLaneDto(LaneConfig lane) => new(

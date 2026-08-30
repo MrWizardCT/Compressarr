@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Compressarr.Core.Config;
+using Compressarr.Core.Startup;
 using Compressarr.Web.Dtos;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
@@ -16,13 +17,14 @@ public static class SettingsEndpoints
             return Results.Json(ConfigMapping.ToSettingsDto(config));
         });
 
-        app.MapPut("/api/settings", (SettingsDto dto, IConfigStore configStore) =>
+        app.MapPut("/api/settings", (SettingsDto dto, IConfigStore configStore, IStartupRegistrationService startupRegistration) =>
         {
             var result = configStore.Update(AppPaths.GetConfigFilePath(), config =>
             {
                 ConfigMapping.ApplySettingsDto(config, dto);
                 return ConfigMapping.ToSettingsDto(config);
             });
+            startupRegistration.Apply(dto.RunAtLogin);
             return Results.Json(result);
         });
     }

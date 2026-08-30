@@ -1,22 +1,35 @@
 using System.Diagnostics;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Compressarr.Core.Conversion;
 
-public sealed record HandBrakeRunResult(bool Success, string DetailLogFile);
+public sealed record HandBrakeRunResult(bool Success, string DetailLogFile, bool Cancelled = false);
 
 public interface IHandBrakeProcessRunner
 {
-    /// <summary>Invokes HandBrakeCLI synchronously (one file fully finishes before the caller
-    /// moves on) and determines success the same way v1 does: the output temp file must exist,
-    /// be non-empty, AND the stderr detail log must contain a line matching "*Finished work at*"
-    /// (HandBrake's own completion banner). Deliberately no process exit-code check — ported
-    /// as-is for parity with v1's success-detection logic, not because it's ideal.</summary>
-    HandBrakeRunResult Run(string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName, string? extraOptions, string detailLogFile);
+    /// <summary>Invokes HandBrakeCLI (one file fully finishes before the caller moves on) and
+    /// determines success the same way v1 does: the output temp file must exist, be non-empty,
+    /// AND the stderr detail log must contain a line matching "*Finished work at*" (HandBrake's
+    /// own completion banner). Deliberately no process exit-code check — ported as-is for parity
+    /// with v1's success-detection logic, not because it's ideal.
+    ///
+    /// Streams stdout line-by-line to onOutputLine as HandBrakeCLI writes it (its own progress
+    /// updates, "Encoding: task 1 of 1, NN.NN % ...") so a caller can surface live progress.
+    /// Cancelling cancellationToken kills the HandBrakeCLI process tree immediately and returns a
+    /// result with Cancelled=true instead of throwing - the caller decides what "aborted
+    /// mid-file" means for the rest of the run.</summary>
+    Task<HandBrakeRunResult> RunAsync(
+        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
+        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken);
 }
 
 public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
 {
-    public HandBrakeRunResult Run(string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName, string? extraOptions, string detailLogFile)
+    public async Task<HandBrakeRunResult> RunAsync(
+        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
+        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken)
     {
         if (File.Exists(detailLogFile))
         {
@@ -39,21 +52,55 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
             CreateNoWindow = true
         };
 
-        using (var process = new Process { StartInfo = startInfo })
+        var stderr = new StringBuilder();
+        var cancelled = false;
+
+        using (var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true })
         {
+            // HandBrakeCLI writes its progress updates ("Encoding: task 1 of 1, NN.NN % ...") to
+            // stdout as it runs - event-driven reading (rather than the old ReadToEndAsync, which
+            // only ever saw the output after the process had already exited) is what makes live
+            // progress possible at all.
+            process.OutputDataReceived += (_, e) =>
+            {
+                if (e.Data is not null) onOutputLine?.Invoke(e.Data);
+            };
+            process.ErrorDataReceived += (_, e) =>
+            {
+                if (e.Data is not null) stderr.AppendLine(e.Data);
+            };
+
             process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
 
-            // Read both streams concurrently (not sequentially) to avoid the classic deadlock:
-            // if stdout's pipe buffer fills while we're blocked reading stderr to completion (or
-            // vice versa), the child process stalls writing and never exits.
-            var stderrTask = process.StandardError.ReadToEndAsync();
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            using var killRegistration = cancellationToken.Register(() =>
+            {
+                try
+                {
+                    if (!process.HasExited) process.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                    // Best-effort - process may have already exited between the check and Kill.
+                }
+            });
 
-            process.WaitForExit();
-            var stderr = stderrTask.GetAwaiter().GetResult();
-            stdoutTask.GetAwaiter().GetResult();
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled = true;
+            }
 
-            File.WriteAllText(detailLogFile, stderr);
+            File.WriteAllText(detailLogFile, stderr.ToString());
+        }
+
+        if (cancelled)
+        {
+            return new HandBrakeRunResult(Success: false, DetailLogFile: detailLogFile, Cancelled: true);
         }
 
         return new HandBrakeRunResult(DetermineSuccess(tempOutputPath, detailLogFile), detailLogFile);
@@ -73,5 +120,40 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
         var nonEmpty = new FileInfo(tempOutputPath).Length > 0;
 
         return hasFinishedLine && nonEmpty;
+    }
+}
+
+public sealed record HandBrakeProgress(double Percent, double? Fps, string? Eta);
+
+/// <summary>
+/// Parses HandBrakeCLI's own stdout progress line, e.g.:
+///   "Encoding: task 1 of 1, 42.10 % (23.45 fps, avg 20.12 fps, ETA 00h05m32s)"
+/// A pure static function (same pattern as HandBrakeProcessRunner.DetermineSuccess) so parsing is
+/// unit-testable against real-shaped fixture strings without invoking a process.
+/// </summary>
+public static class HandBrakeProgressParser
+{
+    private static readonly Regex ProgressLine = new(
+        @"^Encoding:\s*task\s*\d+\s*of\s*\d+,\s*(?<percent>[\d.]+)\s*%(?:\s*\((?:(?<fps>[\d.]+)\s*fps[^,)]*,\s*)?avg\s*[\d.]+\s*fps(?:,\s*ETA\s*(?<eta>[\dhms]+))?\))?",
+        RegexOptions.Compiled);
+
+    public static HandBrakeProgress? TryParse(string line)
+    {
+        var match = ProgressLine.Match(line);
+        if (!match.Success) return null;
+
+        if (!double.TryParse(match.Groups["percent"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var percent))
+        {
+            return null;
+        }
+
+        double? fps = match.Groups["fps"].Success &&
+            double.TryParse(match.Groups["fps"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var fpsValue)
+                ? fpsValue
+                : null;
+
+        string? eta = match.Groups["eta"].Success ? match.Groups["eta"].Value : null;
+
+        return new HandBrakeProgress(percent, fps, eta);
     }
 }

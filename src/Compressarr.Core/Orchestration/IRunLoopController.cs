@@ -17,12 +17,30 @@ public interface IRunLoopController
 {
     bool IsRunning { get; }
 
+    /// <summary>UTC time the next pass is scheduled to start, while the loop is idle between
+    /// passes (waiting out pollInterval). Null while a pass is actively running, or when the
+    /// loop isn't started - a countdown UI should treat null as "no countdown to show".</summary>
+    DateTimeOffset? NextRunUtc { get; }
+
     /// <summary>No-op if already running (idempotent - a second Start doesn't spawn a second loop).</summary>
     void Start(CompressarrConfig config, TimeSpan pollInterval);
 
     /// <summary>Stops the loop from starting another pass and waits for any in-flight pass to
     /// finish naturally. No-op if not running.</summary>
     Task StopAsync();
+
+    /// <summary>Immediately kills whatever HandBrakeCLI process is currently running (via
+    /// IActiveRunController) and stops the loop from starting another pass - "stop everything
+    /// right now", as opposed to StopAsync's "finish this pass, then stop". Does not wait for the
+    /// aborted pass to fully unwind; IsRunning/RunningChanged reflect that shortly afterward.
+    /// No-op if not running.</summary>
+    void Abort();
+
+    /// <summary>Cuts short the wait between passes and starts the next pass immediately -
+    /// "Run Now" on the web UI. Returns false (no-op) if the loop isn't currently idle between
+    /// passes - not running at all, or already mid-pass - since there's no countdown to skip in
+    /// either case.</summary>
+    bool TriggerNow();
 
     event Action<bool>? RunningChanged;
 }
@@ -31,27 +49,36 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
 {
     private readonly IRunOrchestrator _runOrchestrator;
     private readonly IRunLogger _logger;
+    private readonly IActiveRunController _activeRunController;
     private readonly TimeProvider _timeProvider;
 
     private readonly object _lock = new();
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
+    private DateTimeOffset? _nextRunUtc;
+    private TaskCompletionSource? _triggerNowTcs;
 
-    public RunLoopController(IRunOrchestrator runOrchestrator, IRunLogger logger)
-        : this(runOrchestrator, logger, TimeProvider.System)
+    public RunLoopController(IRunOrchestrator runOrchestrator, IRunLogger logger, IActiveRunController activeRunController)
+        : this(runOrchestrator, logger, activeRunController, TimeProvider.System)
     {
     }
 
-    internal RunLoopController(IRunOrchestrator runOrchestrator, IRunLogger logger, TimeProvider timeProvider)
+    internal RunLoopController(IRunOrchestrator runOrchestrator, IRunLogger logger, IActiveRunController activeRunController, TimeProvider timeProvider)
     {
         _runOrchestrator = runOrchestrator;
         _logger = logger;
+        _activeRunController = activeRunController;
         _timeProvider = timeProvider;
     }
 
     public bool IsRunning
     {
         get { lock (_lock) { return _loopTask is { IsCompleted: false }; } }
+    }
+
+    public DateTimeOffset? NextRunUtc
+    {
+        get { lock (_lock) return _nextRunUtc; }
     }
 
     public event Action<bool>? RunningChanged;
@@ -62,6 +89,11 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
         {
             if (_loopTask is { IsCompleted: false }) return;
 
+            // Logged synchronously, before the loop task is even spawned, so the log window
+            // always reflects "monitoring started" before any real conversion output can appear -
+            // the loop's first pass can begin running on the thread pool essentially immediately.
+            _logger.Log("Monitoring started.");
+            _nextRunUtc = null;
             _cts = new CancellationTokenSource();
             _loopTask = LoopAsync(config, pollInterval, _cts.Token);
         }
@@ -87,13 +119,60 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
             try { await loopTask; } catch { /* LoopAsync swallows its own exceptions; this is belt-and-braces */ }
         }
 
+        _logger.Log("Monitoring stopped.");
         RunningChanged?.Invoke(false);
+    }
+
+    public void Abort()
+    {
+        // Kills whatever HandBrakeCLI process the active pass owns, regardless of whether that
+        // pass was started by this loop or by a manual "Run Once" - IActiveRunController tracks
+        // whichever RunOnceAsync call is actually in flight.
+        _activeRunController.Abort();
+
+        CancellationTokenSource? cts;
+        Task? loopTask;
+        lock (_lock)
+        {
+            cts = _cts;
+            loopTask = _loopTask;
+        }
+
+        if (cts is null) return;
+
+        _logger.Log("Aborted by user.", LogSeverity.Error);
+        cts.Cancel();
+
+        // Deliberately not awaited here - Abort must return immediately. The loop task unwinds
+        // on its own (the active pass is being killed too, so this is fast) and the continuation
+        // still raises RunningChanged for listeners like the tray icon that don't poll for state.
+        if (loopTask is not null)
+        {
+            _ = loopTask.ContinueWith(_ => RunningChanged?.Invoke(false), TaskScheduler.Default);
+        }
+    }
+
+    public bool TriggerNow()
+    {
+        lock (_lock)
+        {
+            // Null means either not running at all, or a pass is currently mid-flight (LoopAsync
+            // clears it before calling RunOnceAsync and only creates it once idle) - either way
+            // there's no countdown to cut short.
+            if (_triggerNowTcs is null) return false;
+
+            _logger.Log("Run Now requested - skipping the rest of the countdown.");
+            _triggerNowTcs.TrySetResult();
+            return true;
+        }
     }
 
     private async Task LoopAsync(CompressarrConfig config, TimeSpan pollInterval, CancellationToken token)
     {
         while (!token.IsCancellationRequested)
         {
+            lock (_lock) { _nextRunUtc = null; _triggerNowTcs = null; }
+
             try
             {
                 await _runOrchestrator.RunOnceAsync(config);
@@ -104,15 +183,26 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
                 _logger.Log($"Monitor-mode pass failed: {ex.Message}", LogSeverity.Error);
             }
 
-            try
+            if (token.IsCancellationRequested) break;
+
+            var triggerNowTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (_lock)
             {
-                await Task.Delay(pollInterval, _timeProvider, token);
+                _nextRunUtc = _timeProvider.GetUtcNow() + pollInterval;
+                _triggerNowTcs = triggerNowTcs;
             }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
+
+            // Cancelling token (Stop/Abort) must still interrupt the wait the same way it always
+            // did - registering it against the same TCS the Run Now button completes means one
+            // await covers both "time's up" and "either external reason to stop waiting now".
+            using var cancelRegistration = token.Register(() => triggerNowTcs.TrySetCanceled());
+            var delayTask = Task.Delay(pollInterval, _timeProvider, token);
+            await Task.WhenAny(delayTask, triggerNowTcs.Task);
+
+            if (token.IsCancellationRequested) break;
         }
+
+        lock (_lock) { _nextRunUtc = null; _triggerNowTcs = null; }
     }
 
     public void Dispose() => _cts?.Dispose();

@@ -79,8 +79,16 @@
 
     <h2>Monitoring</h2>
     <div class="field-row">
+      <label>Enable Monitoring at Startup</label>
+      <input type="checkbox" id="repeatMonitor" />
+    </div>
+    <div class="field-row">
       <label for="pollIntervalSeconds">Poll interval (seconds)</label>
       <input type="number" id="pollIntervalSeconds" min="5" />
+    </div>
+    <div class="field-row">
+      <label>Start with Windows (on login)</label>
+      <input type="checkbox" id="runAtLogin" />
     </div>
 
     <h2>Post-execution command</h2>

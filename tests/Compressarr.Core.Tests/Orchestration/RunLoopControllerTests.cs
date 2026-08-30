@@ -31,6 +31,15 @@ file sealed class FakeRunLogger : IRunLogger
     public void FileComplete(string fileName, double beginSizeGb, double endSizeGb, TimeSpan duration, bool success, string? detailLogFile) { }
 }
 
+file sealed class FakeActiveRunController : IActiveRunController
+{
+    public int AbortCallCount;
+    public bool IsRunning => false;
+    public CancellationToken Begin() => CancellationToken.None;
+    public void End() { }
+    public void Abort() => Interlocked.Increment(ref AbortCallCount);
+}
+
 public class RunLoopControllerTests
 {
     // Real, very short intervals rather than a fake TimeProvider - keeps tests fast (well under a
@@ -51,7 +60,7 @@ public class RunLoopControllerTests
     [Fact]
     public void Start_SetsIsRunningTrue()
     {
-        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger());
+        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController());
 
         controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
 
@@ -62,7 +71,7 @@ public class RunLoopControllerTests
     public async Task Start_CalledTwice_DoesNotDoubleStart()
     {
         var orchestrator = new FakeRunOrchestrator();
-        var controller = new RunLoopController(orchestrator, new FakeRunLogger());
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
 
         controller.Start(new CompressarrConfig(), TinyInterval);
         await WaitUntil(() => orchestrator.CallCount >= 1, TimeSpan.FromSeconds(2));
@@ -84,7 +93,7 @@ public class RunLoopControllerTests
     [Fact]
     public async Task StopAsync_SetsIsRunningFalse_AndWaitsForInFlightPassToComplete()
     {
-        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger());
+        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController());
         controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
 
         await controller.StopAsync();
@@ -96,7 +105,7 @@ public class RunLoopControllerTests
     public async Task Loop_InvokesRunOnceAsync_OnEachPollInterval()
     {
         var orchestrator = new FakeRunOrchestrator();
-        var controller = new RunLoopController(orchestrator, new FakeRunLogger());
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
 
         controller.Start(new CompressarrConfig(), TinyInterval);
         await WaitUntil(() => orchestrator.CallCount >= 3, TimeSpan.FromSeconds(2));
@@ -109,7 +118,7 @@ public class RunLoopControllerTests
     public async Task Loop_SwallowsExceptionFromRunOnceAsync_AndContinuesPolling()
     {
         var orchestrator = new FakeRunOrchestrator { ThrowOnNextCall = true };
-        var controller = new RunLoopController(orchestrator, new FakeRunLogger());
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
 
         controller.Start(new CompressarrConfig(), TinyInterval);
         // The first pass throws; the loop must still be alive and polling afterward.
@@ -123,7 +132,7 @@ public class RunLoopControllerTests
     [Fact]
     public async Task RunningChanged_FiresOnStartAndStop()
     {
-        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger());
+        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController());
         var events = new List<bool>();
         controller.RunningChanged += running => events.Add(running);
 
@@ -131,5 +140,56 @@ public class RunLoopControllerTests
         await controller.StopAsync();
 
         Assert.Equal(new[] { true, false }, events);
+    }
+
+    [Fact]
+    public async Task Abort_CallsActiveRunControllerAbort_AndStopsTheLoop()
+    {
+        var activeRunController = new FakeActiveRunController();
+        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), activeRunController);
+        controller.Start(new CompressarrConfig(), TinyInterval);
+
+        controller.Abort();
+        await WaitUntil(() => !controller.IsRunning, TimeSpan.FromSeconds(2));
+
+        Assert.Equal(1, activeRunController.AbortCallCount);
+        Assert.False(controller.IsRunning);
+    }
+
+    [Fact]
+    public void NextRunUtc_IsNull_BeforeStart()
+    {
+        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController());
+
+        Assert.Null(controller.NextRunUtc);
+    }
+
+    [Fact]
+    public void TriggerNow_ReturnsFalse_WhenNotStarted()
+    {
+        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController());
+
+        Assert.False(controller.TriggerNow());
+    }
+
+    [Fact]
+    public async Task TriggerNow_SkipsRemainingWait_AndStartsNextPassImmediately()
+    {
+        var orchestrator = new FakeRunOrchestrator();
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
+
+        // A long poll interval - if TriggerNow didn't actually cut the wait short, the second
+        // pass wouldn't arrive within the test's timeout at all.
+        controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
+        await WaitUntil(() => orchestrator.CallCount >= 1, TimeSpan.FromSeconds(2));
+        await WaitUntil(() => controller.NextRunUtc is not null, TimeSpan.FromSeconds(2));
+
+        var triggered = controller.TriggerNow();
+        await WaitUntil(() => orchestrator.CallCount >= 2, TimeSpan.FromSeconds(2));
+
+        await controller.StopAsync();
+
+        Assert.True(triggered);
+        Assert.True(orchestrator.CallCount >= 2);
     }
 }

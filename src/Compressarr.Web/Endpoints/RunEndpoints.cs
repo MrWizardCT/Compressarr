@@ -33,10 +33,27 @@ public static class RunEndpoints
             return Results.Ok();
         });
 
+        app.MapPost("/api/run/abort", (IRunLoopController loopController) =>
+        {
+            loopController.Abort();
+            return Results.Ok();
+        });
+
+        app.MapPost("/api/run/trigger-now", (IRunLoopController loopController) =>
+        {
+            var triggered = loopController.TriggerNow();
+            return Results.Json(new { triggered });
+        });
+
         app.MapGet("/api/run/status", async (IRunLoopController loopController, CurrentRunStateService runState, ICpuUsageSampler cpuSampler) =>
         {
             var snapshot = runState.GetSnapshot();
             var cpu = await cpuSampler.SampleAsync();
+
+            var nextRunUtc = loopController.NextRunUtc;
+            var secondsUntilNextRun = nextRunUtc is null
+                ? (int?)null
+                : Math.Max(0, (int)Math.Ceiling((nextRunUtc.Value - DateTimeOffset.UtcNow).TotalSeconds));
 
             return Results.Json(new
             {
@@ -46,8 +63,12 @@ public static class RunEndpoints
                 fileName = snapshot.FileName,
                 fileIndex = snapshot.FileIndex,
                 fileTotal = snapshot.FileTotal,
+                progressPercent = snapshot.ProgressPercent,
+                progressFps = snapshot.ProgressFps,
+                progressEta = snapshot.ProgressEta,
                 recentLogLines = snapshot.RecentLogLines,
-                cpuUsagePercent = cpu
+                cpuUsagePercent = cpu,
+                secondsUntilNextRun
             });
         });
     }

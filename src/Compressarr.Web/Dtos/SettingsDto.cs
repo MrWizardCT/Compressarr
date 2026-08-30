@@ -21,6 +21,7 @@ public sealed record SettingsDto(
     int PollIntervalSeconds,
     ArrServiceDto Sonarr,
     ArrServiceDto Radarr,
-    int WebPort);
+    int WebPort,
+    bool RunAtLogin);
 
 public sealed record ArrServiceDto(bool Enabled, string Url, string ApiKey);

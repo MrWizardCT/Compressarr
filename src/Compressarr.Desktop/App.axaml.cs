@@ -58,7 +58,19 @@ public partial class App : Application
 
         _webApp = builder.Build();
         _webApp.UseDefaultFiles();
-        _webApp.UseStaticFiles();
+        _webApp.UseStaticFiles(new Microsoft.AspNetCore.Builder.StaticFileOptions
+        {
+            // No explicit Cache-Control means browsers fall back to heuristic caching off
+            // Last-Modified, which can and does serve a stale wwwroot page after a rebuild - a
+            // real trap during local iteration (and for the same reason, LAN clients checking a
+            // long-running instance). This app is served from a single local Kestrel instance
+            // with no CDN in front of it, so there's no caching benefit worth trading staleness
+            // for.
+            OnPrepareResponse = ctx =>
+            {
+                ctx.Context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+            }
+        });
         _webApp.MapCompressarrEndpoints();
 
         Services = _webApp.Services;
@@ -75,6 +87,12 @@ public partial class App : Application
         }
 
         _ = WebMonitorStartup.StartAsync(_webApp, Services.GetRequiredService<Compressarr.Core.Logging.IRunLogger>());
+
+        if (earlyConfig.Repeat.Monitor)
+        {
+            var loopController = Services.GetRequiredService<Compressarr.Core.Orchestration.IRunLoopController>();
+            loopController.Start(earlyConfig, TimeSpan.FromSeconds(Math.Max(5, earlyConfig.Repeat.PollIntervalSeconds)));
+        }
 
         base.OnFrameworkInitializationCompleted();
     }

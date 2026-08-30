@@ -20,7 +20,9 @@ function fillForm(dto) {
   document.getElementById('reportPath').value = dto.reportPath;
   document.getElementById('retentionDays').value = dto.retentionDays;
   document.getElementById('openAfterRun').value = dto.openAfterRun;
+  document.getElementById('repeatMonitor').checked = dto.repeatMonitor;
   document.getElementById('pollIntervalSeconds').value = dto.pollIntervalSeconds;
+  document.getElementById('runAtLogin').checked = dto.runAtLogin;
   document.getElementById('postExecCmd').value = dto.postExecCmd;
   document.getElementById('postExecArgs').value = dto.postExecArgs;
   document.getElementById('sonarrEnabled').checked = dto.sonarr.enabled;
@@ -50,7 +52,7 @@ function readForm() {
     reportPath: document.getElementById('reportPath').value,
     openAfterRun: document.getElementById('openAfterRun').value,
     repeatCount: 0,
-    repeatMonitor: false,
+    repeatMonitor: document.getElementById('repeatMonitor').checked,
     pollIntervalSeconds: parseInt(document.getElementById('pollIntervalSeconds').value, 10) || 60,
     sonarr: {
       enabled: document.getElementById('sonarrEnabled').checked,
@@ -62,7 +64,8 @@ function readForm() {
       url: document.getElementById('radarrUrl').value,
       apiKey: document.getElementById('radarrApiKey').value
     },
-    webPort: parseInt(document.getElementById('webPort').value, 10) || 1212
+    webPort: parseInt(document.getElementById('webPort').value, 10) || 1212,
+    runAtLogin: document.getElementById('runAtLogin').checked
   };
 }
 

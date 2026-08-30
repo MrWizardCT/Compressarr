@@ -20,7 +20,8 @@ public interface IConversionOrchestrator
         string logFilePath,
         string timestamp,
         List<ResumeEntry> resumeState,
-        string resumeFilePath);
+        string resumeFilePath,
+        CancellationToken cancellationToken);
 }
 
 public sealed class ConversionOrchestrator : IConversionOrchestrator
@@ -74,7 +75,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         string logFilePath,
         string timestamp,
         List<ResumeEntry> resumeState,
-        string resumeFilePath)
+        string resumeFilePath,
+        CancellationToken cancellationToken)
     {
         var results = new List<ConversionResult>();
 
@@ -120,6 +122,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         var i = 0;
         foreach (var file in videoFiles)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             i++;
 
             var isTv = ContentClassifier.IsTvFile(file.Name);
@@ -171,8 +174,37 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             var logName = $"{baseName}_{timestamp}_{i.ToString().PadLeft(padSize, '0')}_HBdetails.txt";
             var detailLogFile = Path.Combine(logFilePath, logName);
 
-            var runResult = _processRunner.Run(hbloc, file.FullName, tempFileName, presetsPath, presetName, config.HandBrake.Options, detailLogFile);
+            var lastLoggedPercent = -10.0;
+            void OnOutputLine(string line)
+            {
+                var progress = HandBrakeProgressParser.TryParse(line);
+                if (progress is null) return;
+
+                _progress.FileProgress(lane.Id, progress.Percent, progress.Fps, progress.Eta);
+
+                // HandBrakeCLI emits a progress line roughly once a second - logging every one of
+                // them would flood the recent-log window, so only a real 10% step gets written.
+                if (progress.Percent - lastLoggedPercent >= 10.0)
+                {
+                    lastLoggedPercent = progress.Percent;
+                    var etaSuffix = progress.Eta is not null ? $", ETA {progress.Eta}" : "";
+                    var fpsSuffix = progress.Fps is not null ? $", {progress.Fps:0.0} fps" : "";
+                    _logger.Log($"  {progress.Percent:0.0}%{fpsSuffix}{etaSuffix}");
+                }
+            }
+
+            var runResult = await _processRunner.RunAsync(hbloc, file.FullName, tempFileName, presetsPath, presetName, config.HandBrake.Options, detailLogFile, OnOutputLine, cancellationToken);
             var endTime = DateTime.Now;
+
+            if (runResult.Cancelled)
+            {
+                try { File.Delete(tempFileName); } catch { }
+                _logger.Log($"  Conversion of '{file.Name}' aborted by user.", LogSeverity.Error);
+                if (resumeEntry is not null) resumeEntry.Status = ResumeStatus.Error;
+                _resumeStore.Save(resumeState, resumeFilePath);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             var success = runResult.Success;
 
             double endSizeGb = 0;

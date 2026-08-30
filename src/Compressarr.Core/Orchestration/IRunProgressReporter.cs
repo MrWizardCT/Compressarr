@@ -12,6 +12,13 @@ public interface IRunProgressReporter
     void RunStarted(string timestamp);
     void LaneStarted(string laneId, string laneDisplayName);
     void FileStarted(string laneId, int index, int total, string fileName);
+
+    /// <summary>Live progress within the file currently being encoded, parsed from HandBrakeCLI's
+    /// own stdout ("Encoding: task 1 of 1, 42.10 % ..."). Fired frequently (roughly once a
+    /// second) while a file is converting - implementations should treat this as a cheap
+    /// state-update, not something to log every call.</summary>
+    void FileProgress(string laneId, double percent, double? fps, string? eta);
+
     void FileCompleted(string laneId, string fileName, bool success);
     void RunCompleted(int totalFiles);
 }

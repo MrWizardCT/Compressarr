@@ -39,6 +39,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
     private readonly INotificationService _notifications;
     private readonly ITrashService _trash;
     private readonly IRunProgressReporter _progress;
+    private readonly IActiveRunController _activeRunController;
 
     public RunOrchestrator(
         IPathExpander pathExpander,
@@ -52,7 +53,8 @@ public sealed class RunOrchestrator : IRunOrchestrator
         IReportLauncher reportLauncher,
         INotificationService notifications,
         ITrashService trash,
-        IRunProgressReporter progress)
+        IRunProgressReporter progress,
+        IActiveRunController activeRunController)
     {
         _pathExpander = pathExpander;
         _presets = presets;
@@ -66,6 +68,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         _notifications = notifications;
         _trash = trash;
         _progress = progress;
+        _activeRunController = activeRunController;
     }
 
     public async Task<RunResult?> RunOnceAsync(CompressarrConfig config)
@@ -81,6 +84,19 @@ public sealed class RunOrchestrator : IRunOrchestrator
         _logger.Log(new string('-', 80));
         _progress.RunStarted(timestamp);
 
+        var token = _activeRunController.Begin();
+        try
+        {
+            return await RunOnceCoreAsync(config, timestamp, beginTime, logFilePath, reportPath, token);
+        }
+        finally
+        {
+            _activeRunController.End();
+        }
+    }
+
+    private async Task<RunResult?> RunOnceCoreAsync(CompressarrConfig config, string timestamp, DateTime beginTime, string logFilePath, string reportPath, CancellationToken token)
+    {
         var hbloc = _pathExpander.Expand(config.HandBrake.CliPath);
         if (!_pathExpander.PathExists(config.HandBrake.CliPath))
         {
@@ -105,34 +121,43 @@ public sealed class RunOrchestrator : IRunOrchestrator
         }
 
         var laneResults = new Dictionary<string, IReadOnlyList<ConversionResult>>();
-        foreach (var lane in config.Lanes)
+        try
         {
-            if (!lane.Enabled)
+            foreach (var lane in config.Lanes)
             {
-                _logger.Log($"Skipping lane [{lane.DisplayName}] - lane is disabled.");
-                continue;
-            }
+                token.ThrowIfCancellationRequested();
 
-            if (string.IsNullOrWhiteSpace(lane.Input)) continue;
+                if (!lane.Enabled)
+                {
+                    _logger.Log($"Skipping lane [{lane.DisplayName}] - lane is disabled.");
+                    continue;
+                }
 
-            if (string.IsNullOrWhiteSpace(lane.TvPreset) && string.IsNullOrWhiteSpace(lane.MoviePreset))
-            {
-                _logger.Log($"Skipping lane [{lane.DisplayName}] - no TV or Movie preset configured.", LogSeverity.Error);
-                continue;
-            }
-            if (!string.IsNullOrWhiteSpace(lane.TvPreset) && !_presets.PresetExists(lane.TvPreset, presetsPath))
-            {
-                _logger.Log($"Lane [{lane.DisplayName}] - TV preset '{lane.TvPreset}' not found in presets.json. TV episodes in this lane will be skipped.", LogSeverity.Error);
-            }
-            if (!string.IsNullOrWhiteSpace(lane.MoviePreset) && !_presets.PresetExists(lane.MoviePreset, presetsPath))
-            {
-                _logger.Log($"Lane [{lane.DisplayName}] - Movie preset '{lane.MoviePreset}' not found in presets.json. Movies in this lane will be skipped.", LogSeverity.Error);
-            }
+                if (string.IsNullOrWhiteSpace(lane.Input)) continue;
 
-            _logger.Log($"\nScanning lane [{lane.DisplayName}] - {_pathExpander.Expand(lane.Input)}");
-            _progress.LaneStarted(lane.Id, lane.DisplayName);
-            var results = await _conversionOrchestrator.ProcessLaneAsync(lane, config, logFilePath, timestamp, resumeState, resumeFilePath);
-            laneResults[lane.Id] = results;
+                if (string.IsNullOrWhiteSpace(lane.TvPreset) && string.IsNullOrWhiteSpace(lane.MoviePreset))
+                {
+                    _logger.Log($"Skipping lane [{lane.DisplayName}] - no TV or Movie preset configured.", LogSeverity.Error);
+                    continue;
+                }
+                if (!string.IsNullOrWhiteSpace(lane.TvPreset) && !_presets.PresetExists(lane.TvPreset, presetsPath))
+                {
+                    _logger.Log($"Lane [{lane.DisplayName}] - TV preset '{lane.TvPreset}' not found in presets.json. TV episodes in this lane will be skipped.", LogSeverity.Error);
+                }
+                if (!string.IsNullOrWhiteSpace(lane.MoviePreset) && !_presets.PresetExists(lane.MoviePreset, presetsPath))
+                {
+                    _logger.Log($"Lane [{lane.DisplayName}] - Movie preset '{lane.MoviePreset}' not found in presets.json. Movies in this lane will be skipped.", LogSeverity.Error);
+                }
+
+                _logger.Log($"\nScanning lane [{lane.DisplayName}] - {_pathExpander.Expand(lane.Input)}");
+                _progress.LaneStarted(lane.Id, lane.DisplayName);
+                var results = await _conversionOrchestrator.ProcessLaneAsync(lane, config, logFilePath, timestamp, resumeState, resumeFilePath, token);
+                laneResults[lane.Id] = results;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.Log("\nRun aborted by user.", LogSeverity.Error);
         }
 
         var stillOutstanding = resumeState.Any(e => e.Status != ResumeStatus.Completed);
@@ -153,13 +178,16 @@ public sealed class RunOrchestrator : IRunOrchestrator
 
         var runCountPath = AppPaths.GetRunCountFilePath();
         var reportFileName = $"Compressarr_{timestamp}_Report.html";
+        // 0 means "this pass found nothing to do" - the report shows a plain "Run:" label
+        // instead of "Run #N:" for one of those, matching v1.1.
+        var runNumber = 0;
         if (totalFiles > 0)
         {
             var totalBeg = allResults.Sum(r => r.BeginSizeGb);
             var totalEnd = allResults.Sum(r => r.EndSizeGb);
             // The run's own permanent number is "how many runs came before it, plus one" - read
             // before IncrementRunCount below so the record and the counter agree on the same value.
-            var runNumber = _historyStore.GetRunCount(runCountPath) + 1;
+            runNumber = _historyStore.GetRunCount(runCountPath) + 1;
             _historyStore.AppendRun(logFilePath, new RunHistoryRecord(
                 endTime.Year, endTime.Month, endTime.Day, totalBeg, totalEnd, totalFiles,
                 runTime.Hours, runTime.Minutes, runTime.Seconds,
@@ -180,16 +208,20 @@ public sealed class RunOrchestrator : IRunOrchestrator
 
         _logger.Log($"\nCompressarr run completed. {totalFiles} file(s) processed in {runTime.Hours}h {runTime.Minutes}m {runTime.Seconds}s.");
 
-        var lanesById = config.Lanes.ToDictionary(l => l.Id);
         var (today, thisMonth, thisYear) = _rollupCalculator.Calculate(logFilePath);
 
         var reportModel = new ReportModel
         {
             GeneratedAt = endTime,
-            Lanes = laneResults.Select(kv => new LaneReportSection
+            RunTime = runTime,
+            RunNumber = runNumber,
+            // Every configured lane gets a section - matching v1.1, a lane that wasn't touched
+            // this pass (disabled, or enabled but nothing to do) still shows up with a "No files
+            // processed." placeholder rather than being silently absent from the report.
+            Lanes = config.Lanes.Select(lane => new LaneReportSection
             {
-                LaneDisplayName = lanesById.TryGetValue(kv.Key, out var lane) ? lane.DisplayName : kv.Key,
-                Results = kv.Value
+                LaneDisplayName = lane.DisplayName,
+                Results = laneResults.TryGetValue(lane.Id, out var results) ? results : Array.Empty<ConversionResult>()
             }).ToList(),
             Today = today,
             ThisMonth = thisMonth,
@@ -198,7 +230,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
 
         Directory.CreateDirectory(reportPath);
         var reportFilePath = Path.Combine(reportPath, reportFileName);
-        var html = _reportGenerator.Generate(reportModel, logoPngBytes: null);
+        var html = _reportGenerator.Generate(reportModel);
         File.WriteAllText(reportFilePath, html);
 
         var shouldOpen = config.Report.OpenAfterRun switch
@@ -217,9 +249,11 @@ public sealed class RunOrchestrator : IRunOrchestrator
         // gets), but skipped entirely for an empty pass so idle polling never spams a notification.
         if (totalFiles > 0)
         {
-            _notifications.Notify(
-                "Compressarr",
-                $"{totalFiles} file(s) processed in {runTime.Hours}h {runTime.Minutes}m {runTime.Seconds}s.",
+            var toastBeg = allResults.Sum(r => r.BeginSizeGb);
+            var toastEnd = allResults.Sum(r => r.EndSizeGb);
+
+            _notifications.NotifyRunComplete(
+                new RunCompletionSummary(totalFiles, toastBeg, toastEnd, runTime),
                 reportFilePath);
         }
 

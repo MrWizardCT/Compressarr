@@ -9,6 +9,7 @@ using Compressarr.Core.Orchestration;
 using Compressarr.Core.Presets;
 using Compressarr.Core.Reporting;
 using Compressarr.Core.Routing;
+using Compressarr.Core.Startup;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Compressarr.Core;
@@ -51,9 +52,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotificationService, NoOpNotificationService>();
         services.AddSingleton<IRunProgressReporter, NullRunProgressReporter>();
 
+        services.AddSingleton<IActiveRunController, ActiveRunController>();
         services.AddSingleton<IConversionOrchestrator, ConversionOrchestrator>();
         services.AddSingleton<IRunOrchestrator, RunOrchestrator>();
         services.AddSingleton<IRunLoopController, RunLoopController>();
+        services.AddSingleton<IStartupRegistrationService>(_ => StartupRegistrationServiceFactory.CreateForCurrentPlatform());
 
         return services;
     }
