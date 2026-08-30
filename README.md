@@ -184,6 +184,26 @@ Every path field has a **Browse...** button that opens a server-side folder pick
 browser's native file picker can't see the server's filesystem. **Save All Lanes** saves every
 lane on the page in one click.
 
+### Custom presets
+
+Compressarr ships with two of its own HandBrake presets, installed via **Install/Merge Presets**
+on the Settings page - they're what the sample lanes above use for TV preset / Movie preset.
+
+**Compressarr SD-HD** - for standard and HD sources. Encodes to H.265 (x265, 10-bit, Main10
+profile) at a constant quality slider of 24, using the "veryfast" encoder preset with two-pass
+encoding (turbo first pass). Audio is mixed down to E-AC3 (Dolby Digital Plus) at 512 kbps,
+supporting up to 7.1 channels. Also auto-crops black bars, keeps English subtitles, and
+preserves chapter markers.
+
+**Compressarr UHD AV1** - for 4K/UHD sources. Encodes to AV1 (SVT-AV1, 10-bit, Main profile) at
+a constant quality slider of 30, encoder preset 4 (tuned for PSNR), with two-pass encoding
+(turbo first pass). Audio tracks are copied through as-is where possible, falling back to E-AC3
+at 640 kbps otherwise. Same auto-crop, English subtitles, and chapter markers as above.
+
+In testing, both presets have achieved size reductions of **80% or more**, depending heavily on
+the source file's original bitrate, resolution, and codec - an already efficiently-encoded
+source will see smaller savings than a large, lightly-compressed one.
+
 ### Saving and running
 
 - **Save Settings** / **Save** (per lane) write changes back to the config without running
