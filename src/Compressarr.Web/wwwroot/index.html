@@ -11,43 +11,43 @@
   <main>
     <h2>HandBrake</h2>
     <div class="field-row">
-      <label for="hbCliPath">HandBrakeCLI path</label>
+      <label for="hbCliPath">HandBrakeCLI path<span class="help-tag" tabindex="0" title="Full path to HandBrakeCLI.exe. Use Check/Install to find or download it automatically.">?<span class="help-tip">Full path to HandBrakeCLI.exe. Use Check/Install to find or download it automatically.</span></span></label>
       <input type="text" id="hbCliPath" />
       <button id="checkHandBrakeBtn">Check/Install</button>
     </div>
     <div class="field-row">
-      <label for="presetsPath">presets.json path</label>
+      <label for="presetsPath">presets.json path<span class="help-tag" tabindex="0" title="Path to HandBrake's presets.json. Use Install/Merge Presets to add Compressarr's own presets to it.">?<span class="help-tip">Path to HandBrake's presets.json. Use Install/Merge Presets to add Compressarr's own presets to it.</span></span></label>
       <input type="text" id="presetsPath" />
       <button id="installPresetsBtn">Install/Merge Presets</button>
     </div>
     <div class="field-row">
-      <label for="hbOptions">Extra CLI options</label>
+      <label for="hbOptions">Extra CLI options<span class="help-tag" tabindex="0" title="Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.">?<span class="help-tip">Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.</span></span></label>
       <input type="text" id="hbOptions" />
     </div>
 
     <h2>Processing</h2>
     <div class="field-row">
-      <label for="vidTypes">Video extensions (comma-separated)</label>
+      <label for="vidTypes">Video extensions (comma-separated)<span class="help-tag" tabindex="0" title="File extensions Compressarr scans for, without dots, comma-separated (e.g. mkv, avi, mp4).">?<span class="help-tip">File extensions Compressarr scans for, without dots, comma-separated (e.g. mkv, avi, mp4).</span></span></label>
       <input type="text" id="vidTypes" />
     </div>
     <div class="field-row">
-      <label for="minSizeBytes">Minimum size (bytes)</label>
+      <label for="minSizeBytes">Minimum size (bytes)<span class="help-tag" tabindex="0" title="Skip files smaller than this size. 0 means no minimum.">?<span class="help-tip">Skip files smaller than this size. 0 means no minimum.</span></span></label>
       <input type="number" id="minSizeBytes" min="0" />
     </div>
     <div class="field-row">
-      <label for="limit">Max files per run (0 = no limit)</label>
+      <label for="limit">Max files per run (0 = no limit)<span class="help-tag" tabindex="0" title="Stop after converting this many files in a single pass. 0 means no limit.">?<span class="help-tip">Stop after converting this many files in a single pass. 0 means no limit.</span></span></label>
       <input type="number" id="limit" min="0" />
     </div>
     <div class="field-row">
-      <label>Write output to same folder as input</label>
+      <label>Write output to same folder as input<span class="help-tag" tabindex="0" title="Convert files in place instead of writing to each lane's Output folder.">?<span class="help-tip">Convert files in place instead of writing to each lane's Output folder.</span></span></label>
       <input type="checkbox" id="outSameAsIn" />
     </div>
     <div class="field-row">
-      <label>Move converted files into show/movie folders</label>
+      <label>Move converted files into show/movie folders<span class="help-tag" tabindex="0" title="After conversion, move files into the TV/Movie base path folders configured on each lane.">?<span class="help-tip">After conversion, move files into the TV/Movie base path folders configured on each lane.</span></span></label>
       <input type="checkbox" id="moveFiles" />
     </div>
     <div class="field-row">
-      <label for="deleteAfterConvert">Original file after convert</label>
+      <label for="deleteAfterConvert">Original file after convert<span class="help-tag" tabindex="0" title="What happens to the source file once conversion succeeds: keep it, delete it, or send it to the Recycle Bin.">?<span class="help-tip">What happens to the source file once conversion succeeds: keep it, delete it, or send it to the Recycle Bin.</span></span></label>
       <select id="deleteAfterConvert">
         <option value="Maintain">Maintain</option>
         <option value="Delete">Delete</option>
@@ -57,19 +57,19 @@
 
     <h2>Logging &amp; Reports</h2>
     <div class="field-row">
-      <label for="logFilePath">Log folder</label>
+      <label for="logFilePath">Log folder<span class="help-tag" tabindex="0" title="Where run logs and the history CSV are written.">?<span class="help-tip">Where run logs and the history CSV are written.</span></span></label>
       <input type="text" id="logFilePath" />
     </div>
     <div class="field-row">
-      <label for="reportPath">Report folder</label>
+      <label for="reportPath">Report folder<span class="help-tag" tabindex="0" title="Where HTML run reports are written.">?<span class="help-tip">Where HTML run reports are written.</span></span></label>
       <input type="text" id="reportPath" />
     </div>
     <div class="field-row">
-      <label for="retentionDays">Log/report retention (days)</label>
+      <label for="retentionDays">Log/report retention (days)<span class="help-tag" tabindex="0" title="Logs and reports older than this many days are automatically deleted.">?<span class="help-tip">Logs and reports older than this many days are automatically deleted.</span></span></label>
       <input type="number" id="retentionDays" min="0" />
     </div>
     <div class="field-row">
-      <label for="openAfterRun">Open report after run</label>
+      <label for="openAfterRun">Open report after run<span class="help-tag" tabindex="0" title="Whether the HTML report opens automatically after a run: always, only when there were errors, or never.">?<span class="help-tip">Whether the HTML report opens automatically after a run: always, only when there were errors, or never.</span></span></label>
       <select id="openAfterRun">
         <option value="Always">Always</option>
         <option value="OnError">On Error</option>
@@ -79,59 +79,59 @@
 
     <h2>Monitoring</h2>
     <div class="field-row">
-      <label>Enable Monitoring at Startup</label>
+      <label>Enable Monitoring at Startup<span class="help-tag" tabindex="0" title="Automatically start monitoring when Compressarr launches, instead of waiting for you to click Start Monitoring.">?<span class="help-tip">Automatically start monitoring when Compressarr launches, instead of waiting for you to click Start Monitoring.</span></span></label>
       <input type="checkbox" id="repeatMonitor" />
     </div>
     <div class="field-row">
-      <label for="pollIntervalSeconds">Poll interval (seconds)</label>
+      <label for="pollIntervalSeconds">Poll interval (seconds)<span class="help-tag" tabindex="0" title="How often the monitor loop checks each lane's Input folder for new files while monitoring is on.">?<span class="help-tip">How often the monitor loop checks each lane's Input folder for new files while monitoring is on.</span></span></label>
       <input type="number" id="pollIntervalSeconds" min="5" />
     </div>
     <div class="field-row">
-      <label>Start with Windows (on login)</label>
+      <label>Start with Windows (on login)<span class="help-tag" tabindex="0" title="Launch Compressarr automatically when you log into Windows.">?<span class="help-tip">Launch Compressarr automatically when you log into Windows.</span></span></label>
       <input type="checkbox" id="runAtLogin" />
     </div>
 
     <h2>Post-execution command</h2>
     <div class="field-row">
-      <label for="postExecCmd">Command</label>
+      <label for="postExecCmd">Command<span class="help-tag" tabindex="0" title="An optional program to run after each pass completes, e.g. to notify another tool.">?<span class="help-tip">An optional program to run after each pass completes, e.g. to notify another tool.</span></span></label>
       <input type="text" id="postExecCmd" />
     </div>
     <div class="field-row">
-      <label for="postExecArgs">Arguments</label>
+      <label for="postExecArgs">Arguments<span class="help-tag" tabindex="0" title="Command-line arguments passed to the post-execution command above.">?<span class="help-tip">Command-line arguments passed to the post-execution command above.</span></span></label>
       <input type="text" id="postExecArgs" />
     </div>
 
     <h2>Sonarr</h2>
     <div class="field-row">
-      <label>Enabled</label>
+      <label>Enabled<span class="help-tag" tabindex="0" title="Let Compressarr unmonitor converted TV episodes in Sonarr so it doesn't re-download them.">?<span class="help-tip">Let Compressarr unmonitor converted TV episodes in Sonarr so it doesn't re-download them.</span></span></label>
       <input type="checkbox" id="sonarrEnabled" />
     </div>
     <div class="field-row">
-      <label for="sonarrUrl">URL</label>
+      <label for="sonarrUrl">URL<span class="help-tag" tabindex="0" title="Base URL of your Sonarr instance, e.g. http://localhost:8989.">?<span class="help-tip">Base URL of your Sonarr instance, e.g. http://localhost:8989.</span></span></label>
       <input type="text" id="sonarrUrl" />
     </div>
     <div class="field-row">
-      <label for="sonarrApiKey">API Key</label>
+      <label for="sonarrApiKey">API Key<span class="help-tag" tabindex="0" title="Found in Sonarr under Settings &gt; General &gt; Security.">?<span class="help-tip">Found in Sonarr under Settings &gt; General &gt; Security.</span></span></label>
       <input type="password" id="sonarrApiKey" />
     </div>
 
     <h2>Radarr</h2>
     <div class="field-row">
-      <label>Enabled</label>
+      <label>Enabled<span class="help-tag" tabindex="0" title="Let Compressarr unmonitor converted movies in Radarr so it doesn't re-download them.">?<span class="help-tip">Let Compressarr unmonitor converted movies in Radarr so it doesn't re-download them.</span></span></label>
       <input type="checkbox" id="radarrEnabled" />
     </div>
     <div class="field-row">
-      <label for="radarrUrl">URL</label>
+      <label for="radarrUrl">URL<span class="help-tag" tabindex="0" title="Base URL of your Radarr instance, e.g. http://localhost:7878.">?<span class="help-tip">Base URL of your Radarr instance, e.g. http://localhost:7878.</span></span></label>
       <input type="text" id="radarrUrl" />
     </div>
     <div class="field-row">
-      <label for="radarrApiKey">API Key</label>
+      <label for="radarrApiKey">API Key<span class="help-tag" tabindex="0" title="Found in Radarr under Settings &gt; General &gt; Security.">?<span class="help-tip">Found in Radarr under Settings &gt; General &gt; Security.</span></span></label>
       <input type="password" id="radarrApiKey" />
     </div>
 
     <h2>Web UI</h2>
     <div class="field-row">
-      <label for="webPort">Port (requires restart to take effect)</label>
+      <label for="webPort">Port (requires restart to take effect)<span class="help-tag" tabindex="0" title="Port the web UI listens on. Changing this requires restarting Compressarr.">?<span class="help-tip">Port the web UI listens on. Changing this requires restarting Compressarr.</span></span></label>
       <input type="number" id="webPort" min="1" max="65535" />
     </div>
 

@@ -21,30 +21,30 @@
   <template id="lane-template">
     <div class="lane-card" data-id="">
       <div class="field-row">
-        <label><input type="checkbox" class="f-enabled" /> Enabled</label>
+        <label><input type="checkbox" class="f-enabled" /> Enabled<span class="help-tag" tabindex="0" title="Whether this lane is included when a run or monitoring pass scans for files.">?<span class="help-tip">Whether this lane is included when a run or monitoring pass scans for files.</span></span></label>
         <input type="text" class="f-displayName" placeholder="Lane name" style="max-width:240px" />
         <button class="save-lane-btn primary">Save</button>
         <button class="remove-lane-btn">Remove</button>
       </div>
       <div class="field-row">
-        <label>Input</label>
+        <label>Input<span class="help-tag" tabindex="0" title="Folder Compressarr scans for video files to convert.">?<span class="help-tip">Folder Compressarr scans for video files to convert.</span></span></label>
         <input type="text" class="f-input" />
         <button class="browse-btn" data-target="f-input">Browse...</button>
-        <label>Output</label>
+        <label>Output<span class="help-tag" tabindex="0" title="Folder converted files are written to, unless &quot;Write output to same folder as input&quot; is enabled in Settings.">?<span class="help-tip">Folder converted files are written to, unless "Write output to same folder as input" is enabled in Settings.</span></span></label>
         <input type="text" class="f-output" />
         <button class="browse-btn" data-target="f-output">Browse...</button>
       </div>
       <div class="field-row">
-        <label>TV preset</label>
+        <label>TV preset<span class="help-tag" tabindex="0" title="HandBrake preset used for files detected as TV episodes.">?<span class="help-tip">HandBrake preset used for files detected as TV episodes.</span></span></label>
         <input type="text" class="f-tvPreset" list="preset-list" />
-        <label>Movie preset</label>
+        <label>Movie preset<span class="help-tag" tabindex="0" title="HandBrake preset used for files detected as movies.">?<span class="help-tip">HandBrake preset used for files detected as movies.</span></span></label>
         <input type="text" class="f-moviePreset" list="preset-list" />
       </div>
       <div class="field-row">
-        <label>TV base path</label>
+        <label>TV base path<span class="help-tag" tabindex="0" title="Base folder converted TV episodes are moved into, if Move converted files is enabled in Settings.">?<span class="help-tip">Base folder converted TV episodes are moved into, if Move converted files is enabled in Settings.</span></span></label>
         <input type="text" class="f-tvShowBasePath" />
         <button class="browse-btn" data-target="f-tvShowBasePath">Browse...</button>
-        <label>Movie base path</label>
+        <label>Movie base path<span class="help-tag" tabindex="0" title="Base folder converted movies are moved into, if Move converted files is enabled in Settings.">?<span class="help-tip">Base folder converted movies are moved into, if Move converted files is enabled in Settings.</span></span></label>
         <input type="text" class="f-movieBasePath" />
         <button class="browse-btn" data-target="f-movieBasePath">Browse...</button>
       </div>
