@@ -20,7 +20,9 @@ public static class AboutEndpoints
         app.MapGet("/api/about", () => Results.Json(new
         {
             version = InstalledVersionString,
-            repoUrl = $"https://github.com/{RepoOwner}/{RepoName}"
+            // The "Original v1.1" link specifically - v1.1 (PowerShell) lives on the 1.x branch
+            // now that main hosts v2's own source.
+            repoUrl = $"https://github.com/{RepoOwner}/{RepoName}/tree/1.x"
         }));
 
         app.MapGet("/api/about/check-update", async (IHttpClientFactory httpClientFactory) =>
