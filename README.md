@@ -73,9 +73,9 @@ usage update live while a pass runs.
 
 ### Reports and notifications
 
-At the end of a run, Compressarr writes a **standalone HTML report** (no email/SMTP involved)
-covering per-lane results (each file's type, preset, and Sonarr/Radarr outcome), disk savings,
-any errors, and rolling Today/This Month/This Year history. The Open report after run setting
+At the end of a run, Compressarr writes a **standalone HTML report** covering per-lane results
+(each file's type, preset, and Sonarr/Radarr outcome), disk savings, any errors, and rolling
+Today/This Month/This Year history. The Open report after run setting
 (Always/On Error/Never) controls whether it opens automatically - independent of that setting, a
 Windows toast notification also confirms completion and opens the report when clicked. Each
 report is labeled with a running run number (`Run #237: ...`) - a persistent, cumulative count
