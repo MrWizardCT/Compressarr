@@ -10,9 +10,9 @@ Compressarr watches your folders, transcodes new video through
 [HandBrakeCLI](https://handbrake.fr/downloads2.php), automatically files the result into an
 organized TV Show/Movie library, cleans up after itself, optionally tells Sonarr/Radarr the
 item no longer needs monitoring, and finishes with a standalone report plus a desktop
-notification. v2 is a complete rewrite of the original PowerShell tool as a web-first,
-Radarr/Sonarr-style app - a system-tray-only background process with its entire UI (settings,
-lanes, monitoring, history, reports) in your browser, reachable from any device on your LAN.
+notification. v2 is a complete rewrite of the original PowerShell tool as a web-first app - a
+system-tray-only background process with its entire UI (settings, lanes, monitoring, history,
+reports) in your browser, reachable from any device on your LAN.
 Both the original PowerShell version and v2 trace back to
 [VidMonHB](https://github.com/mrpaulwasserman/VidMonHB), Paul Wasserman's original take on this
 same idea.
