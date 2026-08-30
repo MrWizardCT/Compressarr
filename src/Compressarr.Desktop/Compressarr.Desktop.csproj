@@ -16,6 +16,10 @@
   <PropertyGroup Condition="'$(TargetFramework)'=='net10.0-windows10.0.19041.0'">
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+    <!-- Embeds the icon into the exe's own Win32 resources - without this, Explorer/Start Menu/
+         taskbar shortcuts all fall back to a generic default icon regardless of what icon the
+         installer's shortcut entry points at. -->
+    <ApplicationIcon>Assets\CompressarrIcon.ico</ApplicationIcon>
   </PropertyGroup>
   <PropertyGroup Condition="'$(TargetFramework)'=='net10.0'">
     <RuntimeIdentifiers>linux-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
@@ -24,6 +28,13 @@
   <ItemGroup>
     <Folder Include="Models\" />
     <AvaloniaResource Include="Assets\**" />
+
+    <!-- Also copied as a loose file (not just embedded as an Avalonia resource) so the Windows
+         toast notification can reference it by a real file path - AppLogoOverride needs a
+         file:///, http(s)://, or ms-appx:/// URI, none of which an avares:// resource satisfies. -->
+    <None Include="Assets\CompressarrLogo.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <!-- Windows-only toast notification source, excluded from the plain net10.0 (macOS/Linux) build
