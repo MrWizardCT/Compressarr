@@ -13,7 +13,14 @@ public sealed record HistoryRollup(int FileCount, double BeforeGb, double AfterG
 public sealed class ReportModel
 {
     public required DateTime GeneratedAt { get; init; }
+    public required TimeSpan RunTime { get; init; }
     public required IReadOnlyList<LaneReportSection> Lanes { get; init; }
+
+    /// <summary>0 means "this pass found nothing to do" - only a run that actually processed
+    /// files gets a permanent number (see RunOrchestrator/IRunHistoryStore.IncrementRunCount).
+    /// The report shows a plain "Run:" label instead of "Run #N:" when this is 0.</summary>
+    public int RunNumber { get; init; }
+
     public HistoryRollup? Today { get; init; }
     public HistoryRollup? ThisMonth { get; init; }
     public HistoryRollup? ThisYear { get; init; }

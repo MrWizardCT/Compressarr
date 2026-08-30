@@ -1,65 +1,88 @@
 using System.Net;
+using System.Reflection;
 using System.Text;
 
 namespace Compressarr.Core.Reporting;
 
 public interface IHtmlReportGenerator
 {
-    /// <summary>Builds a fully self-contained HTML report — inline CSS, base64-embedded logo if
-    /// provided, no external references. All user-controlled text is HTML-encoded before
-    /// interpolation. Ported from New-CompressarrReport/Get-CompressarrLaneReportSection.</summary>
-    string Generate(ReportModel model, byte[]? logoPngBytes);
+    /// <summary>Builds a fully self-contained HTML report — inline CSS, base64-embedded logo/
+    /// favicon, no external references. All user-controlled text is HTML-encoded before
+    /// interpolation. Layout ported from v1.1's New-CompressarrReport/
+    /// Get-CompressarrLaneReportSection (Compressarr.Reporting.psm1) - the user preferred that
+    /// format over v2's original dark-theme report.</summary>
+    string Generate(ReportModel model);
 }
 
 public sealed class HtmlReportGenerator : IHtmlReportGenerator
 {
-    public string Generate(ReportModel model, byte[]? logoPngBytes)
-    {
-        var logoTag = logoPngBytes is null
-            ? ""
-            : $"<img src=\"data:image/png;base64,{Convert.ToBase64String(logoPngBytes)}\" alt=\"Compressarr\" class=\"logo\" />";
+    private const string LogoResourceName = "Compressarr.Core.Assets.CompressarrLogo.png";
+    private const string FaviconResourceName = "Compressarr.Core.Assets.CompressarrFavicon.ico";
 
-        var statusClass = model.ErrorCount > 0 ? "status-error" : "status-ok";
-        var statusText = model.ErrorCount > 0 ? $"{model.ErrorCount} error(s)" : "No errors";
+    public string Generate(ReportModel model)
+    {
+        var totalFiles = model.Lanes.Sum(l => l.Results.Count);
+        var totalBeg = Math.Round(model.Lanes.Sum(l => l.Results.Sum(r => r.BeginSizeGb)), 3);
+        var totalEnd = Math.Round(model.Lanes.Sum(l => l.Results.Sum(r => r.EndSizeGb)), 3);
+        var totalSavings = Math.Round(totalBeg - totalEnd, 3);
+        var savingsPct = totalBeg > 0 ? Math.Round(100 - (totalEnd / totalBeg) * 100, 2) : 0;
+        var errorCount = model.Lanes.Sum(l => l.Results.Count(r => !r.Success));
+
+        var logoTag = LoadEmbeddedBase64(LogoResourceName) is { } logoB64
+            ? $"<img src=\"data:image/png;base64,{logoB64}\" alt=\"Compressarr\" class=\"logo\" />"
+            : "";
+        var faviconTag = LoadEmbeddedBase64(FaviconResourceName) is { } faviconB64
+            ? $"<link rel=\"icon\" type=\"image/x-icon\" href=\"data:image/x-icon;base64,{faviconB64}\">"
+            : "";
+        var runLabel = model.RunNumber > 0 ? $"Run #{model.RunNumber}:" : "Run:";
+        var timestamp = model.GeneratedAt.ToString("yyyy-MM-dd HH:mm:ss");
+
+        var statusBanner = errorCount > 0
+            ? $"<div class=\"banner err\">{errorCount} error(s) occurred - see the per-lane tables below and the detail logs.</div>"
+            : "<div class=\"banner ok\">Run completed with no errors.</div>";
 
         var sb = new StringBuilder();
         sb.Append($@"<!DOCTYPE html>
 <html>
 <head>
 <meta charset=""utf-8"" />
-<title>Compressarr Report</title>
+<title>Compressarr Report - {WebUtility.HtmlEncode(timestamp)}</title>
+{faviconTag}
 <style>
-  body {{ font-family: Segoe UI, Arial, sans-serif; background: #1e1e1e; color: #e0e0e0; margin: 0; padding: 24px; }}
-  .header {{ display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }}
-  .logo {{ height: 48px; }}
-  h1 {{ margin: 0; font-size: 22px; }}
-  .status-banner {{ padding: 10px 16px; border-radius: 6px; font-weight: bold; margin-bottom: 16px; }}
-  .status-ok {{ background: #1e4620; color: #8fd98f; }}
-  .status-error {{ background: #4a1e1e; color: #f79999; }}
-  .stat-grid {{ display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }}
-  .stat {{ background: #2a2a2a; border-radius: 6px; padding: 12px 20px; min-width: 120px; }}
-  .stat .label {{ font-size: 12px; color: #999; }}
-  .stat .value {{ font-size: 20px; font-weight: bold; }}
-  table {{ border-collapse: collapse; width: 100%; margin-bottom: 24px; }}
-  th, td {{ border: 1px solid #3a3a3a; padding: 6px 10px; text-align: left; font-size: 13px; }}
-  th {{ background: #2a2a2a; }}
-  tr.err {{ background: #3a1e1e; }}
-  h3 {{ border-bottom: 1px solid #3a3a3a; padding-bottom: 4px; }}
+  body {{ font-family: Segoe UI, Verdana, sans-serif; margin: 2rem; color: #1c1c1c; background: #fafafa; }}
+  h1 {{ margin-bottom: 0; }}
+  .header {{ display: flex; align-items: center; gap: 0.75rem; }}
+  .logo {{ width: 48px; height: 48px; }}
+  .muted {{ color: #666; font-weight: normal; font-size: 0.85em; }}
+  .banner {{ padding: 0.75rem 1rem; border-radius: 6px; margin: 1rem 0; font-weight: 600; }}
+  .banner.ok {{ background: #e3f7e8; color: #16693a; }}
+  .banner.err {{ background: #fdeaea; color: #a1231e; }}
+  .table-wrap {{ overflow-x: auto; margin: 0.5rem 0 1.5rem 0; }}
+  table {{ border-collapse: collapse; width: 100%; min-width: 640px; margin: 0; background: #fff; }}
+  th, td {{ border: 1px solid #ddd; padding: 6px 10px; text-align: left; font-size: 0.9em; }}
+  th {{ background: #2c3e50; color: #fff; }}
+  tr.err {{ background: #fdeaea; }}
+  .summary-grid {{ display: flex; gap: 2rem; flex-wrap: wrap; margin: 1rem 0; }}
+  .stat {{ background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem 1.25rem; min-width: 140px; }}
+  .stat .label {{ font-size: 0.8em; color: #666; }}
+  .stat .value {{ font-size: 1.4em; font-weight: 700; }}
 </style>
 </head>
 <body>
-  <div class=""header"">
-    {logoTag}
-    <h1>Compressarr Report — {WebUtility.HtmlEncode(model.GeneratedAt.ToString("yyyy-MM-dd HH:mm:ss"))}</h1>
-  </div>
-  <div class=""status-banner {statusClass}"">{WebUtility.HtmlEncode(statusText)}</div>
-  <div class=""stat-grid"">
-    <div class=""stat""><div class=""label"">Files</div><div class=""value"">{model.TotalFiles}</div></div>
-    <div class=""stat""><div class=""label"">Before</div><div class=""value"">{model.TotalBeforeGb:N2} GB</div></div>
-    <div class=""stat""><div class=""label"">After</div><div class=""value"">{model.TotalAfterGb:N2} GB</div></div>
-    <div class=""stat""><div class=""label"">Saved</div><div class=""value"">{(model.TotalBeforeGb - model.TotalAfterGb):N2} GB</div></div>
-    <div class=""stat""><div class=""label"">Errors</div><div class=""value"">{model.ErrorCount}</div></div>
-  </div>
+<div class=""header"">
+  {logoTag}
+  <h1>Compressarr Report</h1>
+</div>
+<p class=""muted"">{WebUtility.HtmlEncode(runLabel)} {WebUtility.HtmlEncode(timestamp)} &nbsp;|&nbsp; Duration: {model.RunTime.Hours}h {model.RunTime.Minutes}m {model.RunTime.Seconds}s</p>
+{statusBanner}
+<div class=""summary-grid"">
+  <div class=""stat""><div class=""label"">Files processed</div><div class=""value"">{totalFiles}</div></div>
+  <div class=""stat""><div class=""label"">Before</div><div class=""value"">{totalBeg} GB</div></div>
+  <div class=""stat""><div class=""label"">After</div><div class=""value"">{totalEnd} GB</div></div>
+  <div class=""stat""><div class=""label"">Saved</div><div class=""value"">{totalSavings} GB ({savingsPct}%)</div></div>
+  <div class=""stat""><div class=""label"">Errors</div><div class=""value"">{errorCount}</div></div>
+</div>
+<h2>By lane</h2>
 ");
 
         foreach (var lane in model.Lanes)
@@ -78,44 +101,68 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
 
     private static void AppendLaneSection(StringBuilder sb, LaneReportSection lane)
     {
-        sb.Append($"  <h3>{WebUtility.HtmlEncode(lane.LaneDisplayName)}</h3>\n");
-        sb.Append("  <table>\n    <tr><th>File</th><th>Type</th><th>Preset</th><th>Before</th><th>After</th><th>Savings</th><th>Status</th><th>Sonarr/Radarr</th></tr>\n");
+        if (lane.Results.Count == 0)
+        {
+            sb.Append($"<h3>{WebUtility.HtmlEncode(lane.LaneDisplayName)}</h3>\n<p class=\"muted\">No files processed.</p>\n");
+            return;
+        }
+
+        var beg = Math.Round(lane.Results.Sum(r => r.BeginSizeGb), 3);
+        var end = Math.Round(lane.Results.Sum(r => r.EndSizeGb), 3);
+
+        sb.Append($"<h3>{WebUtility.HtmlEncode(lane.LaneDisplayName)} <span class=\"muted\">({lane.Results.Count} file(s), {beg} GB &rarr; {end} GB)</span></h3>\n");
+        sb.Append("<div class=\"table-wrap\">\n<table>\n  <thead><tr><th>File</th><th>Type</th><th>Preset</th><th>Before</th><th>After</th><th>Savings</th><th>Status</th><th>Sonarr/Radarr</th></tr></thead>\n  <tbody>\n");
 
         foreach (var r in lane.Results)
         {
             var rowClass = r.Success ? "" : " class=\"err\"";
-            var savings = r.BeginSizeGb - r.EndSizeGb;
-            var status = r.Success ? "OK" : "FAILED";
+            var savings = Math.Round(r.BeginSizeGb - r.EndSizeGb, 3);
+            var status = r.Success ? "OK" : "ERROR";
+            // Em dash, matching v1.1: blank whenever Sonarr/Radarr integration wasn't attempted
+            // for this file - either the conversion failed, or neither service is enabled for
+            // this content type - not just when it succeeded/failed.
+            var arrStatus = string.IsNullOrEmpty(r.ArrStatus) ? "—" : r.ArrStatus;
 
             sb.Append($"    <tr{rowClass}>");
             sb.Append($"<td>{WebUtility.HtmlEncode(r.FileName)}</td>");
             sb.Append($"<td>{WebUtility.HtmlEncode(r.ContentType)}</td>");
             sb.Append($"<td>{WebUtility.HtmlEncode(r.PresetName ?? "")}</td>");
-            sb.Append($"<td>{r.BeginSizeGb:N3} GB</td>");
-            sb.Append($"<td>{r.EndSizeGb:N3} GB</td>");
-            sb.Append($"<td>{savings:N3} GB</td>");
-            sb.Append($"<td>{WebUtility.HtmlEncode(status)}</td>");
-            sb.Append($"<td>{WebUtility.HtmlEncode(r.ArrStatus ?? "")}</td>");
+            sb.Append($"<td>{r.BeginSizeGb} GB</td>");
+            sb.Append($"<td>{r.EndSizeGb} GB</td>");
+            sb.Append($"<td>{savings} GB</td>");
+            sb.Append($"<td>{status}</td>");
+            sb.Append($"<td>{WebUtility.HtmlEncode(arrStatus)}</td>");
             sb.Append("</tr>\n");
         }
 
-        sb.Append("  </table>\n");
+        sb.Append("  </tbody>\n</table>\n</div>\n");
     }
 
     private static void AppendHistorySection(StringBuilder sb, ReportModel model)
     {
-        sb.Append("  <h3>History</h3>\n  <table>\n    <tr><th>Period</th><th>Files</th><th>Before</th><th>After</th></tr>\n");
+        sb.Append("<h2>History</h2>\n<div class=\"table-wrap\">\n<table>\n  <thead><tr><th>Period</th><th>Before</th><th>After</th><th>Savings</th><th>Files</th></tr></thead>\n  <tbody>\n");
 
         void Row(string label, HistoryRollup? rollup)
         {
             if (rollup is null) return;
-            sb.Append($"    <tr><td>{WebUtility.HtmlEncode(label)}</td><td>{rollup.FileCount}</td><td>{rollup.BeforeGb:N2} GB</td><td>{rollup.AfterGb:N2} GB</td></tr>\n");
+            var pct = rollup.BeforeGb > 0 ? Math.Round(100 - (rollup.AfterGb / rollup.BeforeGb) * 100, 2) : 0;
+            sb.Append($"    <tr><td>{WebUtility.HtmlEncode(label)}</td><td>{rollup.BeforeGb} GB</td><td>{rollup.AfterGb} GB</td><td>{pct}%</td><td>{rollup.FileCount}</td></tr>\n");
         }
 
         Row("Today", model.Today);
-        Row("This Month", model.ThisMonth);
-        Row("This Year", model.ThisYear);
+        Row("This month", model.ThisMonth);
+        Row("This year", model.ThisYear);
 
-        sb.Append("  </table>\n");
+        sb.Append("  </tbody>\n</table>\n</div>\n");
+    }
+
+    private static string? LoadEmbeddedBase64(string resourceName)
+    {
+        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
+        if (stream is null) return null;
+
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        return Convert.ToBase64String(ms.ToArray());
     }
 }

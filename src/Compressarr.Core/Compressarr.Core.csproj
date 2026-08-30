@@ -10,5 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Assets\compressarr-presets.json" />
+    <EmbeddedResource Include="Assets\CompressarrLogo.png" />
+    <EmbeddedResource Include="Assets\CompressarrFavicon.ico" />
   </ItemGroup>
 </Project>
