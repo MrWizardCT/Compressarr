@@ -344,3 +344,9 @@ tests/
 - An About page with the installed version, one-click update checks (against this repo and
   against HandBrake's own releases), and credits.
 - v1.1 (PowerShell) itself remains available on the [`1.x`](https://github.com/MrWizardCT/Compressarr/tree/1.x) branch.
+
+## License
+
+Compressarr is licensed under the [GNU General Public License v3.0](LICENSE).
+
+Copyright (C) 2026 Mark Wasserman
