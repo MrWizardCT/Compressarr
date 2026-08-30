@@ -46,10 +46,20 @@ abortBtn.addEventListener('click', async () => {
 });
 
 function renderLog(lines) {
+  // poll() calls this every 1.5s - unconditionally forcing scrollTop to the bottom every time
+  // means scrolling up to read something gets yanked back down before you can read it. Only
+  // auto-scroll if the user was already at (or very near) the bottom, same "stick to bottom"
+  // behavior most live log/chat views use. Captured before the innerHTML replacement below,
+  // since replacing it resets scrollTop.
+  const wasAtBottom = logPanel.scrollHeight - logPanel.scrollTop - logPanel.clientHeight < 20;
+
   logPanel.innerHTML = lines
     .map(l => `<div class="log-line${l.severity === 'Error' ? ' error' : ''}">${escapeHtml(l.text)}</div>`)
     .join('');
-  logPanel.scrollTop = logPanel.scrollHeight;
+
+  if (wasAtBottom) {
+    logPanel.scrollTop = logPanel.scrollHeight;
+  }
 }
 
 function escapeHtml(text) {
