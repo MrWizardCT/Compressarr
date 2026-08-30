@@ -4,7 +4,7 @@ All notable changes to Compressarr are documented in this file. Pre-release/RC b
 to v1.0.0 are omitted here - see [GitHub Releases](https://github.com/MrWizardCT/Compressarr/releases)
 for that full history.
 
-## [Unreleased]
+## [2.0.2] - 2026-08-30
 
 ### Fixed
 - **Clear title metadata** now actually works. The TagLib-Sharp-based title-stripping feature was
