@@ -42,6 +42,9 @@ for that full history.
   wasn't checking the exit code. Left unfixed, this would have moved the truncated/corrupt file
   into place and, depending on Delete-after-convert, deleted or recycled the real source out from
   under it. Success now also requires the process to have exited 0.
+- Monitoring now stops itself automatically when a disk-full failure is detected (encode or
+  move), instead of retrying the same doomed encode again every poll interval - a clear log
+  message explains why.
 
 ## [2.0.4] - 2026-08-31
 
