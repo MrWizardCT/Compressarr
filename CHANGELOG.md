@@ -4,6 +4,20 @@ All notable changes to Compressarr are documented in this file. Pre-release/RC b
 to v1.0.0 are omitted here - see [GitHub Releases](https://github.com/MrWizardCT/Compressarr/releases)
 for that full history.
 
+## [2.0.4] - 2026-08-31
+
+### Changed
+- Rebranded to the new "Squeeze" logo/icon mark throughout the app - report and toast logo, both
+  favicons, the exe/tray/installer icon, and the web UI's nav-bar and About-page logos.
+- The web UI's nav-bar logo is now a clickable link to compressarr.tv (opens in a new tab).
+- Refreshed every README screenshot (Settings, Lanes, Monitor, History, sample report) against a
+  real run on the current setup - real lane names/paths, the new branding, the Clear title
+  metadata toggle, and a genuine completed run (4 files, 27.79GB -> 4.66GB, 83.22% saved).
+
+### Fixed
+- The HTML report header's logo and title weren't vertically aligned - Segoe UI's font metrics
+  meant `line-height: 1` alone wasn't enough. Dialed in against the real report render.
+
 ## [2.0.3] - 2026-08-30
 
 ### Fixed
