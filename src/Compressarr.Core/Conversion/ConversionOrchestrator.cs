@@ -128,7 +128,19 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             videoFiles = _scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit).ToList();
             foreach (var f in videoFiles)
             {
-                resumeState.Add(new ResumeEntry { LaneId = lane.Id, FullName = f.FullName, Status = ResumeStatus.Pending });
+                // A file can reappear at a path that already has a resume entry - e.g. the same
+                // source re-added after a prior run already completed it. Reuse that entry rather
+                // than adding a second one, or resume.json accumulates duplicate rows for the same
+                // path (a stale Completed entry sitting next to a fresh Pending one).
+                var existing = resumeState.FirstOrDefault(e => e.LaneId == lane.Id && e.FullName == f.FullName);
+                if (existing is not null)
+                {
+                    existing.Status = ResumeStatus.Pending;
+                }
+                else
+                {
+                    resumeState.Add(new ResumeEntry { LaneId = lane.Id, FullName = f.FullName, Status = ResumeStatus.Pending });
+                }
             }
             _resumeStore.Save(resumeState, resumeFilePath);
         }

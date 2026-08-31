@@ -407,6 +407,64 @@ public class ConversionOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessLaneAsync_FileReappearsAfterCompleting_ReusesResumeEntryInsteadOfDuplicating()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var filePath = Path.Combine(inputDir, "Private School (1983).mkv");
+        File.WriteAllText(filePath, "source, re-added after already completing once");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset"
+        };
+
+        var config = BuildConfig(DeleteAfterConvertMode.Maintain);
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        // Simulates the exact state pulled from a real resume.json: this file already completed
+        // in an earlier run, but the same path has since reappeared in Input.
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "lane1", FullName = filePath, Status = ResumeStatus.Completed }
+        };
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(),
+            new RealFolderScanner(),
+            new FixedExtensionPresetService(),
+            new MetadataService(),
+            new FakeProcessRunner(),
+            new FileRouter(),
+            new NoOpCompanionFileService(),
+            new NoOpArrUnmonitorService(),
+            new RecordingTrashService(),
+            new NoOpRunLogger(),
+            new NoOpResumeStateStore(),
+            new NoOpProgressReporter(),
+            configStore);
+
+        var results = await orchestrator.ProcessLaneAsync(
+            lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        Assert.Single(results);
+        // Exactly one resume entry for this path, not two - the pre-existing Completed entry was
+        // reused (and is Completed again, since this run finished it) rather than left in place
+        // alongside a second, newly-added entry.
+        var entry = Assert.Single(resumeState, e => e.FullName == filePath);
+        Assert.Equal(ResumeStatus.Completed, entry.Status);
+    }
+
+    [Fact]
     public async Task ProcessLaneAsync_NoPresetConfigured_ReportsSpecificFailureReason()
     {
         var inputDir = Path.Combine(_tempDir, "Input");

@@ -12,6 +12,10 @@ for that full history.
   Input for genuinely new files, because a non-empty (but entirely dead) pending queue took
   priority over scanning. Dead pending entries are now dropped from the resume file as soon as
   they're detected, so the lane falls back to a fresh scan once nothing resumable is left.
+- A file that reappeared in Input after already completing once (e.g. re-added for another test)
+  got a second, duplicate resume entry instead of reusing its existing one - resume.json could
+  accumulate multiple rows for the same path. Scanning now reuses an existing entry for a path
+  it already knows about instead of always adding a new one.
 
 ## [2.0.5] - 2026-08-31
 
