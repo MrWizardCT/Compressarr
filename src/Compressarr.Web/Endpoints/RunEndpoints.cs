@@ -118,6 +118,7 @@ public static class RunEndpoints
             return Results.Json(new
             {
                 isMonitoring = loopController.IsRunning,
+                isStopping = loopController.IsStopping,
                 isRunning = snapshot.IsRunning,
                 laneDisplayName = snapshot.LaneDisplayName,
                 fileName = snapshot.FileName,

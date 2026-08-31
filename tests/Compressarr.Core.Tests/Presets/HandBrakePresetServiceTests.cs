@@ -17,12 +17,15 @@ public class HandBrakePresetServiceTests : IDisposable
 
     // A folder-grouped tree: a top-level folder ("General") containing two leaf presets, plus one
     // leaf preset directly under PresetList with no folder grouping - mirrors real HandBrake
-    // presets.json shape, where a node can carry PresetName AND ChildrenArray simultaneously.
+    // presets.json shape, confirmed against an actual generated presets.json: a folder node
+    // carries "Folder": true alongside a PresetName (used as its label in HandBrake's own UI) and
+    // a ChildrenArray, and must NOT be treated as a real, selectable preset itself.
     private const string FixtureTree = """
         {
           "PresetList": [
             {
               "PresetName": "General",
+              "Folder": true,
               "ChildrenArray": [
                 { "PresetName": "Fast 1080p30", "FileFormat": "av_mp4" },
                 { "PresetName": "H.265 MKV 2160p", "FileFormat": "av_mkv" }
@@ -34,17 +37,27 @@ public class HandBrakePresetServiceTests : IDisposable
         """;
 
     [Fact]
-    public void GetPresets_FlattensNestedTree_ReturnsAllLeaves()
+    public void GetPresets_FlattensNestedTree_ReturnsOnlyLeaves()
     {
         var service = new HandBrakePresetService();
         var path = WritePresetsFile(FixtureTree);
 
         var presets = service.GetPresets(path);
 
-        Assert.Equal(4, presets.Count); // General (itself has PresetName) + its 2 children + the top-level leaf
+        Assert.Equal(3, presets.Count); // General's 2 children + the top-level leaf - NOT "General" itself
+        Assert.DoesNotContain(presets, p => p.PresetName == "General");
         Assert.Contains(presets, p => p.PresetName == "Fast 1080p30" && p.FileFormat == "av_mp4");
         Assert.Contains(presets, p => p.PresetName == "H.265 MKV 2160p" && p.FileFormat == "av_mkv");
         Assert.Contains(presets, p => p.PresetName == "Very Fast 720p30" && p.FileFormat == "mp4");
+    }
+
+    [Fact]
+    public void GetPresets_FolderNode_NeverIncludedEvenWithoutChildren()
+    {
+        var service = new HandBrakePresetService();
+        var path = WritePresetsFile("""{"PresetList":[{"PresetName":"Empty Folder","Folder":true,"ChildrenArray":[]}]}""");
+
+        Assert.Empty(service.GetPresets(path));
     }
 
     [Fact]

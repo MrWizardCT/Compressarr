@@ -31,6 +31,21 @@ file sealed class FakeRunLogger : IRunLogger
     public void FileComplete(string fileName, double beginSizeGb, double endSizeGb, TimeSpan duration, bool success, string? detailLogFile) { }
 }
 
+/// <summary>A pass that doesn't complete until the test explicitly releases it, so StopAsync's
+/// "wait for the in-flight pass" window is long enough to reliably observe IsStopping mid-wait
+/// (FakeRunOrchestrator's own instant-return pass makes that window too short to poll for).</summary>
+file sealed class SlowRunOrchestrator : IRunOrchestrator
+{
+    private readonly TaskCompletionSource _release = new();
+    public void ReleasePass() => _release.TrySetResult();
+
+    public async Task<RunResult?> RunOnceAsync(CompressarrConfig config)
+    {
+        await _release.Task;
+        return null;
+    }
+}
+
 file sealed class FakeActiveRunController : IActiveRunController
 {
     public int AbortCallCount;
@@ -138,6 +153,40 @@ public class RunLoopControllerTests
 
         controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
         await controller.StopAsync();
+
+        Assert.Equal(new[] { true, false }, events);
+    }
+
+    [Fact]
+    public async Task IsStopping_TrueWhileWaitingForInFlightPass_FalseAfter()
+    {
+        var orchestrator = new SlowRunOrchestrator();
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
+        controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
+
+        var stopTask = controller.StopAsync();
+        await WaitUntil(() => controller.IsStopping, TimeSpan.FromSeconds(2));
+        Assert.True(controller.IsStopping);
+
+        orchestrator.ReleasePass();
+        await stopTask;
+
+        Assert.False(controller.IsStopping);
+    }
+
+    [Fact]
+    public async Task StoppingChanged_FiresTrueThenFalse_AroundTheInFlightPass()
+    {
+        var orchestrator = new SlowRunOrchestrator();
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
+        var events = new List<bool>();
+        controller.StoppingChanged += stopping => events.Add(stopping);
+        controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
+
+        var stopTask = controller.StopAsync();
+        await WaitUntil(() => events.Count >= 1, TimeSpan.FromSeconds(2));
+        orchestrator.ReleasePass();
+        await stopTask;
 
         Assert.Equal(new[] { true, false }, events);
     }

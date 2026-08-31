@@ -17,6 +17,14 @@ public interface IRunLoopController
 {
     bool IsRunning { get; }
 
+    /// <summary>True from the moment StopAsync is called until it actually finishes (the
+    /// in-flight pass has to finish naturally first, since there's no CancellationToken reaching
+    /// HandBrakeCLI itself). This is the single source of truth both the web UI and the tray icon
+    /// read/subscribe to, so a stop requested from either surface is reflected on both -
+    /// StopMenuHeader/RunningChanged alone can't do that, since each surface's own "click"
+    /// handling only knows about itself.</summary>
+    bool IsStopping { get; }
+
     /// <summary>UTC time the next pass is scheduled to start, while the loop is idle between
     /// passes (waiting out pollInterval). Null while a pass is actively running, or when the
     /// loop isn't started - a countdown UI should treat null as "no countdown to show".</summary>
@@ -43,6 +51,9 @@ public interface IRunLoopController
     bool TriggerNow();
 
     event Action<bool>? RunningChanged;
+
+    /// <summary>Fires true when StopAsync begins, false once it actually finishes.</summary>
+    event Action<bool>? StoppingChanged;
 }
 
 public sealed class RunLoopController : IRunLoopController, IDisposable
@@ -57,6 +68,7 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
     private Task? _loopTask;
     private DateTimeOffset? _nextRunUtc;
     private TaskCompletionSource? _triggerNowTcs;
+    private bool _isStopping;
 
     public RunLoopController(IRunOrchestrator runOrchestrator, IRunLogger logger, IActiveRunController activeRunController)
         : this(runOrchestrator, logger, activeRunController, TimeProvider.System)
@@ -76,12 +88,18 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
         get { lock (_lock) { return _loopTask is { IsCompleted: false }; } }
     }
 
+    public bool IsStopping
+    {
+        get { lock (_lock) return _isStopping; }
+    }
+
     public DateTimeOffset? NextRunUtc
     {
         get { lock (_lock) return _nextRunUtc; }
     }
 
     public event Action<bool>? RunningChanged;
+    public event Action<bool>? StoppingChanged;
 
     public void Start(CompressarrConfig config, TimeSpan pollInterval)
     {
@@ -113,14 +131,19 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
 
         if (cts is null) return;
 
+        lock (_lock) { _isStopping = true; }
+        StoppingChanged?.Invoke(true);
+
         cts.Cancel();
         if (loopTask is not null)
         {
             try { await loopTask; } catch { /* LoopAsync swallows its own exceptions; this is belt-and-braces */ }
         }
 
+        lock (_lock) { _isStopping = false; }
         _logger.Log("Monitoring stopped.");
         RunningChanged?.Invoke(false);
+        StoppingChanged?.Invoke(false);
     }
 
     public void Abort()

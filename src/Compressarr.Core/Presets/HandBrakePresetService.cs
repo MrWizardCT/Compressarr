@@ -109,7 +109,13 @@ public sealed class HandBrakePresetService : IHandBrakePresetService
 
         if (node is JsonObject obj)
         {
-            if (obj.TryGetPropertyValue("PresetName", out var presetNameNode) && presetNameNode is not null)
+            // "Folder": true marks a category/group header (e.g. "General", "Web", "Matroska")
+            // rather than a real, selectable preset - HandBrake's own presets.json carries a
+            // PresetName on these too (it's what labels the folder in HandBrake's UI), so that
+            // alone isn't enough to tell a real preset apart from a folder.
+            var isFolder = obj.TryGetPropertyValue("Folder", out var folderNode) && folderNode is not null && folderNode.GetValue<bool>();
+
+            if (!isFolder && obj.TryGetPropertyValue("PresetName", out var presetNameNode) && presetNameNode is not null)
             {
                 results.Add(new HandBrakePreset
                 {

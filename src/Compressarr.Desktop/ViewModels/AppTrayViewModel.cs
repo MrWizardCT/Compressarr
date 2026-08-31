@@ -18,17 +18,16 @@ public partial class AppTrayViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanStopMonitoring))]
     public partial bool IsMonitoring { get; set; }
 
-    // True from the moment Stop Monitoring is clicked until StopAsync actually resolves - it
-    // doesn't resolve (and IsMonitoring doesn't flip) until the in-flight file finishes
-    // converting, which can be minutes away. Without this, the tray menu gives no indication the
-    // click registered at all.
+    // Mirrors IRunLoopController.IsStopping/StoppingChanged - the shared source of truth both
+    // this tray menu and the web UI observe, so a stop requested from either surface (not just
+    // this tray's own Stop Monitoring click) is reflected here too.
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanStopMonitoring))]
     [NotifyPropertyChangedFor(nameof(StopMenuHeader))]
     public partial bool IsStopping { get; set; }
 
     public bool CanStopMonitoring => IsMonitoring && !IsStopping;
-    public string StopMenuHeader => IsStopping ? "Stopping..." : "Stop Monitoring";
+    public string StopMenuHeader => IsStopping ? "Stopping after task" : "Stop Monitoring";
 
     public AppTrayViewModel(IConfigStore configStore, IRunLoopController runLoopController, string webUrl)
     {
@@ -37,7 +36,9 @@ public partial class AppTrayViewModel : ObservableObject
         _webUrl = webUrl;
 
         _runLoopController.RunningChanged += running => IsMonitoring = running;
+        _runLoopController.StoppingChanged += stopping => IsStopping = stopping;
         IsMonitoring = _runLoopController.IsRunning;
+        IsStopping = _runLoopController.IsStopping;
     }
 
     [RelayCommand]
@@ -56,9 +57,9 @@ public partial class AppTrayViewModel : ObservableObject
     [RelayCommand]
     private async Task StopMonitoringAsync()
     {
-        IsStopping = true;
+        // IsStopping is driven entirely by StoppingChanged (subscribed in the constructor) so it
+        // reflects a stop requested from either surface, not just this command's own click.
         await _runLoopController.StopAsync();
-        IsStopping = false;
     }
 
     [RelayCommand]
