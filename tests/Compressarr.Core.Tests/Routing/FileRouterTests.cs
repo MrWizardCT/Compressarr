@@ -113,6 +113,48 @@ public class FileRouterTests : IDisposable
     }
 
     [Fact]
+    public void MoveMovieFile_DestinationAlreadyExists_OverwritesWithoutError()
+    {
+        var router = new FileRouter();
+        var source = CreateSourceFile("Caddyshack (1980).mkv");
+        File.WriteAllText(source, "NEW CONTENT");
+        var outputBase = Path.Combine(_tempDir, "Movies");
+
+        // A prior conversion already placed a file at the exact spot this one is about to land -
+        // e.g. the same movie converted a second time.
+        var existingDestFolder = Path.Combine(outputBase, "Caddyshack (1980)");
+        Directory.CreateDirectory(existingDestFolder);
+        var existingDestPath = Path.Combine(existingDestFolder, "Caddyshack (1980).mkv");
+        File.WriteAllText(existingDestPath, "OLD CONTENT");
+
+        var dest = router.MoveMovieFile(source, outputBase)!;
+
+        Assert.Equal(existingDestPath, dest);
+        Assert.False(File.Exists(source));
+        Assert.Equal("NEW CONTENT", File.ReadAllText(dest));
+    }
+
+    [Fact]
+    public void MoveTvFile_DestinationAlreadyExists_OverwritesWithoutError()
+    {
+        var router = new FileRouter();
+        var source = CreateSourceFile("MASH.S04E09.mkv");
+        File.WriteAllText(source, "NEW CONTENT");
+        var outputBase = Path.Combine(_tempDir, "TV");
+
+        var existingDestFolder = Path.Combine(outputBase, "MASH", "Season 04");
+        Directory.CreateDirectory(existingDestFolder);
+        var existingDestPath = Path.Combine(existingDestFolder, "MASH.S04E09.mkv");
+        File.WriteAllText(existingDestPath, "OLD CONTENT");
+
+        var dest = router.MoveTvFile(source, outputBase)!;
+
+        Assert.Equal(existingDestPath, dest);
+        Assert.False(File.Exists(source));
+        Assert.Equal("NEW CONTENT", File.ReadAllText(dest));
+    }
+
+    [Fact]
     public void RouteFile_MoveFilesFalse_ReturnsNullAndLeavesFileInPlace()
     {
         var router = new FileRouter();
