@@ -6,9 +6,34 @@
         CanResize="False"
         WindowStartupLocation="CenterScreen"
         Icon="/Assets/CompressarrIcon.ico">
+    <Window.Styles>
+        <!-- Mimics a native Win32/system dialog button (the look of a real MessageBox's OK
+             button) rather than Avalonia's default flat FluentTheme button - light gray, thin
+             gray border, small corner radius, with the classic light-blue hover/pressed
+             highlight Windows uses for dialog buttons. -->
+        <Style Selector="Button.dialogButton">
+            <Setter Property="Background" Value="#E1E1E1" />
+            <Setter Property="BorderBrush" Value="#ADADAD" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="2" />
+            <Setter Property="Foreground" Value="Black" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.dialogButton:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#E5F1FB" />
+            <Setter Property="BorderBrush" Value="#0078D4" />
+        </Style>
+        <Style Selector="Button.dialogButton:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="#CCE4F7" />
+            <Setter Property="BorderBrush" Value="#005A9E" />
+        </Style>
+    </Window.Styles>
     <StackPanel Orientation="Vertical" Spacing="16" Margin="24" HorizontalAlignment="Center" VerticalAlignment="Center">
         <Image Source="/Assets/CompressarrLogo.png" Width="64" Height="64" HorizontalAlignment="Center" />
         <TextBlock Text="Compressarr is already running." TextAlignment="Center" TextWrapping="Wrap" />
-        <Button Content="OK" Click="OnOkClicked" HorizontalAlignment="Center" Width="80" />
+        <Button Classes="dialogButton" Content="OK" Click="OnOkClicked" HorizontalAlignment="Center" Width="80" Height="28" />
     </StackPanel>
 </Window>
