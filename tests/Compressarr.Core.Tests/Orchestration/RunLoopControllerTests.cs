@@ -22,6 +22,25 @@ file sealed class FakeRunOrchestrator : IRunOrchestrator
     }
 }
 
+file sealed class DiskFullRunOrchestrator : IRunOrchestrator
+{
+    public int CallCount;
+
+    private static readonly RunResult DiskFullResult = new()
+    {
+        Report = new ReportModel { GeneratedAt = DateTime.Now, RunTime = TimeSpan.Zero, Lanes = Array.Empty<LaneReportSection>() },
+        ReportFilePath = "unused",
+        TotalFiles = 1,
+        DiskFull = true
+    };
+
+    public Task<RunResult?> RunOnceAsync(CompressarrConfig config)
+    {
+        Interlocked.Increment(ref CallCount);
+        return Task.FromResult<RunResult?>(DiskFullResult);
+    }
+}
+
 file sealed class FakeRunLogger : IRunLogger
 {
     public event Action<string, LogSeverity>? LineWritten;
@@ -188,6 +207,24 @@ public class RunLoopControllerTests
         orchestrator.ReleasePass();
         await stopTask;
 
+        Assert.Equal(new[] { true, false }, events);
+    }
+
+    [Fact]
+    public async Task Loop_DiskFullResult_StopsMonitoringAutomatically_WithoutWaitingForPollInterval()
+    {
+        var orchestrator = new DiskFullRunOrchestrator();
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
+        var events = new List<bool>();
+        controller.RunningChanged += running => events.Add(running);
+
+        // A long poll interval - if the loop had to wait it out before noticing DiskFull, this
+        // test would time out instead of observing IsRunning flip to false quickly.
+        controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
+        await WaitUntil(() => !controller.IsRunning, TimeSpan.FromSeconds(2));
+
+        Assert.False(controller.IsRunning);
+        Assert.Equal(1, orchestrator.CallCount); // stopped after the first pass, never retried
         Assert.Equal(new[] { true, false }, events);
     }
 

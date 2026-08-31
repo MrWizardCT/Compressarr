@@ -15,4 +15,10 @@ public sealed class ConversionResult
     public DateTime StartTime { get; init; }
     public DateTime EndTime { get; init; }
     public string? ArrStatus { get; init; }
+
+    /// <summary>True if this file's failure (encode or move) looked like the volume being out of
+    /// space, rather than some other error. Bubbles up through RunResult so the run loop can stop
+    /// monitoring automatically instead of repeatedly retrying a failure that won't resolve
+    /// itself on the next poll.</summary>
+    public bool DiskFull { get; init; }
 }

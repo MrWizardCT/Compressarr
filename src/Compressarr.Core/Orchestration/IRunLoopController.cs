@@ -103,6 +103,7 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
 
     public void Start(CompressarrConfig config, TimeSpan pollInterval)
     {
+        CancellationTokenSource cts;
         lock (_lock)
         {
             if (_loopTask is { IsCompleted: false }) return;
@@ -112,11 +113,17 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
             // the loop's first pass can begin running on the thread pool essentially immediately.
             _logger.Log("Monitoring started.");
             _nextRunUtc = null;
-            _cts = new CancellationTokenSource();
-            _loopTask = LoopAsync(config, pollInterval, _cts.Token);
+            _cts = cts = new CancellationTokenSource();
         }
 
+        // RunningChanged(true) must fire before LoopAsync is invoked, not after - if the first
+        // pass resolves synchronously (an already-completed Task, e.g. a fast failure) and the
+        // loop decides to stop itself (disk-full), its own RunningChanged(false) can run inline
+        // before LoopAsync even returns control here. Firing "started" first guarantees a
+        // consumer never observes "stopped" before "started".
         RunningChanged?.Invoke(true);
+
+        lock (_lock) { _loopTask = LoopAsync(config, pollInterval, cts.Token); }
     }
 
     public async Task StopAsync()
@@ -198,7 +205,20 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
 
             try
             {
-                await _runOrchestrator.RunOnceAsync(config);
+                var result = await _runOrchestrator.RunOnceAsync(config);
+                if (result?.DiskFull == true)
+                {
+                    // Retrying on the next poll interval is actively pointless here - the volume
+                    // is full and won't free itself up on its own, so looping would just fail the
+                    // same way again every pollInterval seconds until someone notices. Stop
+                    // outright instead, the same as an explicit Stop Monitoring - fire the same
+                    // RunningChanged the tray/web UI already listen to, since nothing else is
+                    // going to call StopAsync() on the loop's behalf here.
+                    _logger.Log("Monitoring stopped automatically - the disk appears to be full. Free up space, then start monitoring again.", LogSeverity.Error);
+                    lock (_lock) { _cts?.Cancel(); }
+                    RunningChanged?.Invoke(false);
+                    break;
+                }
             }
             catch (Exception ex)
             {

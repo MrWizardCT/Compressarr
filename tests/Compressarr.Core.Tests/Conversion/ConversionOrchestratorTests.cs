@@ -43,6 +43,26 @@ file sealed class FakeProcessRunner : IHandBrakeProcessRunner
     }
 }
 
+/// <summary>Simulates the exact real failure captured live against a genuinely full disk: a
+/// truncated temp output file, a failed HandBrakeRunResult, and the real HandBrakeCLI log content
+/// observed (mux error naming "No space left on device", "Finished work at" printed anyway,
+/// "Encode failed").</summary>
+file sealed class DiskFullProcessRunner : IHandBrakeProcessRunner
+{
+    public Task<HandBrakeRunResult> RunAsync(
+        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
+        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken)
+    {
+        File.WriteAllText(tempOutputPath, "truncated, disk filled up mid-write");
+        File.WriteAllText(detailLogFile,
+            "ERROR: avformatMux: track 0, av_interleaved_write_frame failed with error 'No space left on device'\n" +
+            "Finished work at Sat Jan  1 00:00:00 2026\n" +
+            "libhb: work result = 4\n" +
+            "Encode failed (error 4).\n");
+        return Task.FromResult(new HandBrakeRunResult(Success: false, DetailLogFile: detailLogFile));
+    }
+}
+
 /// <summary>Returns configAfterSwitch starting from its (1-based) switchOnCall'th Load() call and
 /// every call after - ConversionOrchestrator.ProcessLaneAsync calls Load() exactly once per file,
 /// immediately after that file's HandBrakeCLI pass finishes, so this ties the "settings changed"
@@ -255,5 +275,60 @@ public class ConversionOrchestratorTests : IDisposable
         var outputPath = Path.Combine(outputDir, "Caddyshack (1980).mkv");
         Assert.True(File.Exists(outputPath));
         Assert.Equal(outputPath, result.NewFileName);
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_EncodeFailsFromDiskFull_ResultFlagsDiskFull()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset"
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Maintain, MoveFiles = false, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(),
+            new RealFolderScanner(),
+            new FixedExtensionPresetService(),
+            new MetadataService(),
+            new DiskFullProcessRunner(),
+            new FileRouter(),
+            new NoOpCompanionFileService(),
+            new NoOpArrUnmonitorService(),
+            new RecordingTrashService(),
+            new NoOpRunLogger(),
+            new NoOpResumeStateStore(),
+            new NoOpProgressReporter(),
+            configStore);
+
+        var results = await orchestrator.ProcessLaneAsync(
+            lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.False(result.Success);
+        Assert.True(result.DiskFull);
+        // A failed encode's truncated temp file is cleaned up - it never becomes the "output".
+        Assert.False(File.Exists(Path.Combine(outputDir, "Caddyshack (1980).mkv")));
+        // The real source is never touched by a failed encode either way.
+        Assert.True(File.Exists(sourcePath));
     }
 }

@@ -13,6 +13,11 @@ public sealed class RunResult
     public required ReportModel Report { get; init; }
     public required string ReportFilePath { get; init; }
     public required int TotalFiles { get; init; }
+
+    /// <summary>True if any file in this pass failed in a way that looked like the volume being
+    /// out of space. The monitoring loop stops itself when this is true, rather than retrying the
+    /// same doomed encode again on the next poll interval.</summary>
+    public bool DiskFull { get; init; }
 }
 
 public interface IRunOrchestrator
@@ -268,7 +273,8 @@ public sealed class RunOrchestrator : IRunOrchestrator
         {
             Report = reportModel,
             ReportFilePath = reportFilePath,
-            TotalFiles = totalFiles
+            TotalFiles = totalFiles,
+            DiskFull = allResults.Any(r => r.DiskFull)
         };
     }
 }

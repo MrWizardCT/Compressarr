@@ -231,6 +231,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             string? arrStatus = null;
             string? finalFileName = newFileName;
             var moveFailed = false;
+            var diskFull = false;
 
             if (success)
             {
@@ -268,6 +269,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     // result (see moveFailed below) so it doesn't quietly report "OK" while sitting
                     // unfiled in the Output folder - the log line alone is too easy to miss.
                     moveFailed = true;
+                    if (LooksLikeDiskFull(ex.Message)) diskFull = true;
                     _logger.Log($"  Move skipped: {ex.Message} - file remains at '{newFileName}'.", LogSeverity.Error);
                 }
 
@@ -308,6 +310,15 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             {
                 try { File.Delete(tempFileName); } catch { }
                 if (resumeEntry is not null) resumeEntry.Status = ResumeStatus.Error;
+
+                // HandBrakeCLI still writes its own log even on a failed encode - confirmed live
+                // against a genuinely full disk that its mux error names the cause explicitly
+                // ("No space left on device"), which is a much more specific signal than just
+                // "the encode failed" (which covers plenty of other, unrelated causes too).
+                if (File.Exists(detailLogFile) && File.ReadLines(detailLogFile).Any(l => LooksLikeDiskFull(l)))
+                {
+                    diskFull = true;
+                }
             }
 
             var duration = endTime - startTime;
@@ -335,6 +346,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 BeginSizeGb = beginSizeGb,
                 EndSizeGb = endSizeGb,
                 Success = overallSuccess,
+                DiskFull = diskFull,
                 DetailLogFile = detailLogFile,
                 StartTime = startTime,
                 EndTime = endTime,
@@ -344,4 +356,15 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
         return results;
     }
+
+    /// <summary>Matches the specific wording HandBrakeCLI/libav (Linux/macOS-style "No space left
+    /// on device", from an ENOSPC-based error) and .NET's own IOException (Windows' "There is not
+    /// enough space on the disk", from ERROR_DISK_FULL) use for a genuinely full volume - a
+    /// deliberately narrow match, not a general "did this fail" check, so a run only stops itself
+    /// for the one failure mode where retrying on the next poll is actively pointless. A pure
+    /// static function so it's testable without a real full disk.</summary>
+    internal static bool LooksLikeDiskFull(string? text) =>
+        text is not null && (
+            text.Contains("No space left on device", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("There is not enough space on the disk", StringComparison.OrdinalIgnoreCase));
 }
