@@ -36,6 +36,12 @@ for that full history.
   offline/unreachable network drive as the TV or Movie base path) used to still report "OK" -
   now it's flagged as an error, since it isn't actually where it's supposed to be. The file was
   never lost either way - it stays exactly where HandBrake wrote it, in the lane's Output folder.
+- Running out of disk space mid-encode was reported as a successful conversion - confirmed live
+  against a genuinely full disk that HandBrakeCLI still writes its "Finished work at" completion
+  banner even when the encode fails (exit code 4, "No space left on device"), and Compressarr
+  wasn't checking the exit code. Left unfixed, this would have moved the truncated/corrupt file
+  into place and, depending on Delete-after-convert, deleted or recycled the real source out from
+  under it. Success now also requires the process to have exited 0.
 
 ## [2.0.4] - 2026-08-31
 
