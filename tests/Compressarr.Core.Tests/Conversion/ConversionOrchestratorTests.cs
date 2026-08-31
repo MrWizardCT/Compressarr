@@ -196,4 +196,64 @@ public class ConversionOrchestratorTests : IDisposable
         Assert.Equal(file2Path, file2Call.Path);
         Assert.Equal(DeleteAfterConvertMode.Delete, file2Call.Mode);
     }
+
+    [Fact]
+    public async Task ProcessLaneAsync_MoveDestinationUnreachable_ReportsErrorButKeepsTheFile()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            // Simulates an offline/unreachable network drive.
+            MovieBasePath = @"Z:\Unavailable\Movies"
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Maintain, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(),
+            new RealFolderScanner(),
+            new FixedExtensionPresetService(),
+            new MetadataService(),
+            new FakeProcessRunner(),
+            new FileRouter(),
+            new NoOpCompanionFileService(),
+            new NoOpArrUnmonitorService(),
+            new RecordingTrashService(),
+            new NoOpRunLogger(),
+            new NoOpResumeStateStore(),
+            new NoOpProgressReporter(),
+            configStore);
+
+        var results = await orchestrator.ProcessLaneAsync(
+            lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        // The encode itself succeeded - only the move failed - but this must be reported as an
+        // error, not silently as "OK", or a reader of the report/History would never know the
+        // file didn't end up where it was supposed to.
+        Assert.False(result.Success);
+        // The file is not lost - it's exactly where HandBrake wrote it, in the lane's Output
+        // folder, since routing never got to move it anywhere else.
+        var outputPath = Path.Combine(outputDir, "Caddyshack (1980).mkv");
+        Assert.True(File.Exists(outputPath));
+        Assert.Equal(outputPath, result.NewFileName);
+    }
 }

@@ -230,6 +230,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             double endSizeGb = 0;
             string? arrStatus = null;
             string? finalFileName = newFileName;
+            var moveFailed = false;
 
             if (success)
             {
@@ -261,9 +262,13 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 }
                 catch (Exception ex)
                 {
-                    // The conversion itself already succeeded - a bad/blank base path shouldn't
-                    // take down the whole run, just leave the file where HandBrake wrote it.
-                    _logger.Log($"  Move skipped: {ex.Message}", LogSeverity.Error);
+                    // The conversion itself already succeeded - a bad/unreachable base path (e.g.
+                    // an offline network drive) shouldn't take down the whole run, just leave the
+                    // file where HandBrake wrote it. Still flagged as an error on this file's own
+                    // result (see moveFailed below) so it doesn't quietly report "OK" while sitting
+                    // unfiled in the Output folder - the log line alone is too easy to miss.
+                    moveFailed = true;
+                    _logger.Log($"  Move skipped: {ex.Message} - file remains at '{newFileName}'.", LogSeverity.Error);
                 }
 
                 // Deliberately before companion-file/folder cleanup below: the rescan should see
@@ -308,8 +313,14 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             var duration = endTime - startTime;
             if (duration < TimeSpan.Zero) duration = duration.Negate();
 
-            _logger.FileComplete(finalFileName ?? newFileName, beginSizeGb, endSizeGb, duration, success, detailLogFile);
-            _progress.FileCompleted(lane.Id, finalFileName ?? newFileName, success);
+            // The encode can succeed while the file still doesn't end up where it's supposed to
+            // (an unreachable TV/Movie base path) - reflect that in this file's own reported
+            // status rather than only in the log, so a report/History reader isn't told "OK" for
+            // a file that's actually sitting unfiled in the Output folder.
+            var overallSuccess = success && !moveFailed;
+
+            _logger.FileComplete(finalFileName ?? newFileName, beginSizeGb, endSizeGb, duration, overallSuccess, detailLogFile);
+            _progress.FileCompleted(lane.Id, finalFileName ?? newFileName, overallSuccess);
 
             _resumeStore.Save(resumeState, resumeFilePath);
 
@@ -323,7 +334,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 PresetName = presetName,
                 BeginSizeGb = beginSizeGb,
                 EndSizeGb = endSizeGb,
-                Success = success,
+                Success = overallSuccess,
                 DetailLogFile = detailLogFile,
                 StartTime = startTime,
                 EndTime = endTime,
