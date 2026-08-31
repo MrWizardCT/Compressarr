@@ -325,6 +325,17 @@ a.primary:hover { opacity: 0.9; }
   min-height: 18px;
 }
 
+.preset-status {
+  margin: 6px 0 10px;
+  font-size: 13px;
+  min-height: 18px;
+}
+
+.preset-status.success {
+  color: var(--ok);
+  font-weight: 600;
+}
+
 .lane-card {
   border: 1px solid var(--border);
   border-radius: 6px;

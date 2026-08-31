@@ -4,8 +4,30 @@ const statusEl = document.getElementById('status');
 const lanesContainer = document.getElementById('lanes');
 const template = document.getElementById('lane-template');
 
+// Populated by populatePresetList() before any lane card is built - a <select> needs its
+// <option>s to already exist before setting .value, unlike the old <input list> combo.
+let presetNames = [];
+
 function setStatus(text) {
   statusEl.textContent = text;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function fillPresetSelect(select, currentValue) {
+  // If the lane's saved preset isn't in the current list (e.g. presets.json changed since this
+  // lane was configured), keep it as a selectable option anyway rather than silently blanking
+  // the field out from under the user.
+  const names = (currentValue && !presetNames.includes(currentValue))
+    ? [currentValue, ...presetNames]
+    : presetNames;
+
+  select.innerHTML = '<option value=""></option>' + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  select.value = currentValue || '';
 }
 
 function laneCardFromDto(dto) {
@@ -15,8 +37,8 @@ function laneCardFromDto(dto) {
   node.querySelector('.f-displayName').value = dto.displayName;
   node.querySelector('.f-input').value = dto.input;
   node.querySelector('.f-output').value = dto.output;
-  node.querySelector('.f-tvPreset').value = dto.tvPreset;
-  node.querySelector('.f-moviePreset').value = dto.moviePreset;
+  fillPresetSelect(node.querySelector('.f-tvPreset'), dto.tvPreset);
+  fillPresetSelect(node.querySelector('.f-moviePreset'), dto.moviePreset);
   node.querySelector('.f-tvShowBasePath').value = dto.tvShowBasePath;
   node.querySelector('.f-movieBasePath').value = dto.movieBasePath;
 
@@ -99,10 +121,7 @@ async function populatePresetList() {
   if (!settings.presetsPath) return;
 
   const presetsRes = await fetch(`/api/presets?path=${encodeURIComponent(settings.presetsPath)}`);
-  const names = await presetsRes.json();
-
-  const datalist = document.getElementById('preset-list');
-  datalist.innerHTML = names.map(n => `<option value="${n}"></option>`).join('');
+  presetNames = await presetsRes.json();
 }
 
 async function loadLanes() {
@@ -123,5 +142,6 @@ document.getElementById('addLaneBtn').addEventListener('click', async () => {
 
 document.getElementById('saveAllLanesBtn').addEventListener('click', saveAllLanes);
 
-populatePresetList();
-loadLanes();
+// loadLanes() (and Add Lane's own card-building) needs presetNames already populated - a
+// <select>'s .value only "sticks" once a matching <option> exists.
+populatePresetList().then(loadLanes);

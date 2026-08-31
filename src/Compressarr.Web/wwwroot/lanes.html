@@ -36,9 +36,9 @@
       </div>
       <div class="field-row">
         <label>TV preset<span class="help-tag" tabindex="0" title="HandBrake preset used for files detected as TV episodes.">?<span class="help-tip">HandBrake preset used for files detected as TV episodes.</span></span></label>
-        <input type="text" class="f-tvPreset" list="preset-list" />
+        <select class="f-tvPreset"></select>
         <label>Movie preset<span class="help-tag" tabindex="0" title="HandBrake preset used for files detected as movies.">?<span class="help-tip">HandBrake preset used for files detected as movies.</span></span></label>
-        <input type="text" class="f-moviePreset" list="preset-list" />
+        <select class="f-moviePreset"></select>
       </div>
       <div class="field-row">
         <label>TV base path<span class="help-tag" tabindex="0" title="Base folder converted TV episodes are moved into, if Move converted files is enabled in Settings.">?<span class="help-tip">Base folder converted TV episodes are moved into, if Move converted files is enabled in Settings.</span></span></label>
@@ -50,7 +50,6 @@
       </div>
     </div>
   </template>
-  <datalist id="preset-list"></datalist>
 
   <script src="/nav.js"></script>
   <script src="/browse.js"></script>

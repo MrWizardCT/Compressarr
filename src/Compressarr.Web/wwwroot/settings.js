@@ -1,9 +1,27 @@
 renderNav('settings');
 
 const statusEl = document.getElementById('status');
+const presetStatusEl = document.getElementById('presetStatus');
+let presetStatusClearTimer = null;
 
 function setStatus(text) {
   statusEl.textContent = text;
+}
+
+function setPresetStatus(text, success) {
+  clearTimeout(presetStatusClearTimer);
+  presetStatusEl.textContent = text;
+  presetStatusEl.classList.toggle('success', !!success);
+
+  // Success messages are easy to miss if they just sit there indefinitely next to a button the
+  // user might click again - fade them out after a few seconds instead of leaving stale
+  // "reloaded"/"installed" text up forever. Errors stay up so they're not missed.
+  if (success) {
+    presetStatusClearTimer = setTimeout(() => {
+      presetStatusEl.textContent = '';
+      presetStatusEl.classList.remove('success');
+    }, 4000);
+  }
 }
 
 function fillForm(dto) {
@@ -147,19 +165,19 @@ document.getElementById('installPresetsBtn').addEventListener('click', async () 
     mode = 'merge';
   }
 
-  setStatus('Installing presets...');
+  setPresetStatus('Installing presets...', false);
   const res = await fetch('/api/presets/install', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode })
   });
-  setStatus(res.ok ? 'Compressarr presets installed.' : 'Failed to install presets.');
+  setPresetStatus(res.ok ? 'Presets installed.' : 'Failed to install presets.', res.ok);
 });
 
 document.getElementById('reloadPresetsBtn').addEventListener('click', async () => {
-  setStatus('Reloading presets...');
+  setPresetStatus('Reloading presets...', false);
   const res = await fetch('/api/presets/reload', { method: 'POST' });
-  setStatus(res.ok ? 'Presets reloaded.' : 'Failed to reload presets.');
+  setPresetStatus(res.ok ? 'Presets reloaded.' : 'Failed to reload presets.', res.ok);
 });
 
 loadSettings();
