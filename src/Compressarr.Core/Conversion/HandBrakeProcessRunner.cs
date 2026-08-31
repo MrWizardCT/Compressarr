@@ -10,10 +10,13 @@ public sealed record HandBrakeRunResult(bool Success, string DetailLogFile, bool
 public interface IHandBrakeProcessRunner
 {
     /// <summary>Invokes HandBrakeCLI (one file fully finishes before the caller moves on) and
-    /// determines success the same way v1 does: the output temp file must exist, be non-empty,
-    /// AND the stderr detail log must contain a line matching "*Finished work at*" (HandBrake's
-    /// own completion banner). Deliberately no process exit-code check — ported as-is for parity
-    /// with v1's success-detection logic, not because it's ideal.
+    /// determines success the same way v1 did, plus a real exit-code check: the output temp file
+    /// must exist, be non-empty, the stderr detail log must contain a line matching "*Finished
+    /// work at*" (HandBrake's own completion banner), AND the process must have exited 0.
+    /// The exit-code check is not optional - confirmed live against a genuinely full disk that
+    /// HandBrakeCLI still writes "Finished work at" to its log even when the encode fails (mux
+    /// error, exit code 4) - the log-banner check alone reports a mid-air-truncated file as a
+    /// success, which without the exit code would also delete/route the source out from under it.
     ///
     /// Streams stdout line-by-line to onOutputLine as HandBrakeCLI writes it (its own progress
     /// updates, "Encoding: task 1 of 1, NN.NN % ...") so a caller can surface live progress.
@@ -54,6 +57,7 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
 
         var stderr = new StringBuilder();
         var cancelled = false;
+        var exitCode = -1;
 
         using (var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true })
         {
@@ -89,6 +93,7 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
             try
             {
                 await process.WaitForExitAsync(cancellationToken);
+                exitCode = process.ExitCode;
             }
             catch (OperationCanceledException)
             {
@@ -103,17 +108,20 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
             return new HandBrakeRunResult(Success: false, DetailLogFile: detailLogFile, Cancelled: true);
         }
 
-        return new HandBrakeRunResult(DetermineSuccess(tempOutputPath, detailLogFile), detailLogFile);
+        return new HandBrakeRunResult(DetermineSuccess(tempOutputPath, detailLogFile, exitCode), detailLogFile);
     }
 
-    /// <summary>Success requires ALL of: the temp output file exists, is non-empty, AND the
-    /// detail log contains a line matching "*Finished work at*" (HandBrake's own completion
-    /// banner). Deliberately no process exit-code check — ported as-is for parity with v1.
-    /// Extracted as an internal static method so the two conditions can be tested
-    /// independently of actually invoking a process.</summary>
-    internal static bool DetermineSuccess(string tempOutputPath, string detailLogFile)
+    /// <summary>Success requires ALL of: the temp output file exists, is non-empty, the detail
+    /// log contains a line matching "*Finished work at*" (HandBrake's own completion banner), AND
+    /// the process exited 0. The exit-code check matters on its own, not just as a formality -
+    /// HandBrakeCLI still writes "Finished work at" even on a failed encode (confirmed against a
+    /// genuinely full disk: mux error, non-zero exit, but the banner line was there anyway), so
+    /// without it a failed encode reports as a success. Extracted as an internal static method so
+    /// these conditions can be tested independently of actually invoking a process.</summary>
+    internal static bool DetermineSuccess(string tempOutputPath, string detailLogFile, int exitCode)
     {
         if (!File.Exists(tempOutputPath)) return false;
+        if (exitCode != 0) return false;
 
         var hasFinishedLine = File.Exists(detailLogFile) &&
             File.ReadLines(detailLogFile).Any(l => l.Contains("Finished work at", StringComparison.Ordinal));
