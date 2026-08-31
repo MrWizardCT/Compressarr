@@ -73,7 +73,7 @@ usage update live while a pass runs.
 
 <img src="Assets/Screenshots/monitor-page.png" alt="Compressarr Monitor page, showing a real conversion in progress with live percent/fps/ETA" width="700">
 
-*The movie shown is representational test data only, not the actual film - your own results
+*The media shown is representational test data only, not the actual film - your own results
 (speed, file size, savings) will vary based on your source files, hardware, and preset.*
 
 ### Reports and notifications
@@ -90,7 +90,7 @@ percent saved.
 
 <img src="Assets/Screenshots/sample-report.png" alt="Sample Compressarr HTML report" width="700">
 
-*The movie shown is representational test data only, not the actual film - your own results
+*The media shown is representational test data only, not the actual film - your own results
 (speed, file size, savings) will vary based on your source files, hardware, and preset.*
 
 <img src="Assets/Screenshots/history-page.png" alt="Compressarr History page, showing rolling totals and the Reports table" width="700">
