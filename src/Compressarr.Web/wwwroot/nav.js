@@ -26,7 +26,7 @@ function renderNav(activePage) {
   const header = document.createElement('header');
   const currentTheme = getPreferredTheme();
   header.innerHTML = `
-    <img src="/assets/logo.png" alt="Compressarr" />
+    <a href="https://compressarr.tv" target="_blank" rel="noopener" class="brand-logo-link"><img src="/assets/logo.png" alt="Compressarr" /></a>
     <h1>Compressarr</h1>
     <div class="theme-toggle">
       <span>&#9728;</span>

@@ -48,6 +48,7 @@ header {
 
 header img { height: 36px; }
 header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+header .brand-logo-link { display: flex; align-items: center; line-height: 0; }
 
 .theme-toggle {
   margin-left: auto;
