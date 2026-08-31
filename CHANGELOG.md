@@ -32,6 +32,10 @@ for that full history.
 - Launching a second Compressarr instance no longer runs two processes against the same lanes -
   it now shows a small "Compressarr is already running" window (with the logo, styled like a
   native Windows dialog) and exits instead.
+- A file that encoded successfully but couldn't be moved into the library (e.g. an
+  offline/unreachable network drive as the TV or Movie base path) used to still report "OK" -
+  now it's flagged as an error, since it isn't actually where it's supposed to be. The file was
+  never lost either way - it stays exactly where HandBrake wrote it, in the lane's Output folder.
 
 ## [2.0.4] - 2026-08-31
 
