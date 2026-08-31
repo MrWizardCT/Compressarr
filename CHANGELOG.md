@@ -4,6 +4,26 @@ All notable changes to Compressarr are documented in this file. Pre-release/RC b
 to v1.0.0 are omitted here - see [GitHub Releases](https://github.com/MrWizardCT/Compressarr/releases)
 for that full history.
 
+## [2.0.5] - 2026-08-31
+
+### Added
+- Up Next section on the Monitor page - lists every file still queued across enabled lanes, with
+  its lane, size, and preset.
+- Reload button next to Install/Merge Presets on Settings - reloads presets.json without going
+  through the merge-prompt flow.
+
+### Changed
+- Stop Monitoring now reflects the click immediately (web and tray), instead of appearing to do
+  nothing until the in-flight file finishes converting.
+- Settings are now re-read after every file's HandBrakeCLI pass finishes, not just once at the
+  start of a run or monitoring loop - a change made mid-run now takes effect on the very next
+  file instead of requiring a restart.
+
+### Fixed
+- Launching a second Compressarr instance no longer runs two processes against the same lanes -
+  it now shows a small "Compressarr is already running" window (with the logo, styled like a
+  native Windows dialog) and exits instead.
+
 ## [2.0.4] - 2026-08-31
 
 ### Changed
