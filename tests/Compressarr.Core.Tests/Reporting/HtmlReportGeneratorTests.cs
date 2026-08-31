@@ -5,7 +5,7 @@ namespace Compressarr.Core.Tests.Reporting;
 
 public class HtmlReportGeneratorTests
 {
-    private static ConversionResult Result(string fileName, bool success = true, double beginGb = 1, double endGb = 0.5, string? arrStatus = null) => new()
+    private static ConversionResult Result(string fileName, bool success = true, double beginGb = 1, double endGb = 0.5, string? arrStatus = null, string? failureReason = null) => new()
     {
         LaneId = "lane1",
         FileName = fileName,
@@ -16,6 +16,7 @@ public class HtmlReportGeneratorTests
         EndSizeGb = endGb,
         Success = success,
         ArrStatus = arrStatus,
+        FailureReason = failureReason,
         StartTime = DateTime.Now,
         EndTime = DateTime.Now
     };
@@ -94,6 +95,74 @@ public class HtmlReportGeneratorTests
         var html = new HtmlReportGenerator().Generate(model);
 
         Assert.Contains("1 error(s) occurred", html);
+    }
+
+    [Fact]
+    public void Generate_FailureReason_ShownInPlaceOfGenericError()
+    {
+        var lanes = new List<LaneReportSection>
+        {
+            new() { LaneDisplayName = "HD/SD", Results = new[] { Result("a.mkv", success: false, failureReason: "Output drive full, monitoring stopped") } }
+        };
+        var model = BaseModel(lanes);
+
+        var html = new HtmlReportGenerator().Generate(model);
+
+        Assert.Contains("Output drive full, monitoring stopped", html);
+        Assert.DoesNotContain("<td>ERROR</td>", html);
+    }
+
+    [Fact]
+    public void Generate_FailureWithNoKnownReason_StillShowsGenericError()
+    {
+        var lanes = new List<LaneReportSection>
+        {
+            new() { LaneDisplayName = "HD/SD", Results = new[] { Result("a.mkv", success: false) } }
+        };
+        var model = BaseModel(lanes);
+
+        var html = new HtmlReportGenerator().Generate(model);
+
+        Assert.Contains("ERROR", html);
+    }
+
+    [Fact]
+    public void Generate_FailedFileWithDetailLog_IncludesFullDetailsLink()
+    {
+        var detailLogPath = Path.Combine(Path.GetTempPath(), $"compressarr-report-test-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(detailLogPath, "detail log contents");
+        try
+        {
+            var lanes = new List<LaneReportSection>
+            {
+                new()
+                {
+                    LaneDisplayName = "HD/SD",
+                    Results = new[]
+                    {
+                        new ConversionResult
+                        {
+                            LaneId = "lane1", FileName = "a.mkv", FullName = @"C:\videos\a.mkv",
+                            ContentType = "Movie", PresetName = "Compressarr SD-HD",
+                            BeginSizeGb = 1, EndSizeGb = 0.5, Success = false,
+                            FailureReason = "Output drive full, monitoring stopped",
+                            DetailLogFile = detailLogPath,
+                            StartTime = DateTime.Now, EndTime = DateTime.Now
+                        }
+                    }
+                }
+            };
+            var model = BaseModel(lanes);
+
+            var html = new HtmlReportGenerator().Generate(model);
+
+            Assert.Contains("Full Details", html);
+            Assert.Contains(new Uri(detailLogPath).AbsoluteUri, html);
+        }
+        finally
+        {
+            File.Delete(detailLogPath);
+        }
     }
 
     [Fact]

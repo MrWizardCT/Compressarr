@@ -118,7 +118,16 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
         {
             var rowClass = r.Success ? "" : " class=\"err\"";
             var savings = Math.Round(r.BeginSizeGb - r.EndSizeGb, 3);
-            var status = r.Success ? "OK" : "ERROR";
+            var status = r.Success ? "OK" : (r.FailureReason ?? "ERROR");
+            var statusHtml = WebUtility.HtmlEncode(status);
+            if (!r.Success && !string.IsNullOrEmpty(r.DetailLogFile) && File.Exists(r.DetailLogFile))
+            {
+                // The detail log is a plain local file, same machine the report itself lives on -
+                // a file:// link resolves whether the report was opened directly (the common case)
+                // or viewed through the app's own /api/reports/ route.
+                var detailUri = new Uri(r.DetailLogFile).AbsoluteUri;
+                statusHtml += $"<br><a href=\"{detailUri}\" target=\"_blank\" rel=\"noopener\">Full Details</a>";
+            }
             // Em dash, matching v1.1: blank whenever Sonarr/Radarr integration wasn't attempted
             // for this file - either the conversion failed, or neither service is enabled for
             // this content type - not just when it succeeded/failed.
@@ -131,7 +140,7 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
             sb.Append($"<td>{r.BeginSizeGb} GB</td>");
             sb.Append($"<td>{r.EndSizeGb} GB</td>");
             sb.Append($"<td>{savings} GB</td>");
-            sb.Append($"<td>{status}</td>");
+            sb.Append($"<td>{statusHtml}</td>");
             sb.Append($"<td>{WebUtility.HtmlEncode(arrStatus)}</td>");
             sb.Append("</tr>\n");
         }

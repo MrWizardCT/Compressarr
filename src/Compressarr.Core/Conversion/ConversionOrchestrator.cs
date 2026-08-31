@@ -232,6 +232,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             string? finalFileName = newFileName;
             var moveFailed = false;
             var diskFull = false;
+            string? failureReason = null;
 
             if (success)
             {
@@ -269,7 +270,15 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     // result (see moveFailed below) so it doesn't quietly report "OK" while sitting
                     // unfiled in the Output folder - the log line alone is too easy to miss.
                     moveFailed = true;
-                    if (LooksLikeDiskFull(ex.Message)) diskFull = true;
+                    if (LooksLikeDiskFull(ex.Message))
+                    {
+                        diskFull = true;
+                        failureReason = "Output drive full, monitoring stopped";
+                    }
+                    else
+                    {
+                        failureReason = "Base folder path unavailable, move skipped";
+                    }
                     _logger.Log($"  Move skipped: {ex.Message} - file remains at '{newFileName}'.", LogSeverity.Error);
                 }
 
@@ -318,6 +327,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 if (File.Exists(detailLogFile) && File.ReadLines(detailLogFile).Any(l => LooksLikeDiskFull(l)))
                 {
                     diskFull = true;
+                    failureReason = "Output drive full, monitoring stopped";
                 }
             }
 
@@ -347,6 +357,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 EndSizeGb = endSizeGb,
                 Success = overallSuccess,
                 DiskFull = diskFull,
+                FailureReason = failureReason,
                 DetailLogFile = detailLogFile,
                 StartTime = startTime,
                 EndTime = endTime,

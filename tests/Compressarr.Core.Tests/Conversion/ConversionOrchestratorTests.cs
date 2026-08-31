@@ -270,6 +270,10 @@ public class ConversionOrchestratorTests : IDisposable
         // error, not silently as "OK", or a reader of the report/History would never know the
         // file didn't end up where it was supposed to.
         Assert.False(result.Success);
+        // The report shows this specific reason in place of a bare "ERROR" - not disk-full, since
+        // the unreachable path here is a nonexistent drive letter, not a full one.
+        Assert.False(result.DiskFull);
+        Assert.Equal("Base folder path unavailable, move skipped", result.FailureReason);
         // The file is not lost - it's exactly where HandBrake wrote it, in the lane's Output
         // folder, since routing never got to move it anywhere else.
         var outputPath = Path.Combine(outputDir, "Caddyshack (1980).mkv");
@@ -326,6 +330,7 @@ public class ConversionOrchestratorTests : IDisposable
         var result = Assert.Single(results);
         Assert.False(result.Success);
         Assert.True(result.DiskFull);
+        Assert.Equal("Output drive full, monitoring stopped", result.FailureReason);
         // A failed encode's truncated temp file is cleaned up - it never becomes the "output".
         Assert.False(File.Exists(Path.Combine(outputDir, "Caddyshack (1980).mkv")));
         // The real source is never touched by a failed encode either way.
