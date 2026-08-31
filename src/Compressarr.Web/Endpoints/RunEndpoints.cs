@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Compressarr.Core.Config;
+using Compressarr.Core.Conversion;
 using Compressarr.Core.Diagnostics;
 using Compressarr.Core.Orchestration;
 using Microsoft.AspNetCore.Builder;
@@ -7,8 +8,57 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Compressarr.Web.Endpoints;
 
+public sealed record UpNextItem(string LaneDisplayName, string FileName, double SizeGb, string? Preset);
+
 public static class RunEndpoints
 {
+    private const long BytesPerGb = 1024L * 1024L * 1024L;
+
+    /// <summary>Computes the files waiting to be compressed across every enabled lane, for the
+    /// Monitor page's "Up Next" section - mirrors ConversionOrchestrator.ProcessLaneAsync's own
+    /// "resume-state Pending entries if any exist, else a fresh scan" logic so the list matches
+    /// what will actually get picked up next, not an independent re-scan. Skips whichever file is
+    /// currently being converted (already shown in "Current status").</summary>
+    private static List<UpNextItem> ComputeUpNext(
+        CompressarrConfig config,
+        IPathExpander pathExpander,
+        IVideoFileScanner scanner,
+        IResumeStateStore resumeStore,
+        RunStateSnapshot currentRun)
+    {
+        var items = new List<UpNextItem>();
+        var resumeFilePath = Path.Combine(AppPaths.GetAppDataDirectory(), "compressarr.resume.json");
+        var resumeState = resumeStore.Load(resumeFilePath);
+
+        foreach (var lane in config.Lanes)
+        {
+            if (!lane.Enabled) continue;
+
+            var inputPath = pathExpander.Expand(lane.Input);
+            if (string.IsNullOrWhiteSpace(inputPath) || !Directory.Exists(inputPath)) continue;
+
+            var pending = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending).ToList();
+            var files = pending.Count > 0
+                ? pending.Select(p => new FileInfo(p.FullName)).Where(f => f.Exists).ToList()
+                : scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit).ToList();
+
+            foreach (var file in files)
+            {
+                if (string.Equals(lane.DisplayName, currentRun.LaneDisplayName, StringComparison.Ordinal) &&
+                    string.Equals(file.Name, currentRun.FileName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var preset = ContentClassifier.IsTvFile(file.Name) ? lane.TvPreset : lane.MoviePreset;
+                var sizeGb = Math.Round(file.Length / (double)BytesPerGb, 3);
+                items.Add(new UpNextItem(lane.DisplayName, file.Name, sizeGb, preset));
+            }
+        }
+
+        return items;
+    }
+
     public static void MapRunEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/run/once", async (IConfigStore configStore, IRunOrchestrator runOrchestrator) =>
@@ -45,7 +95,14 @@ public static class RunEndpoints
             return Results.Json(new { triggered });
         });
 
-        app.MapGet("/api/run/status", async (IRunLoopController loopController, CurrentRunStateService runState, ICpuUsageSampler cpuSampler) =>
+        app.MapGet("/api/run/status", async (
+            IRunLoopController loopController,
+            CurrentRunStateService runState,
+            ICpuUsageSampler cpuSampler,
+            IConfigStore configStore,
+            IPathExpander pathExpander,
+            IVideoFileScanner scanner,
+            IResumeStateStore resumeStore) =>
         {
             var snapshot = runState.GetSnapshot();
             var cpu = await cpuSampler.SampleAsync();
@@ -54,6 +111,9 @@ public static class RunEndpoints
             var secondsUntilNextRun = nextRunUtc is null
                 ? (int?)null
                 : Math.Max(0, (int)Math.Ceiling((nextRunUtc.Value - DateTimeOffset.UtcNow).TotalSeconds));
+
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+            var upNext = ComputeUpNext(config, pathExpander, scanner, resumeStore, snapshot);
 
             return Results.Json(new
             {
@@ -68,7 +128,8 @@ public static class RunEndpoints
                 progressEta = snapshot.ProgressEta,
                 recentLogLines = snapshot.RecentLogLines,
                 cpuUsagePercent = cpu,
-                secondsUntilNextRun
+                secondsUntilNextRun,
+                upNext
             });
         });
     }

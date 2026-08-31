@@ -18,7 +18,7 @@
                         <NativeMenuItem Header="Open Web UI" Command="{Binding OpenWebUiCommand}" />
                         <NativeMenuItemSeparator />
                         <NativeMenuItem Header="Start Monitoring" Command="{Binding StartMonitoringCommand}" IsEnabled="{Binding !IsMonitoring}" />
-                        <NativeMenuItem Header="Stop Monitoring" Command="{Binding StopMonitoringCommand}" IsEnabled="{Binding IsMonitoring}" />
+                        <NativeMenuItem Header="{Binding StopMenuHeader}" Command="{Binding StopMonitoringCommand}" IsEnabled="{Binding CanStopMonitoring}" />
                         <NativeMenuItemSeparator />
                         <NativeMenuItem Header="Exit" Command="{Binding ExitCommand}" />
                     </NativeMenu>

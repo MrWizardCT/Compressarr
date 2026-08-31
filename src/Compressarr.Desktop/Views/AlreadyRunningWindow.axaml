@@ -1,0 +1,14 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Compressarr.Desktop.Views.AlreadyRunningWindow"
+        Title="Compressarr"
+        Width="360" Height="200"
+        CanResize="False"
+        WindowStartupLocation="CenterScreen"
+        Icon="/Assets/CompressarrIcon.ico">
+    <StackPanel Orientation="Vertical" Spacing="16" Margin="24" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <Image Source="/Assets/CompressarrLogo.png" Width="64" Height="64" HorizontalAlignment="Center" />
+        <TextBlock Text="Compressarr is already running." TextAlignment="Center" TextWrapping="Wrap" />
+        <Button Content="OK" Click="OnOkClicked" HorizontalAlignment="Center" Width="80" />
+    </StackPanel>
+</Window>

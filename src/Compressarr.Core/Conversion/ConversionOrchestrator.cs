@@ -40,6 +40,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
     private readonly IRunLogger _logger;
     private readonly IResumeStateStore _resumeStore;
     private readonly IRunProgressReporter _progress;
+    private readonly IConfigStore _configStore;
 
     public ConversionOrchestrator(
         IPathExpander pathExpander,
@@ -53,7 +54,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         ITrashService trash,
         IRunLogger logger,
         IResumeStateStore resumeStore,
-        IRunProgressReporter progress)
+        IRunProgressReporter progress,
+        IConfigStore configStore)
     {
         _pathExpander = pathExpander;
         _scanner = scanner;
@@ -67,6 +69,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         _logger = logger;
         _resumeStore = resumeStore;
         _progress = progress;
+        _configStore = configStore;
     }
 
     public async Task<IReadOnlyList<ConversionResult>> ProcessLaneAsync(
@@ -195,6 +198,23 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
             var runResult = await _processRunner.RunAsync(hbloc, file.FullName, tempFileName, presetsPath, presetName, config.HandBrake.Options, detailLogFile, OnOutputLine, cancellationToken);
             var endTime = DateTime.Now;
+
+            // Settings are otherwise only read once, at the start of a manual run or for the
+            // whole lifetime of the monitoring loop - a change made mid-run (delete-after-convert
+            // mode, clear title metadata, a lane's base path, etc.) would otherwise have no effect
+            // until the run/loop is restarted. Re-read as soon as HandBrakeCLI is done for this
+            // file, before any of the post-processing below, so it takes effect on this file's
+            // own routing/cleanup and on every file still to come in this lane. The derived paths
+            // computed once at the top of this method must be refreshed too, or the reload above
+            // would be a no-op for anything that reads them instead of lane/config directly.
+            config = _configStore.Load(AppPaths.GetConfigFilePath());
+            lane = config.Lanes.FirstOrDefault(l => l.Id == lane.Id) ?? lane;
+            outputBase = _pathExpander.Expand(lane.Output);
+            tvShowBasePath = _pathExpander.Expand(lane.TvShowBasePath);
+            movieBasePath = _pathExpander.Expand(lane.MovieBasePath);
+            hbloc = _pathExpander.Expand(config.HandBrake.CliPath);
+            presetsPath = _pathExpander.Expand(config.HandBrake.PresetsPath);
+            _metadata.Enabled = config.Processing.ClearTitleMetadata;
 
             if (runResult.Cancelled)
             {

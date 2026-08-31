@@ -15,7 +15,20 @@ public partial class AppTrayViewModel : ObservableObject
     private readonly string _webUrl;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanStopMonitoring))]
     public partial bool IsMonitoring { get; set; }
+
+    // True from the moment Stop Monitoring is clicked until StopAsync actually resolves - it
+    // doesn't resolve (and IsMonitoring doesn't flip) until the in-flight file finishes
+    // converting, which can be minutes away. Without this, the tray menu gives no indication the
+    // click registered at all.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanStopMonitoring))]
+    [NotifyPropertyChangedFor(nameof(StopMenuHeader))]
+    public partial bool IsStopping { get; set; }
+
+    public bool CanStopMonitoring => IsMonitoring && !IsStopping;
+    public string StopMenuHeader => IsStopping ? "Stopping..." : "Stop Monitoring";
 
     public AppTrayViewModel(IConfigStore configStore, IRunLoopController runLoopController, string webUrl)
     {
@@ -43,7 +56,9 @@ public partial class AppTrayViewModel : ObservableObject
     [RelayCommand]
     private async Task StopMonitoringAsync()
     {
+        IsStopping = true;
         await _runLoopController.StopAsync();
+        IsStopping = false;
     }
 
     [RelayCommand]

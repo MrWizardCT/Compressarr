@@ -9,6 +9,10 @@ const countdownEl = document.getElementById('countdown');
 const logPanel = document.getElementById('log-panel');
 
 let nextRunAtMs = null;
+// True from the moment Stop is clicked until poll() sees the server actually catch up
+// (isMonitoring: false) - guards against the 1.5s poll interval overwriting the optimistic
+// "Stopping..." state back to "Monitoring is ON" while the real stop is still in flight.
+let stopRequested = false;
 
 startBtn.addEventListener('click', async () => {
   // Reflect the click immediately - a real conversion pass can start on the server within
@@ -24,7 +28,15 @@ startBtn.addEventListener('click', async () => {
 });
 
 stopBtn.addEventListener('click', async () => {
+  // Reflect the click immediately - StopAsync doesn't resolve (and RunningChanged doesn't fire)
+  // until the in-flight file finishes converting, which can be minutes away. Without this, the
+  // button just sits there with no feedback that the click registered at all.
+  stopRequested = true;
+  monitoringState.textContent = 'Stopping...';
+  stopBtn.disabled = true;
+
   await fetch('/api/run/stop', { method: 'POST' });
+  stopRequested = false;
   poll();
 });
 
@@ -62,6 +74,18 @@ function renderLog(lines) {
   }
 }
 
+function renderUpNext(items) {
+  const body = document.getElementById('upNextBody');
+  if (!items || items.length === 0) {
+    body.innerHTML = '<tr><td colspan="4">Nothing queued.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = items
+    .map(item => `<tr><td>${escapeHtml(item.laneDisplayName)}</td><td>${escapeHtml(item.fileName)}</td><td>${item.sizeGb.toFixed(2)} GB</td><td>${escapeHtml(item.preset || '-')}</td></tr>`)
+    .join('');
+}
+
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
@@ -81,9 +105,15 @@ async function poll() {
   const res = await fetch('/api/run/status');
   const s = await res.json();
 
-  monitoringState.textContent = s.isMonitoring ? 'Monitoring is ON' : 'Monitoring is OFF';
-  startBtn.disabled = s.isMonitoring;
-  stopBtn.disabled = !s.isMonitoring;
+  if (s.isMonitoring && stopRequested) {
+    // A stop is in flight (server hasn't caught up yet) - leave the optimistic "Stopping..."
+    // state alone rather than letting this poll tick flip it back to "Monitoring is ON".
+  } else {
+    stopRequested = false;
+    monitoringState.textContent = s.isMonitoring ? 'Monitoring is ON' : 'Monitoring is OFF';
+    startBtn.disabled = s.isMonitoring;
+    stopBtn.disabled = !s.isMonitoring;
+  }
   abortBtn.disabled = !s.isMonitoring && !s.isRunning;
   // Only meaningful while idle between passes - nothing to skip if not monitoring at all, or
   // if a pass is already running right now.
@@ -109,6 +139,7 @@ async function poll() {
 
   document.getElementById('cpuValue').textContent = (s.cpuUsagePercent === null || s.cpuUsagePercent === undefined) ? 'unavailable' : `${s.cpuUsagePercent}%`;
 
+  renderUpNext(s.upNext);
   renderLog(s.recentLogLines);
 }
 

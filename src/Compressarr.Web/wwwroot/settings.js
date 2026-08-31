@@ -156,4 +156,10 @@ document.getElementById('installPresetsBtn').addEventListener('click', async () 
   setStatus(res.ok ? 'Compressarr presets installed.' : 'Failed to install presets.');
 });
 
+document.getElementById('reloadPresetsBtn').addEventListener('click', async () => {
+  setStatus('Reloading presets...');
+  const res = await fetch('/api/presets/reload', { method: 'POST' });
+  setStatus(res.ok ? 'Presets reloaded.' : 'Failed to reload presets.');
+});
+
 loadSettings();

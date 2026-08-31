@@ -48,6 +48,14 @@ public static class PresetEndpoints
 
             return Results.Ok();
         });
+
+        app.MapPost("/api/presets/reload", (IConfigStore configStore, IHandBrakePresetService presetService, IPathExpander pathExpander) =>
+        {
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+            var presetsPath = pathExpander.Expand(config.HandBrake.PresetsPath);
+            presetService.InvalidateCache(presetsPath);
+            return Results.Ok();
+        });
     }
 }
 
