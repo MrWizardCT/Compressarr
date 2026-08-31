@@ -118,7 +118,10 @@ percent saved.
    > Smart App Control blocks it outright, either wait for the release's reputation to build (it
    > typically clears within some weeks of more people downloading it), or turn off Smart App
    > Control in Windows Security settings, same as most people running non-Store *arr-style
-   > software already have.
+   > software already have. Every release is also scanned with
+   > [VirusTotal](https://www.virustotal.com/) as part of publishing it - the scan link is at the
+   > bottom of that release's notes on the [Releases](https://github.com/MrWizardCT/Compressarr/releases)
+   > page, if you'd like to check it independently of trusting the publisher signature.
 3. Launch Compressarr from the Start Menu - it runs as a tray icon only, with no window of its
    own. Right-click the tray icon for **Open Web UI**, or just browse to
    `http://localhost:1212` (or whatever port you've configured).
