@@ -7,19 +7,28 @@ for that full history.
 ## [2.0.5] - 2026-08-31
 
 ### Added
-- Up Next section on the Monitor page - lists every file still queued across enabled lanes, with
-  its lane, size, and preset.
+- In Queue section on the Monitor page - lists every file still waiting across enabled lanes, with
+  its lane, size, and preset, styled to match the Current status cards.
 - Reload button next to Install/Merge Presets on Settings - reloads presets.json without going
-  through the merge-prompt flow.
+  through the merge-prompt flow, with a visible green confirmation message.
 
 ### Changed
-- Stop Monitoring now reflects the click immediately (web and tray), instead of appearing to do
-  nothing until the in-flight file finishes converting.
+- Stop Monitoring now reflects the click immediately on both the web page and the tray icon,
+  regardless of which surface it was requested from - previously each surface only knew about its
+  own click, so stopping from one left the other showing stale state until the in-flight file
+  actually finished converting.
 - Settings are now re-read after every file's HandBrakeCLI pass finishes, not just once at the
   start of a run or monitoring loop - a change made mid-run now takes effect on the very next
   file instead of requiring a restart.
+- Lanes page's TV/Movie preset fields are now real dropdowns instead of a text field with
+  autocomplete suggestions - the old control only showed suggestions matching whatever text was
+  already typed, so a field already holding a valid preset name would only ever "suggest" itself.
 
 ### Fixed
+- The preset list included HandBrake's own category headers ("General", "Web", "Devices",
+  "Matroska", etc.) as if they were real, selectable presets, because the parser never checked
+  HandBrake's own "Folder" flag - on a full HandBrake install this polluted the list with ~15-20
+  bogus entries.
 - Launching a second Compressarr instance no longer runs two processes against the same lanes -
   it now shows a small "Compressarr is already running" window (with the logo, styled like a
   native Windows dialog) and exits instead.
