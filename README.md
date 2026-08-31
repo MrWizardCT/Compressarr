@@ -68,10 +68,13 @@ The Monitor page is the control surface for continuous operation: **Start Monito
 watching every enabled lane on a configurable interval, with a live countdown to the next pass.
 **Run Now** skips the rest of that countdown and starts immediately. **Abort** kills whatever
 HandBrakeCLI process is currently running and stops monitoring outright - as opposed to **Stop
-Monitoring**, which finishes the current pass before stopping. The recent-log panel and CPU
-usage update live while a pass runs.
+Monitoring**, which finishes the current pass before stopping (both the page and the tray icon
+reflect a stop the moment it's requested, from either surface). The **In Queue** section lists
+every file still waiting across all enabled lanes - lane, size, and preset - so you can see what's
+coming up without waiting for the current file to finish. The recent-log panel and CPU usage
+update live while a pass runs.
 
-<img src="Assets/Screenshots/monitor-page.png" alt="Compressarr Monitor page, showing a real conversion in progress with live percent/fps/ETA" width="700">
+<img src="Assets/Screenshots/monitor-page.png" alt="Compressarr Monitor page, showing a real conversion in progress with live percent/fps/ETA and the In Queue list" width="700">
 
 *The media shown is representational test data only, not the actual film - your own results
 (speed, file size, savings) will vary based on your source files, hardware, and preset.*
@@ -141,7 +144,7 @@ these pages has a small **?** next to it with a tooltip explaining what it does.
 | Field | What it's for |
 |---|---|
 | HandBrakeCLI path | Path to `HandBrakeCLI.exe` - Check/Install finds or downloads it |
-| presets.json path | Path to HandBrake's presets.json - Install/Merge Presets adds Compressarr's own |
+| presets.json path | Path to HandBrake's presets.json - Install/Merge Presets adds Compressarr's own, Reload picks up changes made to the file without restarting Compressarr |
 | Extra CLI options | Additional flags passed straight through to every HandBrakeCLI conversion |
 | Video extensions | Comma-separated file extensions to scan for (default: `mkv, avi, mp4, mpg, ts, m4v`) |
 | Minimum size (bytes) | Skip files smaller than this - useful for ignoring samples/junk |
