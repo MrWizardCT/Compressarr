@@ -4,6 +4,15 @@ All notable changes to Compressarr are documented in this file. Pre-release/RC b
 to v1.0.0 are omitted here - see [GitHub Releases](https://github.com/MrWizardCT/Compressarr/releases)
 for that full history.
 
+## [2.0.6] - 2026-08-31
+
+### Fixed
+- A lane whose only tracked resume jobs pointed at since-deleted source files (e.g. removed by
+  hand between runs) would silently process nothing forever - it never fell back to scanning
+  Input for genuinely new files, because a non-empty (but entirely dead) pending queue took
+  priority over scanning. Dead pending entries are now dropped from the resume file as soon as
+  they're detected, so the lane falls back to a fresh scan once nothing resumable is left.
+
 ## [2.0.5] - 2026-08-31
 
 ### Added

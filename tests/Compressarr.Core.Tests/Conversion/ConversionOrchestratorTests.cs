@@ -348,6 +348,65 @@ public class ConversionOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessLaneAsync_PendingResumeFileMissing_RemovedAndFallsBackToScan()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        // Only a brand-new file sits in Input - the previously pending file was removed by hand
+        // (e.g. between test runs) before monitoring started back up.
+        var newFilePath = Path.Combine(inputDir, "New Movie (2024).mkv");
+        File.WriteAllText(newFilePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset"
+        };
+
+        var config = BuildConfig(DeleteAfterConvertMode.Maintain);
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "lane1", FullName = Path.Combine(inputDir, "Deleted Movie (1999).mkv"), Status = ResumeStatus.Pending }
+        };
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(),
+            new RealFolderScanner(),
+            new FixedExtensionPresetService(),
+            new MetadataService(),
+            new FakeProcessRunner(),
+            new FileRouter(),
+            new NoOpCompanionFileService(),
+            new NoOpArrUnmonitorService(),
+            new RecordingTrashService(),
+            new NoOpRunLogger(),
+            new NoOpResumeStateStore(),
+            new NoOpProgressReporter(),
+            configStore);
+
+        var results = await orchestrator.ProcessLaneAsync(
+            lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        // The dead pending entry pointing at the removed file is gone from resume state...
+        Assert.DoesNotContain(resumeState, e => e.FullName.Contains("Deleted Movie"));
+        // ...and the lane fell back to scanning Input instead of silently processing nothing,
+        // picking up the genuinely new file that was actually sitting there.
+        var result = Assert.Single(results);
+        Assert.Equal("New Movie (2024).mkv", result.FileName);
+        Assert.True(result.Success);
+    }
+
+    [Fact]
     public async Task ProcessLaneAsync_NoPresetConfigured_ReportsSpecificFailureReason()
     {
         var inputDir = Path.Combine(_tempDir, "Input");

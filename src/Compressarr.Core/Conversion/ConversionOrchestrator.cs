@@ -102,10 +102,26 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         var presetsPath = _pathExpander.Expand(config.HandBrake.PresetsPath);
 
         List<FileInfo> videoFiles;
+
+        // A pending job whose source file is gone (e.g. removed by hand between runs) can never
+        // be resumed - drop it rather than let it block this lane forever. Without this, a lane
+        // with only dead pending entries falls into the branch below, finds nothing to process,
+        // and returns without ever falling back to scanning Input for genuinely new files.
+        var deadPending = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending && !File.Exists(e.FullName)).ToList();
+        if (deadPending.Count > 0)
+        {
+            foreach (var dead in deadPending)
+            {
+                _logger.Log($"Resume entry for '{dead.FullName}' no longer exists - removing it.", LogSeverity.Error);
+                resumeState.Remove(dead);
+            }
+            _resumeStore.Save(resumeState, resumeFilePath);
+        }
+
         var pending = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending).ToList();
         if (pending.Count > 0)
         {
-            videoFiles = pending.Select(p => new FileInfo(p.FullName)).Where(f => f.Exists).ToList();
+            videoFiles = pending.Select(p => new FileInfo(p.FullName)).ToList();
         }
         else
         {

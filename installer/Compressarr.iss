@@ -5,7 +5,7 @@
 ; Build with: ISCC.exe installer\Compressarr.iss
 
 #define MyAppName "Compressarr"
-#define MyAppVersion "2.0.5"
+#define MyAppVersion "2.0.6"
 #define MyAppPublisher "Mark Wasserman"
 #define MyAppURL "https://github.com/MrWizardCT/Compressarr"
 #define MyAppExeName "Compressarr.Desktop.exe"
