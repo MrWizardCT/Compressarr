@@ -31,6 +31,34 @@ public class FileRouterTests : IDisposable
     }
 
     [Fact]
+    public void MoveTvFile_BasePathUnavailable_ThrowsAndLeavesSourceFileInPlace()
+    {
+        // Simulates an offline/unreachable network drive - a drive letter that doesn't exist
+        // fails Directory.CreateDirectory the same way a mapped drive being offline does.
+        var router = new FileRouter();
+        var source = CreateSourceFile("MASH.S04E09.mkv");
+
+        var ex = Assert.ThrowsAny<Exception>(() => router.MoveTvFile(source, @"Z:\Unavailable\TV"));
+
+        // ConversionOrchestrator relies on this being catchable and the source file being
+        // untouched afterward - RouteFile itself has no try/catch, so both matter here.
+        Assert.IsNotType<InvalidOperationException>(ex); // that's reserved for "not configured"
+        Assert.True(File.Exists(source));
+    }
+
+    [Fact]
+    public void MoveMovieFile_BasePathUnavailable_ThrowsAndLeavesSourceFileInPlace()
+    {
+        var router = new FileRouter();
+        var source = CreateSourceFile("Caddyshack (1980).mkv");
+
+        var ex = Assert.ThrowsAny<Exception>(() => router.MoveMovieFile(source, @"Z:\Unavailable\Movies"));
+
+        Assert.IsNotType<InvalidOperationException>(ex);
+        Assert.True(File.Exists(source));
+    }
+
+    [Fact]
     public void MoveTvFile_NoSeasonEpisode_ReturnsNull()
     {
         var router = new FileRouter();
