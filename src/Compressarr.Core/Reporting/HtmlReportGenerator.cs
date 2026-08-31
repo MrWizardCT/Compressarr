@@ -52,6 +52,7 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
   body {{ font-family: Segoe UI, Verdana, sans-serif; margin: 2rem; color: #1c1c1c; background: #fafafa; }}
   h1 {{ margin-bottom: 0; }}
   .header {{ display: flex; align-items: center; gap: 0.75rem; }}
+  .header h1 {{ line-height: 1; }}
   .logo {{ width: 48px; height: 48px; }}
   .muted {{ color: #666; font-weight: normal; font-size: 0.85em; }}
   .banner {{ padding: 0.75rem 1rem; border-radius: 6px; margin: 1rem 0; font-weight: 600; }}
