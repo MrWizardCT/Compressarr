@@ -156,6 +156,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     BeginSizeGb = beginSizeGb,
                     EndSizeGb = 0,
                     Success = false,
+                    FailureReason = $"No {contentType} preset configured for this lane",
                     StartTime = startTime,
                     EndTime = DateTime.Now
                 });
@@ -275,10 +276,13 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                         diskFull = true;
                         failureReason = "Output drive full, monitoring stopped";
                     }
-                    else
+                    else if (LooksLikePathUnavailable(ex))
                     {
                         failureReason = "Base folder path unavailable, move skipped";
                     }
+                    // else: some other move failure (permission denied, file locked, etc.) - leave
+                    // failureReason null so the report shows generic "ERROR" rather than a
+                    // path-unavailable message that would be actively wrong for this cause.
                     _logger.Log($"  Move skipped: {ex.Message} - file remains at '{newFileName}'.", LogSeverity.Error);
                 }
 
@@ -378,4 +382,20 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         text is not null && (
             text.Contains("No space left on device", StringComparison.OrdinalIgnoreCase) ||
             text.Contains("There is not enough space on the disk", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>True only for the specific exception shapes a missing/unreachable base path
+    /// actually produces - our own "not configured" check, .NET's own "no such path" exception, or
+    /// an IOException whose message names a network path/share as the problem. Deliberately narrow:
+    /// a permission error or a locked file also fails the move, but blaming "path unavailable" for
+    /// those would be actively wrong, not just unhelpfully vague - those fall through to the
+    /// generic "ERROR" instead. A pure static function so it's testable without a real offline
+    /// network drive.</summary>
+    internal static bool LooksLikePathUnavailable(Exception ex) =>
+        ex is InvalidOperationException or DirectoryNotFoundException ||
+        (ex is IOException && (
+            ex.Message.Contains("network path", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("network name", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("network location", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("cannot find the path", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("is not accessible", StringComparison.OrdinalIgnoreCase)));
 }

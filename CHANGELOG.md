@@ -46,9 +46,10 @@ for that full history.
   move), instead of retrying the same doomed encode again every poll interval - a clear log
   message explains why.
 - The report's Status column now shows the specific reason a file failed ("Output drive full,
-  monitoring stopped" or "Base folder path unavailable, move skipped") instead of a generic
-  "ERROR" for the two failure conditions Compressarr can actually diagnose - other failures still
-  show "ERROR". A failed file with a detail log also gets a "Full Details" link straight to it.
+  monitoring stopped", "Base folder path unavailable, move skipped", or "No TV/Movie preset
+  configured for this lane") instead of a generic "ERROR" for the failure conditions Compressarr
+  can actually diagnose - other failures still show "ERROR", rather than guessing. A failed file
+  with a detail log also gets a "Full Details" link straight to it.
 
 ## [2.0.4] - 2026-08-31
 

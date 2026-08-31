@@ -91,6 +91,16 @@ file sealed class SwitchingConfigStore : IConfigStore
     public T Update<T>(string path, Func<CompressarrConfig, T> mutate) => mutate(_configBeforeSwitch);
 }
 
+/// <summary>Simulates a move failure whose exception isn't disk-full and isn't shaped like a
+/// missing/unreachable path (e.g. a permission error) - used to prove those don't get mislabeled
+/// with the path-unavailable reason.</summary>
+file sealed class ThrowingFileRouter : IFileRouter
+{
+    private readonly Exception _exception;
+    public ThrowingFileRouter(Exception exception) => _exception = exception;
+    public string? RouteFile(string fileName, bool isTv, string tvShowBasePath, string movieBasePath, bool moveFiles) => throw _exception;
+}
+
 file sealed record TrashCall(string Path, DeleteAfterConvertMode Mode);
 
 file sealed class RecordingTrashService : ITrashService
@@ -335,5 +345,111 @@ public class ConversionOrchestratorTests : IDisposable
         Assert.False(File.Exists(Path.Combine(outputDir, "Caddyshack (1980).mkv")));
         // The real source is never touched by a failed encode either way.
         Assert.True(File.Exists(sourcePath));
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_NoPresetConfigured_ReportsSpecificFailureReason()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir
+            // MoviePreset intentionally left unset - this is what's under test.
+        };
+
+        var config = BuildConfig(DeleteAfterConvertMode.Maintain);
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(),
+            new RealFolderScanner(),
+            new FixedExtensionPresetService(),
+            new MetadataService(),
+            new FakeProcessRunner(),
+            new FileRouter(),
+            new NoOpCompanionFileService(),
+            new NoOpArrUnmonitorService(),
+            new RecordingTrashService(),
+            new NoOpRunLogger(),
+            new NoOpResumeStateStore(),
+            new NoOpProgressReporter(),
+            configStore);
+
+        var results = await orchestrator.ProcessLaneAsync(
+            lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.False(result.Success);
+        Assert.Equal("No Movie preset configured for this lane", result.FailureReason);
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_MoveFailsForUnrelatedReason_FallsBackToGenericError()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = @"D:\Movies"
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Maintain, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(),
+            new RealFolderScanner(),
+            new FixedExtensionPresetService(),
+            new MetadataService(),
+            new FakeProcessRunner(),
+            new ThrowingFileRouter(new UnauthorizedAccessException(@"Access to the path 'D:\Movies' is denied.")),
+            new NoOpCompanionFileService(),
+            new NoOpArrUnmonitorService(),
+            new RecordingTrashService(),
+            new NoOpRunLogger(),
+            new NoOpResumeStateStore(),
+            new NoOpProgressReporter(),
+            configStore);
+
+        var results = await orchestrator.ProcessLaneAsync(
+            lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.False(result.Success);
+        Assert.False(result.DiskFull);
+        // A permission error isn't a path-availability problem - mislabeling it that way would be
+        // actively wrong, not just unhelpfully vague, so this falls back to the generic reason.
+        Assert.Null(result.FailureReason);
+        // The file is not lost - it's exactly where HandBrake wrote it, since routing threw before
+        // it could move it anywhere.
+        Assert.True(File.Exists(Path.Combine(outputDir, "Caddyshack (1980).mkv")));
     }
 }
