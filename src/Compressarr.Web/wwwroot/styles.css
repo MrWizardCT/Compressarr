@@ -326,7 +326,7 @@ a.primary:hover { opacity: 0.9; }
 }
 
 .preset-status {
-  margin: 6px 0 10px;
+  margin: 6px 0 10px 210px;
   font-size: 13px;
   min-height: 18px;
 }
