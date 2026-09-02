@@ -465,6 +465,65 @@ public class ConversionOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessLaneAsync_OnlyErrorAndCompletedEntriesTracked_StillScansForNewFiles()
+    {
+        // Mirrors a real resume.json pulled from production: a pile of Completed entries plus one
+        // Error entry (a file that failed to encode), and zero Pending entries. The user reported
+        // that with a resume file shaped like this, a genuinely new file dropped into Input never
+        // got picked up.
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var newFilePath = Path.Combine(inputDir, "Brand New Movie (2024).mkv");
+        File.WriteAllText(newFilePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "hdsd",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset"
+        };
+
+        var config = BuildConfig(DeleteAfterConvertMode.Maintain);
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "hdsd", FullName = @"D:\Media Download\Young Frankenstein (1974)\Young Frankenstein (1974).mkv", Status = ResumeStatus.Completed },
+            new() { LaneId = "hdsd", FullName = @"D:\Media Download\Rocky V (1990)\Rocky V (1990).mkv", Status = ResumeStatus.Error },
+            new() { LaneId = "hdsd", FullName = @"D:\Media Download\Working Girl (1988)\Working Girl (1988).mkv", Status = ResumeStatus.Completed }
+        };
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(),
+            new RealFolderScanner(),
+            new FixedExtensionPresetService(),
+            new MetadataService(),
+            new FakeProcessRunner(),
+            new FileRouter(),
+            new NoOpCompanionFileService(),
+            new NoOpArrUnmonitorService(),
+            new RecordingTrashService(),
+            new NoOpRunLogger(),
+            new NoOpResumeStateStore(),
+            new NoOpProgressReporter(),
+            configStore);
+
+        var results = await orchestrator.ProcessLaneAsync(
+            lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.Equal("Brand New Movie (2024).mkv", result.FileName);
+        Assert.True(result.Success);
+    }
+
+    [Fact]
     public async Task ProcessLaneAsync_NoPresetConfigured_ReportsSpecificFailureReason()
     {
         var inputDir = Path.Combine(_tempDir, "Input");
