@@ -93,6 +93,7 @@ async function loadSettings() {
   const res = await fetch('/api/settings');
   const dto = await res.json();
   fillForm(dto);
+  settingsDirty = false;
 }
 
 document.getElementById('saveBtn').addEventListener('click', async () => {
@@ -104,9 +105,29 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
   });
   if (res.ok) {
     setStatus('Settings saved.');
+    settingsDirty = false;
   } else {
     setStatus('Failed to save settings.');
   }
+});
+
+// Warn before leaving with unsaved edits - covers tab close/reload and sidebar nav clicks alike,
+// since the sidebar's links are plain <a href> navigation (no client-side router intercepting
+// them), so both are a real page unload beforeunload actually fires for. importConfigFile is
+// excluded - picking a file to import isn't itself an unsaved settings change, and Import already
+// has its own confirm() before it does anything.
+let settingsDirty = false;
+const settingsMain = document.querySelector('main');
+for (const eventName of ['input', 'change']) {
+  settingsMain.addEventListener(eventName, e => {
+    if (e.target.id === 'importConfigFile') return;
+    settingsDirty = true;
+  });
+}
+window.addEventListener('beforeunload', e => {
+  if (!settingsDirty) return;
+  e.preventDefault();
+  e.returnValue = '';
 });
 
 document.getElementById('runOnceBtn').addEventListener('click', async () => {

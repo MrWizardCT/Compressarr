@@ -83,6 +83,9 @@ async function saveLane(node) {
   setStatus(`Saving lane "${dto.displayName}"...`);
   const ok = await putLane(dto);
   setStatus(ok ? `Lane "${dto.displayName}" saved.` : 'Failed to save lane.');
+  // A single lane's Save clears the global dirty flag even if another card still has unsaved
+  // edits of its own - a known simplification (no per-card tracking), same trade-off as Settings.
+  if (ok) lanesDirty = false;
 }
 
 async function saveAllLanes() {
@@ -99,6 +102,7 @@ async function saveAllLanes() {
   setStatus(failedCount === 0
     ? `All ${cards.length} lane(s) saved.`
     : `Saved ${cards.length - failedCount} of ${cards.length} lane(s) - ${failedCount} failed.`);
+  if (failedCount === 0) lanesDirty = false;
 }
 
 async function removeLane(node) {
@@ -131,6 +135,7 @@ async function loadLanes() {
   for (const dto of lanes) {
     lanesContainer.appendChild(laneCardFromDto(dto));
   }
+  lanesDirty = false;
 }
 
 document.getElementById('addLaneBtn').addEventListener('click', async () => {
@@ -141,6 +146,21 @@ document.getElementById('addLaneBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('saveAllLanesBtn').addEventListener('click', saveAllLanes);
+
+// Warn before leaving with unsaved field edits inside a lane card - Add/Remove/Save all persist
+// immediately on click, so they're never what this is protecting; only in-progress edits to a
+// card's own fields (typed but not yet Saved) are. Sidebar nav links are plain <a href>
+// navigation, so beforeunload fires for those the same as tab close/reload - no separate
+// in-app-click handling needed.
+let lanesDirty = false;
+for (const eventName of ['input', 'change']) {
+  lanesContainer.addEventListener(eventName, () => { lanesDirty = true; });
+}
+window.addEventListener('beforeunload', e => {
+  if (!lanesDirty) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 // loadLanes() (and Add Lane's own card-building) needs presetNames already populated - a
 // <select>'s .value only "sticks" once a matching <option> exists.
