@@ -106,8 +106,8 @@ async function poll() {
   runNowBtn.disabled = !s.isMonitoring || s.isRunning;
 
   document.getElementById('stateValue').textContent = s.isRunning ? 'Converting' : (s.isMonitoring ? 'Watching' : 'Idle');
-  document.getElementById('laneValue').textContent = s.laneDisplayName || '-';
-  document.getElementById('fileValue').textContent = s.fileName || '-';
+  document.getElementById('fileLabel').textContent = (s.isRunning && s.laneDisplayName) ? `Compressing File in Lane ${s.laneDisplayName}` : 'Waiting for files';
+  document.getElementById('fileValue').textContent = s.isRunning ? (s.fileName || '-') : '-';
 
   const hasPercent = s.progressPercent !== null && s.progressPercent !== undefined;
   document.getElementById('progressFill').style.width = `${hasPercent ? s.progressPercent : 0}%`;

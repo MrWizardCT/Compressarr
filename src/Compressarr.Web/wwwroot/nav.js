@@ -152,7 +152,7 @@ function renderGlobalCountdown() {
     return;
   }
   const secondsLeft = Math.max(0, Math.ceil((globalNextRunAtMs - Date.now()) / 1000));
-  el.textContent = `Next Run in: ${secondsLeft} Seconds`;
+  el.textContent = `Next Pass in: ${secondsLeft} Seconds`;
 }
 
 async function pollGlobalStatus() {

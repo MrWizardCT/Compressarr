@@ -21,11 +21,10 @@
     </div>
 
     <h2>Current status</h2>
-    <div class="stat-grid">
-      <div class="stat"><div class="label">State</div><div class="value" id="stateValue">Idle</div></div>
-      <div class="stat"><div class="label">Lane</div><div class="value" id="laneValue">-</div></div>
-      <div class="stat wide">
-        <div class="label">File</div>
+    <div class="status-row">
+      <div class="stat stat-state"><div class="label">State</div><div class="value" id="stateValue">Idle</div></div>
+      <div class="stat stat-file">
+        <div class="label" id="fileLabel">Waiting for files</div>
         <div class="value" id="fileValue">-</div>
         <div class="progress-track"><div class="progress-fill" id="progressFill" style="width: 0%"></div></div>
         <div class="stat-sub" id="progressSub"></div>
