@@ -104,6 +104,18 @@ public static class RunEndpoints
             return Results.Json(new { triggered });
         });
 
+        app.MapPost("/api/run/pause", (IActiveHandBrakeProcess activeProcess) =>
+        {
+            activeProcess.Pause();
+            return Results.Ok();
+        });
+
+        app.MapPost("/api/run/resume", (IActiveHandBrakeProcess activeProcess) =>
+        {
+            activeProcess.Resume();
+            return Results.Ok();
+        });
+
         app.MapGet("/api/run/status", async (
             IRunLoopController loopController,
             CurrentRunStateService runState,
@@ -111,7 +123,8 @@ public static class RunEndpoints
             IConfigStore configStore,
             IPathExpander pathExpander,
             IVideoFileScanner scanner,
-            IResumeStateStore resumeStore) =>
+            IResumeStateStore resumeStore,
+            IActiveHandBrakeProcess activeProcess) =>
         {
             var snapshot = runState.GetSnapshot();
             var cpu = await cpuSampler.SampleAsync();
@@ -129,6 +142,7 @@ public static class RunEndpoints
                 isMonitoring = loopController.IsRunning,
                 isStopping = loopController.IsStopping,
                 isRunning = snapshot.IsRunning,
+                isPaused = activeProcess.IsPaused,
                 laneDisplayName = snapshot.LaneDisplayName,
                 fileName = snapshot.FileName,
                 presetName = snapshot.PresetName,

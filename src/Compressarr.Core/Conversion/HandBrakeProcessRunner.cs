@@ -30,6 +30,13 @@ public interface IHandBrakeProcessRunner
 
 public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
 {
+    private readonly IActiveHandBrakeProcess _activeProcess;
+
+    public HandBrakeProcessRunner(IActiveHandBrakeProcess activeProcess)
+    {
+        _activeProcess = activeProcess;
+    }
+
     public async Task<HandBrakeRunResult> RunAsync(
         string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
         string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken)
@@ -77,6 +84,7 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
             process.Start();
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
+            _activeProcess.Register(process);
 
             using var killRegistration = cancellationToken.Register(() =>
             {
@@ -98,6 +106,10 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
             catch (OperationCanceledException)
             {
                 cancelled = true;
+            }
+            finally
+            {
+                _activeProcess.Unregister();
             }
 
             File.WriteAllText(detailLogFile, stderr.ToString());

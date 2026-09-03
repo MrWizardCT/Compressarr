@@ -2,6 +2,7 @@ renderNav('monitor');
 
 const toggleMonitorBtn = document.getElementById('toggleMonitorBtn');
 const runNowBtn = document.getElementById('runNowBtn');
+const togglePauseBtn = document.getElementById('togglePauseBtn');
 const abortBtn = document.getElementById('abortBtn');
 const logPanel = document.getElementById('log-panel');
 
@@ -56,6 +57,41 @@ toggleMonitorBtn.addEventListener('click', async () => {
     renderLog([{ text: 'Starting monitoring...', severity: 'Info' }]);
 
     await fetch('/api/run/start', { method: 'POST' });
+  }
+  poll();
+});
+
+const PAUSE_ICON = '<svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
+// Same play-triangle shape as Start Monitoring's icon - "resume" is the same action, visually.
+const RESUME_ICON = START_ICON;
+
+// Pause/Resume toggle - only meaningful while a file is actually converting (disabled otherwise,
+// same reasoning as Abort). Sends HandBrakeCLI's own interactive "p"/"r" keystrokes via
+// IActiveHandBrakeProcess, not a real OS-level process suspend - matches what pressing those keys
+// already does when HandBrakeCLI runs directly in a console.
+let togglePauseIsRunning = false;
+let togglePauseIsPaused = false;
+
+function renderPauseButton() {
+  togglePauseBtn.disabled = !togglePauseIsRunning;
+  if (togglePauseIsPaused) {
+    togglePauseBtn.innerHTML = RESUME_ICON + 'Resume';
+    togglePauseBtn.classList.add('primary');
+  } else {
+    togglePauseBtn.innerHTML = PAUSE_ICON + 'Pause';
+    togglePauseBtn.classList.remove('primary');
+  }
+}
+
+togglePauseBtn.addEventListener('click', async () => {
+  if (togglePauseIsPaused) {
+    togglePauseIsPaused = false;
+    renderPauseButton();
+    await fetch('/api/run/resume', { method: 'POST' });
+  } else {
+    togglePauseIsPaused = true;
+    renderPauseButton();
+    await fetch('/api/run/pause', { method: 'POST' });
   }
   poll();
 });
@@ -127,6 +163,9 @@ async function poll() {
   // Only meaningful while idle between passes - nothing to skip if not monitoring at all, or
   // if a pass is already running right now.
   runNowBtn.disabled = !s.isMonitoring || s.isRunning;
+  togglePauseIsRunning = s.isRunning;
+  togglePauseIsPaused = s.isPaused;
+  renderPauseButton();
 
   const stateValueEl = document.getElementById('stateValue');
   stateValueEl.textContent = s.isRunning ? 'Running' : (s.isMonitoring ? 'Watching' : 'Idle');

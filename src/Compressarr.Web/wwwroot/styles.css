@@ -64,6 +64,7 @@ body {
   --badge-warning: #c97a12;
   --dot-on: #3ecf7e;
   --dot-off: #d63c3c;
+  --dot-paused: #f0aa4d;
   --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
   /* The log panel stays a fixed dark terminal regardless of the content theme, same reasoning
      as the sidebar/toolbar chrome above. */
@@ -261,6 +262,11 @@ body {
 .status-dot.off {
   background: var(--dot-off);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-off) 25%, transparent);
+}
+
+.status-dot.paused {
+  background: var(--dot-paused);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-paused) 25%, transparent);
 }
 
 /* Separated from the monitoring status/countdown by its own divider (distinct metric), but

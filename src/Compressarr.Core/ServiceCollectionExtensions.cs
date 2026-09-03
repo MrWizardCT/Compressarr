@@ -30,6 +30,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IHandBrakeInstaller, HandBrakeInstaller>();
 
         services.AddSingleton<IVideoFileScanner, VideoFileScanner>();
+        services.AddSingleton<IActiveHandBrakeProcess, ActiveHandBrakeProcess>();
         services.AddSingleton<IHandBrakeProcessRunner, HandBrakeProcessRunner>();
         services.AddSingleton<IMetadataService, MetadataService>();
         services.AddSingleton<IResumeStateStore, JsonResumeStateStore>();

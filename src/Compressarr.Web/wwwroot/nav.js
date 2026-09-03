@@ -235,12 +235,14 @@ async function pollGlobalStatus() {
   }
 
   const isActive = s.isMonitoring && !s.isStopping;
-  dot.classList.toggle('on', isActive);
+  const isPaused = isActive && s.isPaused;
+  dot.classList.toggle('on', isActive && !isPaused);
   dot.classList.toggle('off', !isActive);
+  dot.classList.toggle('paused', isPaused);
 
   stateEl.textContent = s.isStopping
     ? GLOBAL_STOPPING_MESSAGE
-    : (s.isMonitoring ? `Monitoring is ON${s.isRunning ? ': Running' : ''}` : 'Monitoring is OFF');
+    : (s.isMonitoring ? `Monitoring is ON${isPaused ? ': Paused' : (s.isRunning ? ': Running' : '')}` : 'Monitoring is OFF');
 
   globalNextRunAtMs = (s.isMonitoring && s.secondsUntilNextRun !== null && s.secondsUntilNextRun !== undefined)
     ? Date.now() + s.secondsUntilNextRun * 1000
