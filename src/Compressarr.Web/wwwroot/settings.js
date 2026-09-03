@@ -272,4 +272,39 @@ document.getElementById('importConfigBtn').addEventListener('click', () => {
   reader.readAsText(file);
 });
 
+async function runMaintenanceAction(url, confirmMessage, successMessage) {
+  if (!confirm(confirmMessage)) return;
+
+  const statusEl = document.getElementById('maintenanceStatus');
+  statusEl.textContent = 'Working...';
+  statusEl.classList.remove('success');
+
+  const res = await fetch(url, { method: 'POST' });
+  statusEl.textContent = res.ok ? successMessage : 'Failed - see the recent log for details.';
+  statusEl.classList.toggle('success', res.ok);
+
+  // Every maintenance action only ever writes a file - reloading the form (which re-fetches
+  // /api/settings) is how the effect actually shows up immediately, no app restart needed. A
+  // harmless no-op for Reset Resume File/Clean Up Now, essential for Clear Configuration.
+  if (res.ok) loadSettings();
+}
+
+document.getElementById('resetResumeBtn').addEventListener('click', () => runMaintenanceAction(
+  '/api/maintenance/reset-resume',
+  'Clear every tracked resume-state entry?\n\nThe next pass will do a completely fresh scan of every lane\'s Input folder instead of resuming or skipping anything.',
+  'Resume file cleared.'
+));
+
+document.getElementById('cleanupNowBtn').addEventListener('click', () => runMaintenanceAction(
+  '/api/maintenance/cleanup-now',
+  'Clean up old logs and reports now, using the retention setting above?\n\nRemoved files go to the Recycle Bin.',
+  'Old logs and reports cleaned up.'
+));
+
+document.getElementById('clearConfigBtn').addEventListener('click', () => runMaintenanceAction(
+  '/api/maintenance/clear-config',
+  'Reset ALL settings and lanes back to defaults?\n\nThis cannot be undone unless you\'ve exported a backup first.',
+  'Configuration reset to defaults.'
+));
+
 loadSettings();

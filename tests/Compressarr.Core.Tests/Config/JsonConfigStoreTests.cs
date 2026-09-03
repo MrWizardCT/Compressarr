@@ -111,6 +111,34 @@ public class JsonConfigStoreTests : IDisposable
     }
 
     [Fact]
+    public void ClearConfiguration_OverwritingWithFreshDefaults_DiscardsEveryCustomization()
+    {
+        // Exercises the exact composition Settings' "Clear Configuration" maintenance button uses
+        // (Save(DefaultConfigFactory.Create(), path)) against a config that's been customized the
+        // way a real installation would be - a renamed default lane, an added custom lane, and a
+        // changed setting - to prove the reset actually discards all of it rather than merging
+        // over the customizations the way a partial-override Load() normally would.
+        var store = new JsonConfigStore();
+        var customized = DefaultConfigFactory.Create();
+        customized.Lanes.Single(l => l.Id == "hdsd").DisplayName = "My Custom Movies Lane";
+        customized.Lanes.Add(new LaneConfig { Id = "extra", DisplayName = "Extra Lane" });
+        customized.Logging.RetentionDays = 999;
+        customized.Arrs.Sonarr.Enabled = true;
+        customized.Arrs.Sonarr.ApiKey = "some-real-key";
+        store.Save(customized, ConfigPath);
+
+        store.Save(DefaultConfigFactory.Create(), ConfigPath);
+
+        var reset = store.Load(ConfigPath);
+        Assert.Equal(2, reset.Lanes.Count);
+        Assert.Equal("HD/SD", reset.Lanes.Single(l => l.Id == "hdsd").DisplayName);
+        Assert.DoesNotContain(reset.Lanes, l => l.Id == "extra");
+        Assert.NotEqual(999, reset.Logging.RetentionDays);
+        Assert.False(reset.Arrs.Sonarr.Enabled);
+        Assert.Equal("", reset.Arrs.Sonarr.ApiKey);
+    }
+
+    [Fact]
     public void Load_PartialOverrideFile_FillsRemainingFieldsFromDefaults()
     {
         File.WriteAllText(ConfigPath, """{"processing":{"retentionDays":99}}""");

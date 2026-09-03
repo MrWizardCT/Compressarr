@@ -160,6 +160,21 @@
       <input type="number" id="webPort" min="1" max="65535" />
     </div>
 
+    <h2>Maintenance</h2>
+    <div class="field-row">
+      <label>Reset resume file<span class="help-tag" tabindex="0" title="Clears every tracked entry (Pending, Completed, and Error) from the resume-state file. The next pass does a completely fresh scan of every lane's Input folder instead of resuming or skipping anything.">?<span class="help-tip">Clears every tracked entry (Pending, Completed, and Error) from the resume-state file. The next pass does a completely fresh scan of every lane's Input folder instead of resuming or skipping anything.</span></span></label>
+      <button id="resetResumeBtn">Reset Resume File</button>
+    </div>
+    <div class="field-row">
+      <label>Clean up old logs &amp; reports<span class="help-tag" tabindex="0" title="Runs the same retention cleanup a normal pass already does automatically (using the Log/report retention setting above) right now, instead of waiting for the next one. Removed files go to the Recycle Bin, not a permanent delete.">?<span class="help-tip">Runs the same retention cleanup a normal pass already does automatically (using the Log/report retention setting above) right now, instead of waiting for the next one. Removed files go to the Recycle Bin, not a permanent delete.</span></span></label>
+      <button id="cleanupNowBtn">Clean Up Now</button>
+    </div>
+    <div class="field-row">
+      <label>Clear configuration<span class="help-tag" tabindex="0" title="Resets every setting and every lane back to Compressarr's built-in defaults. Cannot be undone unless you've exported a backup first.">?<span class="help-tip">Resets every setting and every lane back to Compressarr's built-in defaults. Cannot be undone unless you've exported a backup first.</span></span></label>
+      <button id="clearConfigBtn" class="danger">Clear Configuration</button>
+    </div>
+    <div class="preset-status" id="maintenanceStatus"></div>
+
     <div class="page-actions">
       <button id="saveBtn" class="primary"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Save Settings</button>
       <button id="clearChangesBtn"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>Clear Changes</button>
