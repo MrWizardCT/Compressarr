@@ -1,7 +1,6 @@
 renderNav('monitor');
 
-const startBtn = document.getElementById('startBtn');
-const stopBtn = document.getElementById('stopBtn');
+const toggleMonitorBtn = document.getElementById('toggleMonitorBtn');
 const runNowBtn = document.getElementById('runNowBtn');
 const abortBtn = document.getElementById('abortBtn');
 const logPanel = document.getElementById('log-panel');
@@ -12,29 +11,52 @@ const logPanel = document.getElementById('log-panel');
 // for zero-latency feedback on the one surface that actually acted. nav.js's own poll (every
 // 1.5s) is what keeps them accurate on an ongoing basis afterward.
 
-startBtn.addEventListener('click', async () => {
-  // Reflect the click immediately - a real conversion pass can start on the server within
-  // milliseconds, well before the next poll() would otherwise refresh this panel, so the log
-  // window needs to say "starting" right now rather than sitting on stale content until then.
-  document.getElementById('monitoringState').textContent = 'Monitoring is ON';
-  startBtn.disabled = true;
-  stopBtn.disabled = false;
-  renderLog([{ text: 'Starting monitoring...', severity: 'Info' }]);
+const START_ICON = '<svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>';
+const STOP_ICON = '<svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1"></rect></svg>';
 
-  await fetch('/api/run/start', { method: 'POST' });
-  poll();
-});
+// Single Start/Stop toggle - what it shows and what a click does both depend on the monitoring
+// state as of the last poll (or an optimistic override set the instant this surface clicks it,
+// same zero-latency idea the old two-button version used). Stays the same blue "primary" look in
+// every state, on purpose - only the icon/label/action change, not the color.
+let toggleIsMonitoring = false;
+let toggleIsStopping = false;
 
-stopBtn.addEventListener('click', async () => {
-  // Reflect the click immediately, zero-latency, on this surface - StopAsync doesn't resolve
-  // until the in-flight file finishes converting, which can be minutes away. poll() below picks
-  // up the server's own isStopping flag (shared with the tray icon) within 1.5s regardless, so a
-  // stop requested from either surface shows up on both - this is just to not even wait that long
-  // for the surface that actually clicked.
-  document.getElementById('monitoringState').textContent = 'Stopping monitor after current task completes';
-  stopBtn.disabled = true;
+function renderToggleButton() {
+  if (toggleIsStopping) {
+    toggleMonitorBtn.innerHTML = STOP_ICON + 'Stopping...';
+    toggleMonitorBtn.disabled = true;
+  } else if (toggleIsMonitoring) {
+    toggleMonitorBtn.innerHTML = STOP_ICON + 'Stop Monitoring';
+    toggleMonitorBtn.disabled = false;
+  } else {
+    toggleMonitorBtn.innerHTML = START_ICON + 'Start Monitoring';
+    toggleMonitorBtn.disabled = false;
+  }
+}
 
-  await fetch('/api/run/stop', { method: 'POST' });
+toggleMonitorBtn.addEventListener('click', async () => {
+  if (toggleIsMonitoring) {
+    // Reflect the click immediately, zero-latency, on this surface - StopAsync doesn't resolve
+    // until the in-flight file finishes converting, which can be minutes away. poll() below picks
+    // up the server's own isStopping flag (shared with the tray icon) within 1.5s regardless, so a
+    // stop requested from either surface shows up on both - this is just to not even wait that
+    // long for the surface that actually clicked.
+    toggleIsStopping = true;
+    renderToggleButton();
+    document.getElementById('monitoringState').textContent = 'Stopping monitor after current task completes';
+
+    await fetch('/api/run/stop', { method: 'POST' });
+  } else {
+    // Reflect the click immediately - a real conversion pass can start on the server within
+    // milliseconds, well before the next poll() would otherwise refresh this panel, so the log
+    // window needs to say "starting" right now rather than sitting on stale content until then.
+    toggleIsMonitoring = true;
+    renderToggleButton();
+    document.getElementById('monitoringState').textContent = 'Monitoring is ON';
+    renderLog([{ text: 'Starting monitoring...', severity: 'Info' }]);
+
+    await fetch('/api/run/start', { method: 'POST' });
+  }
   poll();
 });
 
@@ -98,8 +120,9 @@ async function poll() {
   const res = await fetch('/api/run/status');
   const s = await res.json();
 
-  startBtn.disabled = s.isMonitoring || s.isStopping;
-  stopBtn.disabled = !s.isMonitoring || s.isStopping;
+  toggleIsMonitoring = s.isMonitoring;
+  toggleIsStopping = s.isStopping;
+  renderToggleButton();
   abortBtn.disabled = !s.isMonitoring && !s.isRunning;
   // Only meaningful while idle between passes - nothing to skip if not monitoring at all, or
   // if a pass is already running right now.
