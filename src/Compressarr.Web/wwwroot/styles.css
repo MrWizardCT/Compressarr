@@ -709,7 +709,10 @@ a.primary:hover { opacity: 0.9; }
 
 .folders-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, 1fr), not a bare 1fr - a grid track's implicit minimum is auto (its content's
+     min-content size), so a bare 1fr still lets one column's content force it wider than the
+     other even though both claim "1fr". minmax(0, 1fr) actually forces them equal. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
   margin-bottom: 22px;
 }
@@ -725,7 +728,9 @@ a.primary:hover { opacity: 0.9; }
 
 .routing-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* Same minmax(0, 1fr) reasoning as .folders-grid above - without it, whichever of Movie/TV
+     has the longer preset name or path forces its column wider than the other's. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
@@ -734,6 +739,7 @@ a.primary:hover { opacity: 0.9; }
 .routing-col {
   padding: 14px;
   background: var(--bg);
+  min-width: 0;
 }
 
 .routing-col + .routing-col { border-left: 1px solid var(--border); }
