@@ -5,7 +5,7 @@ namespace Compressarr.Core.Tests.Reporting;
 
 public class HtmlReportGeneratorTests
 {
-    private static ConversionResult Result(string fileName, bool success = true, double beginGb = 1, double endGb = 0.5, string? arrStatus = null, string? failureReason = null) => new()
+    private static ConversionResult Result(string fileName, bool success = true, double beginGb = 1, double endGb = 0.5, string? arrStatus = null, string? failureReason = null, string? postProcessWarning = null) => new()
     {
         LaneId = "lane1",
         FileName = fileName,
@@ -17,6 +17,7 @@ public class HtmlReportGeneratorTests
         Success = success,
         ArrStatus = arrStatus,
         FailureReason = failureReason,
+        PostProcessWarning = postProcessWarning,
         StartTime = DateTime.Now,
         EndTime = DateTime.Now
     };
@@ -124,6 +125,40 @@ public class HtmlReportGeneratorTests
         var html = new HtmlReportGenerator().Generate(model);
 
         Assert.Contains("ERROR", html);
+    }
+
+    [Fact]
+    public void Generate_PostProcessWarning_ShownDistinctlyFromError()
+    {
+        var lanes = new List<LaneReportSection>
+        {
+            new() { LaneDisplayName = "HD/SD", Results = new[] { Result("a.mkv", success: true, postProcessWarning: "Companion files not moved: Access denied") } }
+        };
+        var model = BaseModel(lanes);
+
+        var html = new HtmlReportGenerator().Generate(model);
+
+        Assert.Contains("Companion files not moved: Access denied", html);
+        Assert.Contains("class=\"warn\"", html);
+        // A post-process warning is real, but the conversion itself still succeeded - it must not
+        // read as a full failure: no error-row styling, and the row still says "OK".
+        Assert.DoesNotContain("class=\"err\"", html);
+        Assert.Contains("<td>OK<br>", html);
+    }
+
+    [Fact]
+    public void Generate_PostProcessWarning_DoesNotCountTowardErrorBanner()
+    {
+        var lanes = new List<LaneReportSection>
+        {
+            new() { LaneDisplayName = "HD/SD", Results = new[] { Result("a.mkv", success: true, postProcessWarning: "Sonarr/Radarr unmonitor failed: timed out") } }
+        };
+        var model = BaseModel(lanes);
+
+        var html = new HtmlReportGenerator().Generate(model);
+
+        Assert.Contains("Run completed with no errors.", html);
+        Assert.DoesNotContain("error(s) occurred", html);
     }
 
     [Fact]

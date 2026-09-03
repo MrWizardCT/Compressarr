@@ -27,4 +27,12 @@ public sealed class ConversionResult
     /// a failure with no more specific known cause (the report still shows plain "ERROR" for
     /// those) - this is deliberately not a catch-all "why did this fail" field.</summary>
     public string? FailureReason { get; init; }
+
+    /// <summary>Set when a successful conversion still had a problem in a secondary post-process
+    /// step - moving companion files (subtitles, .nfo, artwork) or the Sonarr/Radarr unmonitor
+    /// call. Deliberately doesn't flip <see cref="Success"/> or count toward the report's error
+    /// total: the video itself converted and was filed correctly, this just flags that something
+    /// downstream of that needs a look, shown as a distinct marker rather than lumped in with
+    /// "ERROR". Null when nothing went wrong.</summary>
+    public string? PostProcessWarning { get; init; }
 }

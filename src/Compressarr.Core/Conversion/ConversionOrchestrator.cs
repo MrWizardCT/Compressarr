@@ -262,6 +262,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             var moveFailed = false;
             var diskFull = false;
             string? failureReason = null;
+            string? postProcessWarning = null;
 
             if (success)
             {
@@ -329,6 +330,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 {
                     _logger.Log($"  Arr unmonitor skipped: {ex.Message}", LogSeverity.Error);
                     arrStatus = $"Failed: {ex.Message}";
+                    postProcessWarning = AppendWarning(postProcessWarning, $"Sonarr/Radarr unmonitor failed: {ex.Message}");
                 }
 
                 if (routedDestPath is not null)
@@ -342,6 +344,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     catch (Exception ex)
                     {
                         _logger.Log($"  Companion file handling skipped: {ex.Message}", LogSeverity.Error);
+                        postProcessWarning = AppendWarning(postProcessWarning, $"Companion files not moved: {ex.Message}");
                     }
                 }
 
@@ -393,7 +396,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 DetailLogFile = detailLogFile,
                 StartTime = startTime,
                 EndTime = endTime,
-                ArrStatus = arrStatus
+                ArrStatus = arrStatus,
+                PostProcessWarning = postProcessWarning
             });
         }
 
@@ -426,4 +430,10 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             ex.Message.Contains("network location", StringComparison.OrdinalIgnoreCase) ||
             ex.Message.Contains("cannot find the path", StringComparison.OrdinalIgnoreCase) ||
             ex.Message.Contains("is not accessible", StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>Combines a new post-process warning onto any existing one for the same file -
+    /// the companion-file move and the arr-unmonitor call are independent steps that can both
+    /// fail for the same file, and neither should silently overwrite the other's message.</summary>
+    private static string AppendWarning(string? existing, string next) =>
+        existing is null ? next : $"{existing}; {next}";
 }

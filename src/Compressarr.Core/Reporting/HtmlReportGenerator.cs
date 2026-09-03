@@ -63,6 +63,8 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
   th, td {{ border: 1px solid #ddd; padding: 6px 10px; text-align: left; font-size: 0.9em; }}
   th {{ background: #2c3e50; color: #fff; }}
   tr.err {{ background: #fdeaea; }}
+  tr.warn {{ background: #fdf6e3; }}
+  .warn-text {{ color: #8a6414; }}
   .summary-grid {{ display: flex; gap: 2rem; flex-wrap: wrap; margin: 1rem 0; }}
   .stat {{ background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem 1.25rem; min-width: 140px; }}
   .stat .label {{ font-size: 0.8em; color: #666; }}
@@ -116,7 +118,8 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
 
         foreach (var r in lane.Results)
         {
-            var rowClass = r.Success ? "" : " class=\"err\"";
+            var hasWarning = r.Success && !string.IsNullOrEmpty(r.PostProcessWarning);
+            var rowClass = !r.Success ? " class=\"err\"" : hasWarning ? " class=\"warn\"" : "";
             var savings = Math.Round(r.BeginSizeGb - r.EndSizeGb, 3);
             var status = r.Success ? "OK" : (r.FailureReason ?? "ERROR");
             var statusHtml = WebUtility.HtmlEncode(status);
@@ -127,6 +130,14 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
                 // or viewed through the app's own /api/reports/ route.
                 var detailUri = new Uri(r.DetailLogFile).AbsoluteUri;
                 statusHtml += $"<br><a href=\"{detailUri}\" target=\"_blank\" rel=\"noopener\">Full Details</a>";
+            }
+            if (hasWarning)
+            {
+                // A secondary post-process step (companion files, Sonarr/Radarr unmonitor) had a
+                // problem even though the conversion itself succeeded - flagged distinctly from a
+                // real failure (no red row, doesn't count toward the error total) so it doesn't
+                // get missed, without overstating what actually went wrong.
+                statusHtml += $"<br><span class=\"warn-text\">&#9888; {WebUtility.HtmlEncode(r.PostProcessWarning)}</span>";
             }
             // Em dash, matching v1.1: blank whenever Sonarr/Radarr integration wasn't attempted
             // for this file - either the conversion failed, or neither service is enabled for
