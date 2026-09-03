@@ -533,6 +533,20 @@ button.danger { background: var(--err); border-color: var(--err); color: #fff; }
 button.success { background: var(--ok); border-color: var(--ok); color: #fff; }
 button:disabled { opacity: 0.5; cursor: default; }
 
+/* Toolbar/page-action buttons only - not every button on the page (Save Lane, Browse, Test
+   Connection, etc. stay text-only). */
+.page-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.page-actions button .btn-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
 a.primary {
   display: inline-block;
   background: var(--accent);

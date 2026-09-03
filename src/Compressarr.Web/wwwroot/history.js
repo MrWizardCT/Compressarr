@@ -1,5 +1,8 @@
 renderNav('history');
 
+const EYE_ICON = '<svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+const EYE_OFF_ICON = '<svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+
 // Two independent show/hide toggles - History (the Period rollup table) and Reports (the run
 // list) - each remembers its own state and only ever affects its own section.
 function setupToggle(storageKey, sectionId, btnId, label) {
@@ -9,7 +12,9 @@ function setupToggle(storageKey, sectionId, btnId, label) {
   function applyVisibility() {
     const hidden = localStorage.getItem(storageKey) === 'true';
     section.style.display = hidden ? 'none' : '';
-    btn.textContent = hidden ? `Show ${label}` : `Hide ${label}`;
+    // Hidden -> offer to show it again, so the icon shown is the "eye" (what clicking now does);
+    // visible -> offer to hide it, so the icon is "eye-off". Same logic the text label follows.
+    btn.innerHTML = (hidden ? EYE_ICON : EYE_OFF_ICON) + (hidden ? `Show ${label}` : `Hide ${label}`);
   }
 
   btn.addEventListener('click', () => {
