@@ -636,6 +636,9 @@ td { font-variant-numeric: tabular-nums; }
   flex: 0 0 auto;
   width: fit-content;
   white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .stat-file {
