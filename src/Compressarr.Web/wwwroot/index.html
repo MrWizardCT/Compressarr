@@ -122,7 +122,9 @@
     <div class="field-row">
       <label for="sonarrApiKey">API Key<span class="help-tag" tabindex="0" title="Found in Sonarr under Settings &gt; General &gt; Security.">?<span class="help-tip">Found in Sonarr under Settings &gt; General &gt; Security.</span></span></label>
       <input type="password" id="sonarrApiKey" />
+      <button id="sonarrTestBtn">Test Connection</button>
     </div>
+    <div class="preset-status" id="sonarrTestStatus"></div>
 
     <h2>Radarr</h2>
     <div class="field-row">
@@ -136,7 +138,21 @@
     <div class="field-row">
       <label for="radarrApiKey">API Key<span class="help-tag" tabindex="0" title="Found in Radarr under Settings &gt; General &gt; Security.">?<span class="help-tip">Found in Radarr under Settings &gt; General &gt; Security.</span></span></label>
       <input type="password" id="radarrApiKey" />
+      <button id="radarrTestBtn">Test Connection</button>
     </div>
+    <div class="preset-status" id="radarrTestStatus"></div>
+
+    <h2>Backup &amp; Restore</h2>
+    <div class="field-row">
+      <label>Export config<span class="help-tag" tabindex="0" title="Download your full configuration - lanes, presets path, HandBrake options, everything - as a JSON file.">?<span class="help-tip">Download your full configuration - lanes, presets path, HandBrake options, everything - as a JSON file.</span></span></label>
+      <button id="exportConfigBtn">Export</button>
+    </div>
+    <div class="field-row">
+      <label for="importConfigFile">Import config<span class="help-tag" tabindex="0" title="Replace your current configuration with one from a previously exported file. This overwrites all current settings and lanes.">?<span class="help-tip">Replace your current configuration with one from a previously exported file. This overwrites all current settings and lanes.</span></span></label>
+      <input type="file" id="importConfigFile" accept="application/json,.json" />
+      <button id="importConfigBtn">Import</button>
+    </div>
+    <div class="preset-status" id="backupStatus"></div>
 
     <h2>Web UI</h2>
     <div class="field-row">

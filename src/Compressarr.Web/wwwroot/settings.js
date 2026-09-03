@@ -180,4 +180,69 @@ document.getElementById('reloadPresetsBtn').addEventListener('click', async () =
   setPresetStatus(res.ok ? 'Presets reloaded.' : 'Failed to reload presets.', res.ok);
 });
 
+async function testArrConnection(service, statusElId) {
+  const statusEl = document.getElementById(statusElId);
+  statusEl.textContent = 'Testing...';
+  statusEl.classList.remove('success');
+
+  const res = await fetch('/api/arr/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      enabled: true,
+      url: document.getElementById(`${service}Url`).value,
+      apiKey: document.getElementById(`${service}ApiKey`).value
+    })
+  });
+  const body = await res.json();
+  statusEl.textContent = body.message;
+  statusEl.classList.toggle('success', !!body.success);
+}
+
+document.getElementById('sonarrTestBtn').addEventListener('click', () => testArrConnection('sonarr', 'sonarrTestStatus'));
+document.getElementById('radarrTestBtn').addEventListener('click', () => testArrConnection('radarr', 'radarrTestStatus'));
+
+document.getElementById('exportConfigBtn').addEventListener('click', () => {
+  // Content-Disposition: attachment (set by Results.File's fileDownloadName on the server) makes
+  // the browser download this instead of navigating to it, so a plain location change is enough
+  // - no anchor/blob juggling needed.
+  window.location.href = '/api/settings/export';
+});
+
+document.getElementById('importConfigBtn').addEventListener('click', () => {
+  const fileInput = document.getElementById('importConfigFile');
+  const file = fileInput.files[0];
+  const backupStatusEl = document.getElementById('backupStatus');
+  if (!file) {
+    backupStatusEl.textContent = 'Choose a file to import first.';
+    backupStatusEl.classList.remove('success');
+    return;
+  }
+
+  if (!confirm('Import this file? It will replace all current settings and lanes.')) return;
+
+  backupStatusEl.textContent = 'Importing...';
+  backupStatusEl.classList.remove('success');
+
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const res = await fetch('/api/settings/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: reader.result
+    });
+    if (res.ok) {
+      backupStatusEl.textContent = 'Config imported.';
+      backupStatusEl.classList.add('success');
+      fileInput.value = '';
+      loadSettings();
+    } else {
+      const body = await res.json().catch(() => ({}));
+      backupStatusEl.textContent = body.message || 'Failed to import config.';
+      backupStatusEl.classList.remove('success');
+    }
+  };
+  reader.readAsText(file);
+});
+
 loadSettings();
