@@ -227,6 +227,25 @@ body {
   flex-shrink: 0;
 }
 
+/* Hidden by default (see the "hidden" class on the element itself) - only shown once
+   checkForUpdate() in nav.js confirms a newer GitHub release exists. Its own divider sits on the
+   right, separating it from the status dot/monitoring text that follows, mirroring how
+   .toolbar-cpu dividers itself from what comes before it. */
+.toolbar-update {
+  display: flex;
+  align-items: center;
+  margin-right: 10px;
+  padding-right: 14px;
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+  /* --warn is a content-theme token (differs between light/dark) - the toolbar itself is a fixed
+     dark chrome regardless of content theme, so this needs the same fixed --badge-warning token
+     the toolbar/sidebar chrome already uses elsewhere, not one that'd flip with the theme toggle. */
+  color: var(--badge-warning);
+}
+
+.toolbar-update svg { width: 16px; height: 16px; flex-shrink: 0; }
+.toolbar-update:hover { color: #ffffff; }
+
 .status-dot {
   width: 7px;
   height: 7px;

@@ -34,6 +34,7 @@ function navIcon(name) {
 }
 
 const CPU_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1"></rect><line x1="6" y1="10" x2="3" y2="10"></line><line x1="6" y1="14" x2="3" y2="14"></line><line x1="18" y1="10" x2="21" y2="10"></line><line x1="18" y1="14" x2="21" y2="14"></line><line x1="10" y1="6" x2="10" y2="3"></line><line x1="14" y1="6" x2="14" y2="3"></line><line x1="10" y1="18" x2="10" y2="21"></line><line x1="14" y1="18" x2="14" y2="21"></line></svg>';
+const UPDATE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="16 12 12 8 8 12"></polyline><line x1="12" y1="16" x2="12" y2="8"></line></svg>';
 
 function renderNav(activePage) {
   const links = [
@@ -96,6 +97,7 @@ function renderNav(activePage) {
     <h1>${titleText}</h1>
     <span class="toolbar-spacer"></span>
     <div class="toolbar-global-status">
+      <a id="updateLink" class="toolbar-update hidden" target="_blank" rel="noopener" title="Update available">${UPDATE_ICON}</a>
       <span class="status-dot" id="statusDot"></span>
       <span id="monitoringState"></span>
       <span id="countdown" class="countdown"></span>
@@ -128,6 +130,53 @@ function renderNav(activePage) {
 
   renderHistoryBadges();
   startGlobalStatusPoll();
+  checkForUpdate();
+}
+
+// Update indicator in the toolbar - visible on every page, same reasoning as the monitoring
+// status cluster above. Checks GitHub at most once a day (cached in localStorage, keyed by when
+// it was last checked) rather than on every page load; once shown, it keeps showing on every
+// subsequent page load without waiting for the next check, and only goes away once a later daily
+// check finds the installed version has caught up - there's no separate "dismiss" for it.
+const UPDATE_CHECK_STORAGE_KEY = 'compressarr.updateCheck';
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+function renderUpdateIndicator(cached) {
+  const link = document.getElementById('updateLink');
+  if (!link) return; // toolbar not built yet, or this raced a navigation
+
+  if (cached && cached.hasUpdate && cached.releaseUrl) {
+    link.href = cached.releaseUrl;
+    link.classList.remove('hidden');
+  } else {
+    link.classList.add('hidden');
+  }
+}
+
+function checkForUpdate() {
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(UPDATE_CHECK_STORAGE_KEY) || 'null'); } catch { /* corrupt/old value - treat as absent */ }
+
+  // Render from cache immediately - don't make every page load wait on a network round-trip
+  // just to show an indicator that, most days, won't even need re-checking.
+  renderUpdateIndicator(cached);
+
+  const dueForRecheck = !cached || (Date.now() - cached.checkedAt) > UPDATE_CHECK_INTERVAL_MS;
+  if (!dueForRecheck) return;
+
+  fetch('/api/about/check-update')
+    .then(res => res.json())
+    .then(body => {
+      const fresh = {
+        checkedAt: Date.now(),
+        hasUpdate: !!body.hasUpdate,
+        releaseUrl: body.releaseUrl || '',
+        latestVersion: body.latestVersion || ''
+      };
+      localStorage.setItem(UPDATE_CHECK_STORAGE_KEY, JSON.stringify(fresh));
+      renderUpdateIndicator(fresh);
+    })
+    .catch(() => {}); // best-effort - GitHub unreachable today just means keep showing whatever was cached before
 }
 
 // Counts runs (within the History page's own retention window) that had at least one error or
