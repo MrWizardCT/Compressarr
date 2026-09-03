@@ -627,7 +627,7 @@ td { font-variant-numeric: tabular-nums; }
    column, and File takes all the room that leaves. */
 .status-row {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 12px;
   margin-bottom: 20px;
 }
