@@ -856,6 +856,11 @@ th, td {
 
 tr:last-child td { border-bottom: none; }
 
+/* Same red/yellow row language as the HTML report's own tr.err/tr.warn (HtmlReportGenerator),
+   using the app's theme-aware tokens instead of that report's hardcoded light-mode colors. */
+tr.err { background: var(--err-bg); }
+tr.warn { background: var(--warn-bg); }
+
 th {
   background: var(--bg);
   font-size: 11px;

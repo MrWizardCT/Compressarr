@@ -114,13 +114,17 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
         var end = Math.Round(lane.Results.Sum(r => r.EndSizeGb), 3);
 
         sb.Append($"<h3>{WebUtility.HtmlEncode(lane.LaneDisplayName)} <span class=\"muted\">({lane.Results.Count} file(s), {beg} GB &rarr; {end} GB)</span></h3>\n");
-        sb.Append("<div class=\"table-wrap\">\n<table>\n  <thead><tr><th>File</th><th>Type</th><th>Preset</th><th>Before</th><th>After</th><th>Savings</th><th>Status</th><th>Sonarr/Radarr</th></tr></thead>\n  <tbody>\n");
+        sb.Append("<div class=\"table-wrap\">\n<table>\n  <thead><tr><th>File</th><th>Type</th><th>Preset</th><th>Before</th><th>After</th><th>Savings</th><th>Duration</th><th>Status</th><th>Sonarr/Radarr</th></tr></thead>\n  <tbody>\n");
 
         foreach (var r in lane.Results)
         {
             var hasWarning = r.Success && !string.IsNullOrEmpty(r.PostProcessWarning);
             var rowClass = !r.Success ? " class=\"err\"" : hasWarning ? " class=\"warn\"" : "";
             var savings = Math.Round(r.BeginSizeGb - r.EndSizeGb, 3);
+            // EndTime can land a hair before StartTime on some systems (clock adjustment mid-encode) -
+            // same negate-if-negative clamp RunOrchestrator already uses for the run-level duration.
+            var duration = r.EndTime - r.StartTime;
+            if (duration < TimeSpan.Zero) duration = duration.Negate();
             var status = r.Success ? "OK" : (r.FailureReason ?? "ERROR");
             var statusHtml = WebUtility.HtmlEncode(status);
             if (!r.Success && !string.IsNullOrEmpty(r.DetailLogFile) && File.Exists(r.DetailLogFile))
@@ -151,6 +155,7 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
             sb.Append($"<td>{r.BeginSizeGb} GB</td>");
             sb.Append($"<td>{r.EndSizeGb} GB</td>");
             sb.Append($"<td>{savings} GB</td>");
+            sb.Append($"<td>{duration.Hours}h {duration.Minutes}m {duration.Seconds}s</td>");
             sb.Append($"<td>{statusHtml}</td>");
             sb.Append($"<td>{WebUtility.HtmlEncode(arrStatus)}</td>");
             sb.Append("</tr>\n");
@@ -161,13 +166,14 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
 
     private static void AppendHistorySection(StringBuilder sb, ReportModel model)
     {
-        sb.Append("<h2>History</h2>\n<div class=\"table-wrap\">\n<table>\n  <thead><tr><th>Period</th><th>Before</th><th>After</th><th>Savings</th><th>Files</th></tr></thead>\n  <tbody>\n");
+        sb.Append("<h2>History</h2>\n<div class=\"table-wrap\">\n<table>\n  <thead><tr><th>Period</th><th>Before</th><th>After</th><th>Savings</th><th>Files</th><th>Time</th></tr></thead>\n  <tbody>\n");
 
         void Row(string label, HistoryRollup? rollup)
         {
             if (rollup is null) return;
             var pct = rollup.BeforeGb > 0 ? Math.Round(100 - (rollup.AfterGb / rollup.BeforeGb) * 100, 2) : 0;
-            sb.Append($"    <tr><td>{WebUtility.HtmlEncode(label)}</td><td>{rollup.BeforeGb} GB</td><td>{rollup.AfterGb} GB</td><td>{pct}%</td><td>{rollup.FileCount}</td></tr>\n");
+            var time = TimeSpan.FromSeconds(rollup.TotalTimeSeconds);
+            sb.Append($"    <tr><td>{WebUtility.HtmlEncode(label)}</td><td>{rollup.BeforeGb} GB</td><td>{rollup.AfterGb} GB</td><td>{pct}%</td><td>{rollup.FileCount}</td><td>{(int)time.TotalHours}h {time.Minutes}m {time.Seconds}s</td></tr>\n");
         }
 
         Row("Today", model.Today);

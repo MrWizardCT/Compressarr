@@ -14,8 +14,8 @@ file sealed class FakeRunHistoryStore : IRunHistoryStore
 
 public class WebHistoryRollupCalculatorTests
 {
-    private static RunHistoryRecord RecordOn(DateTime date, int fileCount = 1, double beforeGb = 10, double afterGb = 4) =>
-        new(date.Year, date.Month, date.Day, beforeGb, afterGb, fileCount, 0, 0, 0);
+    private static RunHistoryRecord RecordOn(DateTime date, int fileCount = 1, double beforeGb = 10, double afterGb = 4, int processHours = 0, int processMinutes = 0, int processSeconds = 0) =>
+        new(date.Year, date.Month, date.Day, beforeGb, afterGb, fileCount, processHours, processMinutes, processSeconds);
 
     [Fact]
     public void Calculate_EmptyHistory_AllBucketsZero()
@@ -143,5 +143,25 @@ public class WebHistoryRollupCalculatorTests
         Assert.Equal(5, result.Last7Days.FileCount);
         Assert.Equal(30, result.Last7Days.BeforeGb);
         Assert.Equal(12, result.Last7Days.AfterGb);
+    }
+
+    [Fact]
+    public void Calculate_SumsProcessTime_AcrossMultipleRecordsInBucket()
+    {
+        var now = new DateTime(2026, 3, 15);
+        var store = new FakeRunHistoryStore
+        {
+            Records =
+            {
+                RecordOn(now, processHours: 1, processMinutes: 20, processSeconds: 30),
+                RecordOn(now.AddDays(-1), processHours: 0, processMinutes: 45, processSeconds: 50)
+            }
+        };
+        var calc = new WebHistoryRollupCalculator(store) { Now = now };
+
+        var result = calc.Calculate("any-path");
+
+        // 1h20m30s + 45m50s = 2h06m20s = 7580s
+        Assert.Equal(7580, result.Last7Days.TotalTimeSeconds);
     }
 }

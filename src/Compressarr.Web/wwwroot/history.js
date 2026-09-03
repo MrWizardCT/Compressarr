@@ -29,9 +29,19 @@ function setupToggle(storageKey, sectionId, btnId, label) {
 setupToggle('compressarr.historyHidden', 'historySection', 'toggleHistoryBtn', 'History');
 setupToggle('compressarr.reportsHidden', 'reportsSection', 'toggleReportsBtn', 'Reports');
 
+// Matches the "Xh Ym Zs" convention already used everywhere else (run-complete log lines, the
+// HTML report's own duration text) - always all three units, not just the ones that are nonzero.
+function formatDuration(totalSeconds) {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${h}h ${m}m ${sec}s`;
+}
+
 function row(label, bucket) {
   const saved = bucket.beforeGb > 0 ? Math.round((1 - bucket.afterGb / bucket.beforeGb) * 1000) / 10 : 0;
-  return `<tr><td>${label}</td><td>${bucket.fileCount}</td><td>${bucket.beforeGb.toFixed(2)} GB</td><td>${bucket.afterGb.toFixed(2)} GB</td><td>${saved}%</td></tr>`;
+  return `<tr><td>${label}</td><td>${bucket.fileCount}</td><td>${bucket.beforeGb.toFixed(2)} GB</td><td>${bucket.afterGb.toFixed(2)} GB</td><td>${saved}%</td><td>${formatDuration(bucket.totalTimeSeconds)}</td></tr>`;
 }
 
 async function loadHistory() {
@@ -52,7 +62,12 @@ function reportRow(entry) {
   const saved = entry.beforeGb > 0 ? Math.round((1 - entry.afterGb / entry.beforeGb) * 1000) / 10 : 0;
   const date = new Date(entry.date).toLocaleDateString();
   const url = `/api/reports/${encodeURIComponent(entry.reportFileName)}`;
-  return `<tr>
+  // Same red/yellow language as the HTML report's own per-file rows (tr.err/tr.warn) and the
+  // sidebar's error/warning count badges - a run with any failed file is an error row even if it
+  // also has warnings, matching how the sidebar badges count them as separate, non-overlapping
+  // buckets.
+  const rowClass = entry.errorCount > 0 ? ' class="err"' : entry.warningCount > 0 ? ' class="warn"' : '';
+  return `<tr${rowClass}>
     <td>${entry.runNumber}</td>
     <td><a href="${url}" target="_blank" rel="noopener">${date} report</a></td>
     <td>${entry.fileCount}</td>

@@ -8,7 +8,9 @@ public sealed class LaneReportSection
     public required IReadOnlyList<ConversionResult> Results { get; init; }
 }
 
-public sealed record HistoryRollup(int FileCount, double BeforeGb, double AfterGb);
+/// <summary>TotalTimeSeconds defaults to 0 (rather than being required) so existing call sites
+/// that only care about file counts/sizes don't all need updating.</summary>
+public sealed record HistoryRollup(int FileCount, double BeforeGb, double AfterGb, double TotalTimeSeconds = 0);
 
 public sealed class ReportModel
 {
