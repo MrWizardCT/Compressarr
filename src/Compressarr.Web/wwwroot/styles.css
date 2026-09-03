@@ -398,11 +398,12 @@ main {
   width: 100%;
 }
 
-/* Interior scroll containers (sidebar, main content, recent log, the file-browse modal) stay
-   scrollable but never show their own scrollbar - only the outer OS/browser chrome does. */
+/* Interior scroll containers (sidebar, main content, the file-browse modal) stay scrollable but
+   never show their own scrollbar - only the outer OS/browser chrome does. The recent-log panel
+   keeps its native scrollbar (see #log-panel below) since its own thumb is how you drag-scroll
+   it directly, not just via the mouse wheel. */
 .sidebar,
 main,
-#log-panel,
 .modal-list {
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* legacy Edge/IE */
@@ -410,7 +411,6 @@ main,
 
 .sidebar::-webkit-scrollbar,
 main::-webkit-scrollbar,
-#log-panel::-webkit-scrollbar,
 .modal-list::-webkit-scrollbar {
   display: none; /* Chromium/WebKit */
 }
