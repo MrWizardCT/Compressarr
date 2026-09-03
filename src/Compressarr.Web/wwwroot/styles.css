@@ -240,10 +240,17 @@ body {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-off) 25%, transparent);
 }
 
+/* Separated from the monitoring status/countdown by its own divider (distinct metric), but
+   pulled closer to the theme toggle than to that divider - see .theme-toggle's own reduced
+   margin/padding below. */
 .toolbar-cpu {
   display: flex;
   align-items: center;
   gap: 5px;
+  margin-left: 10px;
+  padding-left: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: default;
 }
 
 .toolbar-cpu svg { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.85; }
@@ -259,8 +266,12 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: 18px;
-  padding-left: 18px;
+  /* .toolbar-cpu and .theme-toggle sit in different flex containers with different base gaps
+     (8px inside .toolbar-global-status vs 10px on .toolbar itself) - margin-left needs to
+     account for that 2px difference too, not just mirror .toolbar-cpu's own value, or this ends
+     up further from CPU than intended instead of closer. */
+  margin-left: 2px;
+  padding-left: 10px;
   border-left: 1px solid rgba(255, 255, 255, 0.15);
   font-size: 12px;
   color: var(--toolbar-text);

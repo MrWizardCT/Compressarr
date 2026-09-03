@@ -83,7 +83,7 @@ function renderNav(activePage) {
       <span class="status-dot" id="statusDot"></span>
       <span id="monitoringState"></span>
       <span id="countdown" class="countdown"></span>
-      <span class="toolbar-cpu">${CPU_ICON}<span id="cpuValue">-</span></span>
+      <span class="toolbar-cpu" title="CPU Usage">${CPU_ICON}<span id="cpuValue">-</span></span>
     </div>
     <label class="theme-toggle">
       <span>&#9728;</span>
