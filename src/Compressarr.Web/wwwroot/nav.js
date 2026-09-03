@@ -29,6 +29,8 @@ function navIcon(name) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${NAV_ICONS[name]}</svg>`;
 }
 
+const CPU_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1"></rect><line x1="6" y1="10" x2="3" y2="10"></line><line x1="6" y1="14" x2="3" y2="14"></line><line x1="18" y1="10" x2="21" y2="10"></line><line x1="18" y1="14" x2="21" y2="14"></line><line x1="10" y1="6" x2="10" y2="3"></line><line x1="14" y1="6" x2="14" y2="3"></line><line x1="10" y1="18" x2="10" y2="21"></line><line x1="14" y1="18" x2="14" y2="21"></line></svg>';
+
 function renderNav(activePage) {
   const links = [
     { href: '/monitor.html', label: 'Monitor', page: 'monitor', icon: 'monitor' },
@@ -77,6 +79,12 @@ function renderNav(activePage) {
   toolbar.innerHTML = `
     <h1>${titleText}</h1>
     <span class="toolbar-spacer"></span>
+    <div class="toolbar-global-status">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="monitoringState"></span>
+      <span id="countdown" class="countdown"></span>
+      <span class="toolbar-cpu">${CPU_ICON}<span id="cpuValue">-</span></span>
+    </div>
     <label class="theme-toggle">
       <span>&#9728;</span>
       <span class="theme-switch">
@@ -86,11 +94,9 @@ function renderNav(activePage) {
       <span>&#127769;</span>
     </label>
   `;
-  // The spacer always exists and always takes the room between the title and the theme toggle -
-  // a page's action buttons/status (if any) fill it edge to edge, so status text's own
-  // right-justification lands at the toolbar's true right edge instead of just the end of the
-  // button row. Pages with no actions (About) just leave it empty, which still does its job of
-  // pushing the toggle to the far right on its own.
+  // The spacer takes the room between the title and the global status cluster - a page's own
+  // action buttons (if any) sit inside it, left-aligned, same as the title. Pages with no
+  // actions (About) just leave it empty.
   if (actionsEl) toolbar.querySelector('.toolbar-spacer').appendChild(actionsEl);
 
   mainCol.appendChild(toolbar);
@@ -105,6 +111,7 @@ function renderNav(activePage) {
   });
 
   renderHistoryBadges();
+  startGlobalStatusPoll();
 }
 
 // Counts runs (within the History page's own retention window) that had at least one error or
@@ -126,6 +133,60 @@ function renderHistoryBadges() {
       holder.innerHTML = parts.join('');
     })
     .catch(() => {});
+}
+
+// Monitoring status, countdown, and CPU are shown in the toolbar on every page (not just
+// Monitor), so this owns its own independent poll of /api/run/status rather than relying on
+// monitor.js, which only loads on monitor.html. On Monitor itself, monitor.js still owns the
+// queue/log/current-file detail and button enable/disable from its own poll of the same
+// endpoint - two lightweight polls of the same cheap endpoint, not worth sharing one across
+// scripts for.
+let globalNextRunAtMs = null;
+const GLOBAL_STOPPING_MESSAGE = 'Stopping monitor after current task completes';
+
+function renderGlobalCountdown() {
+  const el = document.getElementById('countdown');
+  if (!el) return;
+  if (globalNextRunAtMs === null) {
+    el.textContent = '';
+    return;
+  }
+  const secondsLeft = Math.max(0, Math.ceil((globalNextRunAtMs - Date.now()) / 1000));
+  el.textContent = `Next Run in: ${secondsLeft} Seconds`;
+}
+
+async function pollGlobalStatus() {
+  const dot = document.getElementById('statusDot');
+  const stateEl = document.getElementById('monitoringState');
+  const cpuEl = document.getElementById('cpuValue');
+  if (!dot || !stateEl || !cpuEl) return; // toolbar not built yet, or this tick raced a navigation
+
+  let s;
+  try {
+    const res = await fetch('/api/run/status');
+    s = await res.json();
+  } catch {
+    return; // best-effort - leave the last-known values showing rather than blank them out
+  }
+
+  const isActive = s.isMonitoring && !s.isStopping;
+  dot.classList.toggle('on', isActive);
+  dot.classList.toggle('off', !isActive);
+
+  stateEl.textContent = s.isStopping ? GLOBAL_STOPPING_MESSAGE : (s.isMonitoring ? 'Monitoring is ON' : 'Monitoring is OFF');
+
+  globalNextRunAtMs = (s.isMonitoring && s.secondsUntilNextRun !== null && s.secondsUntilNextRun !== undefined)
+    ? Date.now() + s.secondsUntilNextRun * 1000
+    : null;
+  renderGlobalCountdown();
+
+  cpuEl.textContent = (s.cpuUsagePercent === null || s.cpuUsagePercent === undefined) ? 'unavailable' : `${Math.round(s.cpuUsagePercent)}%`;
+}
+
+function startGlobalStatusPoll() {
+  pollGlobalStatus();
+  setInterval(pollGlobalStatus, 1500);
+  setInterval(renderGlobalCountdown, 1000);
 }
 
 // Applied immediately (before renderNav runs) so the page never flashes the wrong theme.

@@ -6,10 +6,13 @@
   --text: #2b2f3a;
   --text-dim: #6b7280;
   --accent: #2f6fed;
+  --accent-dim: #e8effd;
   --ok: #1f9c50;
   --ok-bg: #e7f7ed;
   --err: #d63c3c;
   --err-bg: #fdeaea;
+  --warn: #c97a12;
+  --warn-bg: #fdf1e0;
 }
 
 [data-theme="dark"] {
@@ -19,10 +22,13 @@
   --text: #e7e9f2;
   --text-dim: #a8adc2;
   --accent: #4a9eff;
+  --accent-dim: #253358;
   --ok: #4bcf85;
   --ok-bg: #163b28;
   --err: #ff8a8a;
   --err-bg: #45211f;
+  --warn: #f0aa4d;
+  --warn-bg: #46330f;
 }
 
 * { box-sizing: border-box; }
@@ -56,6 +62,8 @@ body {
   --toolbar-text: #c1c6da;
   --badge-danger: #d63c3c;
   --badge-warning: #c97a12;
+  --dot-on: #3ecf7e;
+  --dot-off: #d63c3c;
   --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
   /* The log panel stays a fixed dark terminal regardless of the content theme, same reasoning
      as the sidebar/toolbar chrome above. */
@@ -168,9 +176,10 @@ body {
   white-space: nowrap;
 }
 
-/* Always present between the title and the theme toggle, whether or not this page has action
-   buttons to show - see nav.js. Fills the true remaining toolbar width, so a page-actions
-   group's own right-justified status text (below) lands at the toolbar's real right edge. */
+/* Sits between the title and the global status cluster - a page's own action buttons (if any)
+   go here, left-aligned right after the title. Flex:1 so it (and the empty space after a short
+   button row) is what actually separates the title from the status cluster/theme toggle, rather
+   than those two drifting depending on how wide this page's own title happens to be. */
 .toolbar-spacer {
   flex: 1;
   min-width: 0;
@@ -178,14 +187,13 @@ body {
   align-items: center;
 }
 
-/* A page's own action-button row/status text, relocated here from the content area - stripped
-   of the vertical spacing meant for sitting inside a form, and given a chrome that reads
-   correctly against the toolbar's fixed dark background regardless of the content theme toggle
-   (a plain button's usual colors are theme-dependent and were never designed for this context). */
+/* A page's own action-button row, relocated here from the content area - stripped of the
+   vertical spacing meant for sitting inside a form, and given a chrome that reads correctly
+   against the toolbar's fixed dark background regardless of the content theme toggle (a plain
+   button's usual colors are theme-dependent and were never designed for this context). */
 .toolbar .field-row,
 .toolbar .page-actions {
   margin: 0;
-  width: 100%;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -201,18 +209,51 @@ body {
 
 .toolbar button:hover { border-color: #ffffff; color: #ffffff; }
 
-/* Status text/countdown (e.g. "Monitoring is ON  Next Run in: 45 Seconds") is the one piece of
-   a relocated page-actions group that isn't a button - pushed to the far right of the toolbar,
-   same as the mockup's .toolbar-status, rather than sitting immediately after the buttons. */
-.toolbar .status,
-.toolbar .countdown {
-  color: var(--toolbar-text);
+/* Monitoring status (with a live/idle dot), the countdown, and CPU - visible in the toolbar on
+   every page, not just Monitor (see nav.js's own poll of /api/run/status). Sits between the
+   page-actions spacer and the theme toggle, same relative position as the mockup's
+   .toolbar-status. */
+.toolbar-global-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12.5px;
-  margin-left: auto;
+  color: var(--toolbar-text);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.toolbar .countdown { margin-left: 0; }
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.on {
+  background: var(--dot-on);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-on) 25%, transparent);
+}
+
+.status-dot.off {
+  background: var(--dot-off);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-off) 25%, transparent);
+}
+
+.toolbar-cpu {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.toolbar-cpu svg { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.85; }
+
+/* Widest realistic value is "100%" (CPU is rounded to a whole number) - a fixed min-width keeps
+   the toolbar from twitching sideways as the digit count changes between polls. */
+.toolbar-cpu #cpuValue {
+  font-family: var(--font-mono);
+  min-width: 34px;
+}
 
 .theme-toggle {
   display: flex;
@@ -565,10 +606,6 @@ td { font-variant-numeric: tabular-nums; }
 .stat .label { font-size: 11.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; }
 .stat .value { font-size: 19px; font-weight: 700; font-family: var(--font-mono); }
 
-/* CPU is a percentage that can hit 3 digits (100%) - a plain auto-fit grid cell would otherwise
-   be sized off whatever State/Lane happen to need, which is usually narrower. */
-.stat-cpu { min-width: 90px; }
-
 .stat.wide { grid-column: span 2; }
 
 .progress-track {
@@ -611,6 +648,19 @@ td { font-variant-numeric: tabular-nums; }
   gap: 16px;
   flex-wrap: wrap;
 }
+
+.queue-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 20px;
+  flex-shrink: 0;
+}
+
+.queue-badge.new { background: var(--accent-dim); color: var(--accent); }
+.queue-badge.resumed { background: var(--warn-bg); color: var(--warn); }
 
 .queue-item .queue-lane { font-size: 11.5px; color: var(--text-dim); min-width: 90px; }
 .queue-item .queue-file { font-weight: 600; font-size: 13.5px; flex: 1; min-width: 160px; }

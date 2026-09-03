@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Compressarr.Web.Endpoints;
 
-public sealed record UpNextItem(string LaneDisplayName, string FileName, double SizeGb, string? Preset);
+public sealed record UpNextItem(string LaneDisplayName, string FileName, double SizeGb, string? Preset, bool IsResumed);
 
 public static class RunEndpoints
 {
@@ -38,7 +38,11 @@ public static class RunEndpoints
             if (string.IsNullOrWhiteSpace(inputPath) || !Directory.Exists(inputPath)) continue;
 
             var pending = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending).ToList();
-            var files = pending.Count > 0
+            // Whichever branch ProcessLaneAsync would actually take for this lane right now - every
+            // file in it shares the same "new vs. resumed" origin, since that decision is made once
+            // per lane, not per file (see ConversionOrchestrator.ProcessLaneAsync).
+            var isResumed = pending.Count > 0;
+            var files = isResumed
                 ? pending.Select(p => new FileInfo(p.FullName)).Where(f => f.Exists).ToList()
                 : scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit).ToList();
 
@@ -52,7 +56,7 @@ public static class RunEndpoints
 
                 var preset = ContentClassifier.IsTvFile(file.Name) ? lane.TvPreset : lane.MoviePreset;
                 var sizeGb = Math.Round(file.Length / (double)BytesPerGb, 3);
-                items.Add(new UpNextItem(lane.DisplayName, file.Name, sizeGb, preset));
+                items.Add(new UpNextItem(lane.DisplayName, file.Name, sizeGb, preset, isResumed));
             }
         }
 
