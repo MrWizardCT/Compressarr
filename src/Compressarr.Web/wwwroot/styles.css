@@ -131,6 +131,10 @@ body {
 
 .sidebar-nav a.active svg { opacity: 1; }
 
+/* Pushes this second <nav> down to consume the sidebar's remaining flex space, so it always
+   sits at the very bottom regardless of how many links are in the main list above it. */
+.sidebar-nav-bottom { margin-top: auto; }
+
 .sidebar-badges { margin-left: auto; display: flex; gap: 4px; }
 
 .sidebar-badge {

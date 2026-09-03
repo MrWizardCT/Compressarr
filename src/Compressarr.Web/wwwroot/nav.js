@@ -22,7 +22,10 @@ const NAV_ICONS = {
   lanes: '<rect x="3" y="4" width="7" height="16" rx="1"></rect><rect x="14" y="4" width="7" height="10" rx="1"></rect>',
   settings: '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>',
   history: '<circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline>',
-  about: '<circle cx="12" cy="12" r="9"></circle><line x1="12" y1="16" x2="12" y2="11.5"></line><circle cx="12" cy="8" r="0.6" fill="currentColor" stroke="none"></circle>'
+  about: '<circle cx="12" cy="12" r="9"></circle><line x1="12" y1="16" x2="12" y2="11.5"></line><circle cx="12" cy="8" r="0.6" fill="currentColor" stroke="none"></circle>',
+  // Solid and always red (not currentColor) - unlike every other nav icon, this one shouldn't
+  // fade/recolor with hover or active state, the same way a "Sponsor"/donate heart never does.
+  donate: '<path d="M12 21s-6.72-4.35-9.34-8.02C.9 10.49 1.02 7.49 3.42 5.6c1.88-1.5 4.46-1.2 6 .5L12 9l2.58-2.9c1.54-1.7 4.12-2 6-.5 2.4 1.89 2.52 4.89.72 7.38C18.72 16.65 12 21 12 21z" fill="#ef4444" stroke="none"></path>'
 };
 
 function navIcon(name) {
@@ -38,6 +41,14 @@ function renderNav(activePage) {
     { href: '/index.html', label: 'Settings', page: 'settings', icon: 'settings' },
     { href: '/history.html', label: 'History', page: 'history', icon: 'history' },
     { href: '/about.html', label: 'About', page: 'about', icon: 'about' }
+  ];
+
+  // Rendered as a second, separate <nav> pinned to the bottom of the sidebar (see
+  // .sidebar-nav-bottom's margin-top: auto) rather than appended to the main list above - a
+  // Donate link belongs visually apart from the app's actual pages, not mixed into a growing list
+  // of them.
+  const bottomLinks = [
+    { href: '/donate.html', label: 'Donate', page: 'donate', icon: 'donate' }
   ];
 
   // The page's real content is already sitting in <main> - moved into the new layout below
@@ -56,6 +67,9 @@ function renderNav(activePage) {
     </div>
     <nav class="sidebar-nav">
       ${links.map(l => `<a href="${l.href}"${l.page === activePage ? ' class="active"' : ''}>${navIcon(l.icon)}<span>${l.label}</span>${l.page === 'history' ? '<span class="sidebar-badges" id="historyBadges"></span>' : ''}</a>`).join('')}
+    </nav>
+    <nav class="sidebar-nav sidebar-nav-bottom">
+      ${bottomLinks.map(l => `<a href="${l.href}"${l.page === activePage ? ' class="active"' : ''}>${navIcon(l.icon)}<span>${l.label}</span></a>`).join('')}
     </nav>
   `;
 
