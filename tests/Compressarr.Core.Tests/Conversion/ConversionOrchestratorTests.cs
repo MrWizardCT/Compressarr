@@ -122,7 +122,7 @@ file sealed class NoOpRunLogger : IRunLogger
 file sealed class NoOpProgressReporter : IRunProgressReporter
 {
     public void RunStarted(string timestamp) { }
-    public void LaneStarted(string laneId, string laneDisplayName) { }
+    public void LaneStarted(string laneId, string laneDisplayName, bool isResumed) { }
     public void FileStarted(string laneId, int index, int total, string fileName) { }
     public void FileProgress(string laneId, double percent, double? fps, string? eta) { }
     public void FileCompleted(string laneId, string fileName, bool success) { }

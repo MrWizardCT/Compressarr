@@ -8,6 +8,7 @@ public sealed record LogLineEntry(string Text, string Severity);
 public sealed record RunStateSnapshot(
     bool IsRunning,
     string? LaneDisplayName,
+    bool CurrentLaneIsResumed,
     string? FileName,
     int FileIndex,
     int FileTotal,
@@ -33,6 +34,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
     private bool _isRunning;
     private string? _laneId;
     private string? _laneDisplayName;
+    private bool _currentLaneIsResumed;
     private string? _fileName;
     private int _fileIndex;
     private int _fileTotal;
@@ -41,6 +43,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
     private string? _progressEta;
 
     private readonly Dictionary<string, string> _laneDisplayNamesById = new();
+    private readonly Dictionary<string, bool> _laneIsResumedById = new();
 
     public CurrentRunStateService(IRunLogger logger)
     {
@@ -63,6 +66,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
             _isRunning = true;
             _laneId = null;
             _laneDisplayName = null;
+            _currentLaneIsResumed = false;
             _fileName = null;
             _fileIndex = 0;
             _fileTotal = 0;
@@ -72,13 +76,15 @@ public sealed class CurrentRunStateService : IRunProgressReporter
         }
     }
 
-    public void LaneStarted(string laneId, string laneDisplayName)
+    public void LaneStarted(string laneId, string laneDisplayName, bool isResumed)
     {
         lock (_lock)
         {
             _laneId = laneId;
             _laneDisplayName = laneDisplayName;
+            _currentLaneIsResumed = isResumed;
             _laneDisplayNamesById[laneId] = laneDisplayName;
+            _laneIsResumedById[laneId] = isResumed;
         }
     }
 
@@ -88,6 +94,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
         {
             _laneId = laneId;
             _laneDisplayNamesById.TryGetValue(laneId, out _laneDisplayName);
+            _laneIsResumedById.TryGetValue(laneId, out _currentLaneIsResumed);
             _fileName = fileName;
             _fileIndex = index;
             _fileTotal = total;
@@ -131,7 +138,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
     {
         lock (_lock)
         {
-            return new RunStateSnapshot(_isRunning, _laneDisplayName, _fileName, _fileIndex, _fileTotal, _progressPercent, _progressFps, _progressEta, _recentLines.ToList());
+            return new RunStateSnapshot(_isRunning, _laneDisplayName, _currentLaneIsResumed, _fileName, _fileIndex, _fileTotal, _progressPercent, _progressFps, _progressEta, _recentLines.ToList());
         }
     }
 }

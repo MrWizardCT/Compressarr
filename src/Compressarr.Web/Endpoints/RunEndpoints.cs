@@ -38,13 +38,18 @@ public static class RunEndpoints
             if (string.IsNullOrWhiteSpace(inputPath) || !Directory.Exists(inputPath)) continue;
 
             var pending = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending).ToList();
-            // Whichever branch ProcessLaneAsync would actually take for this lane right now - every
-            // file in it shares the same "new vs. resumed" origin, since that decision is made once
-            // per lane, not per file (see ConversionOrchestrator.ProcessLaneAsync).
-            var isResumed = pending.Count > 0;
-            var files = isResumed
+            var files = pending.Count > 0
                 ? pending.Select(p => new FileInfo(p.FullName)).Where(f => f.Exists).ToList()
                 : scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit).ToList();
+
+            // pending.Count > 0 is the right "new vs. resumed" signal for a lane this pass hasn't
+            // reached yet - but once a lane actually starts, a clean start writes its own fresh
+            // Pending entries as bookkeeping before converting anything, which would otherwise
+            // make every file in it look "resumed" a moment later even though nothing was ever
+            // interrupted. For whichever lane is currently running, trust the flag captured before
+            // that mutation happened (RunOrchestrator, via CurrentRunStateService) instead.
+            var isCurrentLane = currentRun.IsRunning && string.Equals(lane.DisplayName, currentRun.LaneDisplayName, StringComparison.Ordinal);
+            var isResumed = isCurrentLane ? currentRun.CurrentLaneIsResumed : pending.Count > 0;
 
             foreach (var file in files)
             {

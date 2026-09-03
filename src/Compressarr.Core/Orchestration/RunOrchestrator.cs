@@ -160,7 +160,12 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 }
 
                 _logger.Log($"\nScanning lane [{lane.DisplayName}] - {_pathExpander.Expand(lane.Input)}");
-                _progress.LaneStarted(lane.Id, lane.DisplayName);
+                // Captured from resumeState before ProcessLaneAsync touches it - a lane starting
+                // clean writes its own fresh Pending entries for bookkeeping before converting
+                // anything, which would otherwise make it look "resumed" a moment later even
+                // though nothing was ever interrupted.
+                var laneIsResumed = resumeState.Any(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending);
+                _progress.LaneStarted(lane.Id, lane.DisplayName, laneIsResumed);
                 var results = await _conversionOrchestrator.ProcessLaneAsync(lane, config, logFilePath, timestamp, resumeState, resumeFilePath, token);
                 laneResults[lane.Id] = results;
             }
