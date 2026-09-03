@@ -621,9 +621,10 @@ td { font-variant-numeric: tabular-nums; }
 
 .stat .label { font-size: 11.5px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; }
 .stat .value { font-size: 19px; font-weight: 700; font-family: var(--font-mono); }
+.stat .value.running { color: var(--ok); }
 
 /* State sits beside File, not above it - State shrinks to fit whatever word it's currently
-   showing (Idle/Watching/Converting) instead of sharing the .stat-grid's fixed 150-220px
+   showing (Idle/Watching/Running) instead of sharing the .stat-grid's fixed 150-220px
    column, and File takes all the room that leaves. */
 .status-row {
   display: flex;

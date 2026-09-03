@@ -173,7 +173,9 @@ async function pollGlobalStatus() {
   dot.classList.toggle('on', isActive);
   dot.classList.toggle('off', !isActive);
 
-  stateEl.textContent = s.isStopping ? GLOBAL_STOPPING_MESSAGE : (s.isMonitoring ? 'Monitoring is ON' : 'Monitoring is OFF');
+  stateEl.textContent = s.isStopping
+    ? GLOBAL_STOPPING_MESSAGE
+    : (s.isMonitoring ? `Monitoring is ON${s.isRunning ? ': Running' : ''}` : 'Monitoring is OFF');
 
   globalNextRunAtMs = (s.isMonitoring && s.secondsUntilNextRun !== null && s.secondsUntilNextRun !== undefined)
     ? Date.now() + s.secondsUntilNextRun * 1000

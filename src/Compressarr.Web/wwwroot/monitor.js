@@ -105,7 +105,9 @@ async function poll() {
   // if a pass is already running right now.
   runNowBtn.disabled = !s.isMonitoring || s.isRunning;
 
-  document.getElementById('stateValue').textContent = s.isRunning ? 'Converting' : (s.isMonitoring ? 'Watching' : 'Idle');
+  const stateValueEl = document.getElementById('stateValue');
+  stateValueEl.textContent = s.isRunning ? 'Running' : (s.isMonitoring ? 'Watching' : 'Idle');
+  stateValueEl.classList.toggle('running', s.isRunning);
   document.getElementById('fileLabel').textContent = (s.isRunning && s.laneDisplayName) ? `Compressing File in Lane ${s.laneDisplayName}` : 'Waiting for files';
   document.getElementById('fileValue').textContent = s.isRunning ? (s.fileName || '-') : '-';
 
