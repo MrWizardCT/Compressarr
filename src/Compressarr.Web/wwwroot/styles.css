@@ -398,6 +398,23 @@ main {
   width: 100%;
 }
 
+/* Interior scroll containers (sidebar, main content, recent log, the file-browse modal) stay
+   scrollable but never show their own scrollbar - only the outer OS/browser chrome does. */
+.sidebar,
+main,
+#log-panel,
+.modal-list {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge/IE */
+}
+
+.sidebar::-webkit-scrollbar,
+main::-webkit-scrollbar,
+#log-panel::-webkit-scrollbar,
+.modal-list::-webkit-scrollbar {
+  display: none; /* Chromium/WebKit */
+}
+
 h2 {
   font-size: 11px;
   font-weight: 700;
