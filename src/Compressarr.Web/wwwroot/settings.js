@@ -301,6 +301,12 @@ document.getElementById('cleanupNowBtn').addEventListener('click', () => runMain
   'Old logs and reports cleaned up.'
 ));
 
+document.getElementById('resetLanesBtn').addEventListener('click', () => runMaintenanceAction(
+  '/api/maintenance/reset-lanes',
+  'Delete ALL configured lanes and replace them with a single new, blank lane?\n\nThis cannot be undone unless you\'ve exported a backup first.',
+  'Lanes reset to a single new lane.'
+));
+
 document.getElementById('clearConfigBtn').addEventListener('click', () => runMaintenanceAction(
   '/api/maintenance/clear-config',
   'Reset ALL settings and lanes back to defaults?\n\nThis cannot be undone unless you\'ve exported a backup first.',

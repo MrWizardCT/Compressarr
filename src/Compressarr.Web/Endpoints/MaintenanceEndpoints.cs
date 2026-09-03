@@ -31,6 +31,20 @@ public static class MaintenanceEndpoints
             return Results.Ok();
         });
 
+        // Narrower than Clear Configuration below - wipes only the lane list, leaving every other
+        // setting (HandBrake path, Sonarr/Radarr, processing options, etc.) untouched. Same
+        // DisplayName convention POST /api/lanes already uses for a brand-new lane.
+        app.MapPost("/api/maintenance/reset-lanes", (IConfigStore configStore) =>
+        {
+            configStore.Update(AppPaths.GetConfigFilePath(), config =>
+            {
+                config.Lanes.Clear();
+                config.Lanes.Add(new LaneConfig { DisplayName = "New Lane 1", Enabled = true });
+                return true;
+            });
+            return Results.Ok();
+        });
+
         // Forces the same retention cleanup RunOrchestrator already does at the end of every real
         // pass (RetentionCleaner.CleanUp against Logging.RetentionDays) right now, instead of
         // waiting for the next one - files go to the Recycle Bin (DeleteAfterConvertMode.Recycle),

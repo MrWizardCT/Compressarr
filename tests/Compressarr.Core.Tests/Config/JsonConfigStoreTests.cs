@@ -139,6 +139,35 @@ public class JsonConfigStoreTests : IDisposable
     }
 
     [Fact]
+    public void ResetLanes_ClearingAndAddingOne_LeavesOtherSettingsUntouched()
+    {
+        // Exercises the exact composition Settings' "Reset Lanes" maintenance button uses
+        // (Lanes.Clear() + Add one fresh lane, via Update) - narrower than Clear Configuration:
+        // every lane is gone and replaced with exactly one new blank one, but a customized
+        // non-lane setting must survive untouched.
+        var store = new JsonConfigStore();
+        var customized = DefaultConfigFactory.Create();
+        customized.Lanes.Add(new LaneConfig { Id = "extra", DisplayName = "Extra Lane" });
+        customized.Logging.RetentionDays = 999;
+        customized.Arrs.Sonarr.Enabled = true;
+        store.Save(customized, ConfigPath);
+
+        store.Update(ConfigPath, config =>
+        {
+            config.Lanes.Clear();
+            config.Lanes.Add(new LaneConfig { DisplayName = "New Lane 1", Enabled = true });
+            return true;
+        });
+
+        var reset = store.Load(ConfigPath);
+        var lane = Assert.Single(reset.Lanes);
+        Assert.Equal("New Lane 1", lane.DisplayName);
+        Assert.True(lane.Enabled);
+        Assert.Equal(999, reset.Logging.RetentionDays);
+        Assert.True(reset.Arrs.Sonarr.Enabled);
+    }
+
+    [Fact]
     public void Load_PartialOverrideFile_FillsRemainingFieldsFromDefaults()
     {
         File.WriteAllText(ConfigPath, """{"processing":{"retentionDays":99}}""");
