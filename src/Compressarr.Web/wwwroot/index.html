@@ -12,172 +12,234 @@
 </head>
 <body>
   <main>
-    <h2>HandBrake</h2>
-    <div class="field-row">
-      <label for="hbCliPath">HandBrakeCLI path<span class="help-tag" tabindex="0" title="Full path to HandBrakeCLI.exe. Use Check/Install to find or download it automatically.">?<span class="help-tip">Full path to HandBrakeCLI.exe. Use Check/Install to find or download it automatically.</span></span></label>
-      <input type="text" id="hbCliPath" />
-      <button id="checkHandBrakeBtn">Check/Install</button>
-    </div>
-    <div class="field-row">
-      <label for="presetsPath">presets.json path<span class="help-tag" tabindex="0" title="Path to HandBrake's presets.json. Use Install/Merge Presets to add Compressarr's own presets to it.">?<span class="help-tip">Path to HandBrake's presets.json. Use Install/Merge Presets to add Compressarr's own presets to it.</span></span></label>
-      <input type="text" id="presetsPath" />
-      <button id="installPresetsBtn">Install/Merge Presets</button>
-      <button id="reloadPresetsBtn">Reload</button>
-    </div>
-    <div class="preset-status" id="presetStatus"></div>
-    <div class="field-row">
-      <label for="hbOptions">Extra CLI options<span class="help-tag" tabindex="0" title="Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.">?<span class="help-tip">Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.</span></span></label>
-      <input type="text" id="hbOptions" />
+    <h2 class="page-title">Settings</h2>
+
+    <div class="card">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+        <h2>HandBrake</h2>
+      </div>
+      <div class="card-body">
+        <div class="field-block">
+          <label for="hbCliPath">HandBrakeCLI path<span class="help-tag" tabindex="0" title="Full path to HandBrakeCLI.exe. Use Check/Install to find or download it automatically.">?<span class="help-tip">Full path to HandBrakeCLI.exe. Use Check/Install to find or download it automatically.</span></span></label>
+          <div class="field-with-btn"><input type="text" id="hbCliPath" /><button id="checkHandBrakeBtn">Check/Install</button></div>
+        </div>
+        <div class="field-block">
+          <label for="presetsPath">presets.json path<span class="help-tag" tabindex="0" title="Path to HandBrake's presets.json. Use Install/Merge Presets to add Compressarr's own presets to it.">?<span class="help-tip">Path to HandBrake's presets.json. Use Install/Merge Presets to add Compressarr's own presets to it.</span></span></label>
+          <div class="field-with-btn"><input type="text" id="presetsPath" /><button id="installPresetsBtn">Install/Merge Presets</button><button id="reloadPresetsBtn">Reload</button></div>
+          <div class="preset-status" id="presetStatus"></div>
+        </div>
+        <div class="field-block">
+          <label for="hbOptions">Extra CLI options<span class="help-tag" tabindex="0" title="Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.">?<span class="help-tip">Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.</span></span></label>
+          <input type="text" id="hbOptions" />
+        </div>
+      </div>
     </div>
 
-    <h2>Processing</h2>
-    <div class="field-row">
-      <label for="vidTypes">Video extensions (comma-separated)<span class="help-tag" tabindex="0" title="File extensions Compressarr scans for, without dots, comma-separated (e.g. mkv, avi, mp4).">?<span class="help-tip">File extensions Compressarr scans for, without dots, comma-separated (e.g. mkv, avi, mp4).</span></span></label>
-      <input type="text" id="vidTypes" />
-    </div>
-    <div class="field-row">
-      <label for="minSizeBytes">Minimum size (bytes)<span class="help-tag" tabindex="0" title="Skip files smaller than this size. 0 means no minimum.">?<span class="help-tip">Skip files smaller than this size. 0 means no minimum.</span></span></label>
-      <input type="number" id="minSizeBytes" min="0" />
-    </div>
-    <div class="field-row">
-      <label for="limit">Max files per run (0 = no limit)<span class="help-tag" tabindex="0" title="Stop after converting this many files in a single pass. 0 means no limit.">?<span class="help-tip">Stop after converting this many files in a single pass. 0 means no limit.</span></span></label>
-      <input type="number" id="limit" min="0" />
-    </div>
-    <div class="field-row">
-      <label>Write output to same folder as input<span class="help-tag" tabindex="0" title="Convert files in place instead of writing to each lane's Output folder.">?<span class="help-tip">Convert files in place instead of writing to each lane's Output folder.</span></span></label>
-      <input type="checkbox" id="outSameAsIn" />
-    </div>
-    <div class="field-row">
-      <label>Move converted files into show/movie folders<span class="help-tag" tabindex="0" title="After conversion, move files into the TV/Movie base path folders configured on each lane.">?<span class="help-tip">After conversion, move files into the TV/Movie base path folders configured on each lane.</span></span></label>
-      <input type="checkbox" id="moveFiles" />
-    </div>
-    <div class="field-row">
-      <label>Clear title metadata<span class="help-tag" tabindex="0" title="Strips the embedded title tag from converted files (via TagLib-Sharp) so a media server reads the filename instead of stale or incorrect metadata.">?<span class="help-tip">Strips the embedded title tag from converted files (via TagLib-Sharp) so a media server reads the filename instead of stale or incorrect metadata.</span></span></label>
-      <input type="checkbox" id="clearTitleMetadata" />
-    </div>
-    <div class="field-row">
-      <label for="deleteAfterConvert">Original file after convert<span class="help-tag" tabindex="0" title="What happens to the source file once conversion succeeds: keep it, delete it, or send it to the Recycle Bin.">?<span class="help-tip">What happens to the source file once conversion succeeds: keep it, delete it, or send it to the Recycle Bin.</span></span></label>
-      <select id="deleteAfterConvert">
-        <option value="Maintain">Maintain</option>
-        <option value="Delete">Delete</option>
-        <option value="Recycle">Recycle</option>
-      </select>
-    </div>
-
-    <h2>Logging &amp; Reports</h2>
-    <div class="field-row">
-      <label for="logFilePath">Log folder<span class="help-tag" tabindex="0" title="Where run logs and the history CSV are written.">?<span class="help-tip">Where run logs and the history CSV are written.</span></span></label>
-      <input type="text" id="logFilePath" />
-    </div>
-    <div class="field-row">
-      <label for="reportPath">Report folder<span class="help-tag" tabindex="0" title="Where HTML run reports are written.">?<span class="help-tip">Where HTML run reports are written.</span></span></label>
-      <input type="text" id="reportPath" />
-    </div>
-    <div class="field-row">
-      <label for="retentionDays">Log/report retention (days)<span class="help-tag" tabindex="0" title="Logs and reports older than this many days are automatically deleted.">?<span class="help-tip">Logs and reports older than this many days are automatically deleted.</span></span></label>
-      <input type="number" id="retentionDays" min="0" />
-    </div>
-    <div class="field-row">
-      <label for="openAfterRun">Open report after run<span class="help-tag" tabindex="0" title="Whether the HTML report opens automatically after a run: always, only when there were errors, or never.">?<span class="help-tip">Whether the HTML report opens automatically after a run: always, only when there were errors, or never.</span></span></label>
-      <select id="openAfterRun">
-        <option value="Always">Always</option>
-        <option value="OnError">On Error</option>
-        <option value="Never">Never</option>
-      </select>
+    <div class="card">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+        <h2>Processing</h2>
+      </div>
+      <div class="card-body">
+        <div class="two-col">
+          <div class="field-block">
+            <label for="vidTypes">Video extensions (comma-separated)<span class="help-tag" tabindex="0" title="File extensions Compressarr scans for, without dots, comma-separated (e.g. mkv, avi, mp4).">?<span class="help-tip">File extensions Compressarr scans for, without dots, comma-separated (e.g. mkv, avi, mp4).</span></span></label>
+            <input type="text" id="vidTypes" />
+          </div>
+          <div class="field-block">
+            <label for="deleteAfterConvert">Original file after convert<span class="help-tag" tabindex="0" title="What happens to the source file once conversion succeeds: keep it, delete it, or send it to the Recycle Bin.">?<span class="help-tip">What happens to the source file once conversion succeeds: keep it, delete it, or send it to the Recycle Bin.</span></span></label>
+            <select id="deleteAfterConvert">
+              <option value="Maintain">Maintain</option>
+              <option value="Delete">Delete</option>
+              <option value="Recycle">Recycle</option>
+            </select>
+          </div>
+          <div class="field-block">
+            <label for="minSizeBytes">Minimum size (bytes)<span class="help-tag" tabindex="0" title="Skip files smaller than this size. 0 means no minimum.">?<span class="help-tip">Skip files smaller than this size. 0 means no minimum.</span></span></label>
+            <input type="number" id="minSizeBytes" min="0" />
+          </div>
+          <div class="field-block">
+            <label for="limit">Max files per run (0 = no limit)<span class="help-tag" tabindex="0" title="Stop after converting this many files in a single pass. 0 means no limit.">?<span class="help-tip">Stop after converting this many files in a single pass. 0 means no limit.</span></span></label>
+            <input type="number" id="limit" min="0" />
+          </div>
+        </div>
+        <div class="field-block" style="margin-top: 2px">
+          <div class="check-row"><input type="checkbox" id="outSameAsIn" /><label for="outSameAsIn">Write output to same folder as input<span class="help-tag" tabindex="0" title="Convert files in place instead of writing to each lane's Output folder.">?<span class="help-tip">Convert files in place instead of writing to each lane's Output folder.</span></span></label></div>
+          <div class="check-row"><input type="checkbox" id="moveFiles" /><label for="moveFiles">Move converted files into show/movie folders<span class="help-tag" tabindex="0" title="After conversion, move files into the TV/Movie base path folders configured on each lane.">?<span class="help-tip">After conversion, move files into the TV/Movie base path folders configured on each lane.</span></span></label></div>
+          <div class="check-row"><input type="checkbox" id="clearTitleMetadata" /><label for="clearTitleMetadata">Clear title metadata<span class="help-tag" tabindex="0" title="Strips the embedded title tag from converted files (via TagLib-Sharp) so a media server reads the filename instead of stale or incorrect metadata.">?<span class="help-tip">Strips the embedded title tag from converted files (via TagLib-Sharp) so a media server reads the filename instead of stale or incorrect metadata.</span></span></label></div>
+        </div>
+      </div>
     </div>
 
-    <h2>Monitoring</h2>
-    <div class="field-row">
-      <label>Enable Monitoring at Startup<span class="help-tag" tabindex="0" title="Automatically start monitoring when Compressarr launches, instead of waiting for you to click Start Monitoring.">?<span class="help-tip">Automatically start monitoring when Compressarr launches, instead of waiting for you to click Start Monitoring.</span></span></label>
-      <input type="checkbox" id="repeatMonitor" />
-    </div>
-    <div class="field-row">
-      <label for="pollIntervalSeconds">Poll interval (seconds)<span class="help-tag" tabindex="0" title="How often the monitor loop checks each lane's Input folder for new files while monitoring is on.">?<span class="help-tip">How often the monitor loop checks each lane's Input folder for new files while monitoring is on.</span></span></label>
-      <input type="number" id="pollIntervalSeconds" min="5" />
-    </div>
-    <div class="field-row">
-      <label>Start with Windows (on login)<span class="help-tag" tabindex="0" title="Launch Compressarr automatically when you log into Windows.">?<span class="help-tip">Launch Compressarr automatically when you log into Windows.</span></span></label>
-      <input type="checkbox" id="runAtLogin" />
-    </div>
-
-    <h2>Post-execution command</h2>
-    <div class="field-row">
-      <label for="postExecCmd">Command<span class="help-tag" tabindex="0" title="An optional program to run after each pass completes, e.g. to notify another tool.">?<span class="help-tip">An optional program to run after each pass completes, e.g. to notify another tool.</span></span></label>
-      <input type="text" id="postExecCmd" />
-    </div>
-    <div class="field-row">
-      <label for="postExecArgs">Arguments<span class="help-tag" tabindex="0" title="Command-line arguments passed to the post-execution command above.">?<span class="help-tip">Command-line arguments passed to the post-execution command above.</span></span></label>
-      <input type="text" id="postExecArgs" />
-    </div>
-
-    <h2>Sonarr</h2>
-    <div class="field-row">
-      <label>Enabled<span class="help-tag" tabindex="0" title="Let Compressarr unmonitor converted TV episodes in Sonarr so it doesn't re-download them.">?<span class="help-tip">Let Compressarr unmonitor converted TV episodes in Sonarr so it doesn't re-download them.</span></span></label>
-      <input type="checkbox" id="sonarrEnabled" />
-    </div>
-    <div class="field-row">
-      <label for="sonarrUrl">URL<span class="help-tag" tabindex="0" title="Base URL of your Sonarr instance, e.g. http://localhost:8989.">?<span class="help-tip">Base URL of your Sonarr instance, e.g. http://localhost:8989.</span></span></label>
-      <input type="text" id="sonarrUrl" />
-    </div>
-    <div class="field-row">
-      <label for="sonarrApiKey">API Key<span class="help-tag" tabindex="0" title="Found in Sonarr under Settings &gt; General &gt; Security.">?<span class="help-tip">Found in Sonarr under Settings &gt; General &gt; Security.</span></span></label>
-      <input type="password" id="sonarrApiKey" />
-      <button id="sonarrTestBtn">Test Connection</button>
-    </div>
-    <div class="preset-status" id="sonarrTestStatus"></div>
-
-    <h2>Radarr</h2>
-    <div class="field-row">
-      <label>Enabled<span class="help-tag" tabindex="0" title="Let Compressarr unmonitor converted movies in Radarr so it doesn't re-download them.">?<span class="help-tip">Let Compressarr unmonitor converted movies in Radarr so it doesn't re-download them.</span></span></label>
-      <input type="checkbox" id="radarrEnabled" />
-    </div>
-    <div class="field-row">
-      <label for="radarrUrl">URL<span class="help-tag" tabindex="0" title="Base URL of your Radarr instance, e.g. http://localhost:7878.">?<span class="help-tip">Base URL of your Radarr instance, e.g. http://localhost:7878.</span></span></label>
-      <input type="text" id="radarrUrl" />
-    </div>
-    <div class="field-row">
-      <label for="radarrApiKey">API Key<span class="help-tag" tabindex="0" title="Found in Radarr under Settings &gt; General &gt; Security.">?<span class="help-tip">Found in Radarr under Settings &gt; General &gt; Security.</span></span></label>
-      <input type="password" id="radarrApiKey" />
-      <button id="radarrTestBtn">Test Connection</button>
-    </div>
-    <div class="preset-status" id="radarrTestStatus"></div>
-
-    <h2>Backup &amp; Restore</h2>
-    <div class="field-row">
-      <label>Export config<span class="help-tag" tabindex="0" title="Download your full configuration - lanes, presets path, HandBrake options, everything - as a JSON file.">?<span class="help-tip">Download your full configuration - lanes, presets path, HandBrake options, everything - as a JSON file.</span></span></label>
-      <button id="exportConfigBtn">Export</button>
-    </div>
-    <div class="field-row">
-      <label for="importConfigFile">Import config<span class="help-tag" tabindex="0" title="Replace your current configuration with one from a previously exported file. This overwrites all current settings and lanes.">?<span class="help-tip">Replace your current configuration with one from a previously exported file. This overwrites all current settings and lanes.</span></span></label>
-      <input type="file" id="importConfigFile" accept="application/json,.json" />
-      <button id="importConfigBtn">Import</button>
-    </div>
-    <div class="preset-status" id="backupStatus"></div>
-
-    <h2>Web UI</h2>
-    <div class="field-row">
-      <label for="webPort">Port (requires restart to take effect)<span class="help-tag" tabindex="0" title="Port the web UI listens on. Changing this requires restarting Compressarr.">?<span class="help-tip">Port the web UI listens on. Changing this requires restarting Compressarr.</span></span></label>
-      <input type="number" id="webPort" min="1" max="65535" />
+    <div class="card">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+        <h2>Logging &amp; Reports</h2>
+      </div>
+      <div class="card-body">
+        <div class="two-col">
+          <div class="field-block">
+            <label for="logFilePath">Log folder<span class="help-tag" tabindex="0" title="Where run logs and the history CSV are written.">?<span class="help-tip">Where run logs and the history CSV are written.</span></span></label>
+            <input type="text" id="logFilePath" />
+          </div>
+          <div class="field-block">
+            <label for="reportPath">Report folder<span class="help-tag" tabindex="0" title="Where HTML run reports are written.">?<span class="help-tip">Where HTML run reports are written.</span></span></label>
+            <input type="text" id="reportPath" />
+          </div>
+          <div class="field-block">
+            <label for="retentionDays">Log/report retention (days)<span class="help-tag" tabindex="0" title="Logs and reports older than this many days are automatically deleted.">?<span class="help-tip">Logs and reports older than this many days are automatically deleted.</span></span></label>
+            <input type="number" id="retentionDays" min="0" />
+          </div>
+          <div class="field-block">
+            <label for="openAfterRun">Open report after run<span class="help-tag" tabindex="0" title="Whether the HTML report opens automatically after a run: always, only when there were errors, or never.">?<span class="help-tip">Whether the HTML report opens automatically after a run: always, only when there were errors, or never.</span></span></label>
+            <select id="openAfterRun">
+              <option value="Always">Always</option>
+              <option value="OnError">On Error</option>
+              <option value="Never">Never</option>
+            </select>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <h2>Maintenance</h2>
-    <div class="field-row">
-      <label>Reset resume file<span class="help-tag" tabindex="0" title="Clears every tracked entry (Pending, Completed, and Error) from the resume-state file. The next pass does a completely fresh scan of every lane's Input folder instead of resuming or skipping anything.">?<span class="help-tip">Clears every tracked entry (Pending, Completed, and Error) from the resume-state file. The next pass does a completely fresh scan of every lane's Input folder instead of resuming or skipping anything.</span></span></label>
-      <button id="resetResumeBtn">Reset Resume File</button>
+    <div class="card">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        <h2>Monitoring</h2>
+      </div>
+      <div class="card-body">
+        <div class="check-row"><input type="checkbox" id="repeatMonitor" /><label for="repeatMonitor">Enable Monitoring at Startup<span class="help-tag" tabindex="0" title="Automatically start monitoring when Compressarr launches, instead of waiting for you to click Start Monitoring.">?<span class="help-tip">Automatically start monitoring when Compressarr launches, instead of waiting for you to click Start Monitoring.</span></span></label></div>
+        <div class="check-row"><input type="checkbox" id="runAtLogin" /><label for="runAtLogin">Start with Windows (on login)<span class="help-tag" tabindex="0" title="Launch Compressarr automatically when you log into Windows.">?<span class="help-tip">Launch Compressarr automatically when you log into Windows.</span></span></label></div>
+        <div class="field-block" style="max-width: 260px; margin-top: 4px">
+          <label for="pollIntervalSeconds">Poll interval (seconds)<span class="help-tag" tabindex="0" title="How often the monitor loop checks each lane's Input folder for new files while monitoring is on.">?<span class="help-tip">How often the monitor loop checks each lane's Input folder for new files while monitoring is on.</span></span></label>
+          <input type="number" id="pollIntervalSeconds" min="5" />
+        </div>
+      </div>
     </div>
-    <div class="field-row">
-      <label>Clean up old logs &amp; reports<span class="help-tag" tabindex="0" title="Runs the same retention cleanup a normal pass already does automatically (using the Log/report retention setting above) right now, instead of waiting for the next one. Removed files go to the Recycle Bin, not a permanent delete.">?<span class="help-tip">Runs the same retention cleanup a normal pass already does automatically (using the Log/report retention setting above) right now, instead of waiting for the next one. Removed files go to the Recycle Bin, not a permanent delete.</span></span></label>
-      <button id="cleanupNowBtn">Clean Up Now</button>
+
+    <div class="card">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+        <h2>Post-execution command</h2>
+      </div>
+      <div class="card-body">
+        <div class="two-col">
+          <div class="field-block">
+            <label for="postExecCmd">Command<span class="help-tag" tabindex="0" title="An optional program to run after each pass completes, e.g. to notify another tool.">?<span class="help-tip">An optional program to run after each pass completes, e.g. to notify another tool.</span></span></label>
+            <input type="text" id="postExecCmd" />
+          </div>
+          <div class="field-block">
+            <label for="postExecArgs">Arguments<span class="help-tag" tabindex="0" title="Command-line arguments passed to the post-execution command above.">?<span class="help-tip">Command-line arguments passed to the post-execution command above.</span></span></label>
+            <input type="text" id="postExecArgs" />
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="field-row">
-      <label>Reset lanes<span class="help-tag" tabindex="0" title="Deletes every configured lane and replaces them with a single new, blank lane block. Every other setting (HandBrake path, Sonarr/Radarr, processing options, etc.) is left untouched. Cannot be undone unless you've exported a backup first.">?<span class="help-tip">Deletes every configured lane and replaces them with a single new, blank lane block. Every other setting (HandBrake path, Sonarr/Radarr, processing options, etc.) is left untouched. Cannot be undone unless you've exported a backup first.</span></span></label>
-      <button id="resetLanesBtn" class="danger">Reset Lanes</button>
+
+    <div class="card">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h20v4H2z"></path><path d="M4 7v13a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V7"></path><line x1="10" y1="12" x2="14" y2="12"></line></svg>
+        <h2>Arr Integrations</h2>
+      </div>
+      <div class="card-body">
+        <div class="routing-grid">
+          <div class="routing-col">
+            <div class="routing-col-head">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+              Sonarr
+            </div>
+            <div class="check-row"><input type="checkbox" id="sonarrEnabled" /><label for="sonarrEnabled">Enabled<span class="help-tag" tabindex="0" title="Let Compressarr unmonitor converted TV episodes in Sonarr so it doesn't re-download them.">?<span class="help-tip">Let Compressarr unmonitor converted TV episodes in Sonarr so it doesn't re-download them.</span></span></label></div>
+            <div class="field-block">
+              <label for="sonarrUrl">URL<span class="help-tag" tabindex="0" title="Base URL of your Sonarr instance, e.g. http://localhost:8989.">?<span class="help-tip">Base URL of your Sonarr instance, e.g. http://localhost:8989.</span></span></label>
+              <input type="text" id="sonarrUrl" />
+            </div>
+            <div class="field-block">
+              <label for="sonarrApiKey">API Key<span class="help-tag" tabindex="0" title="Found in Sonarr under Settings &gt; General &gt; Security.">?<span class="help-tip">Found in Sonarr under Settings &gt; General &gt; Security.</span></span></label>
+              <div class="field-with-btn"><input type="password" id="sonarrApiKey" /><button id="sonarrTestBtn">Test Connection</button></div>
+              <div class="preset-status" id="sonarrTestStatus"></div>
+            </div>
+          </div>
+          <div class="routing-col">
+            <div class="routing-col-head">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+              Radarr
+            </div>
+            <div class="check-row"><input type="checkbox" id="radarrEnabled" /><label for="radarrEnabled">Enabled<span class="help-tag" tabindex="0" title="Let Compressarr unmonitor converted movies in Radarr so it doesn't re-download them.">?<span class="help-tip">Let Compressarr unmonitor converted movies in Radarr so it doesn't re-download them.</span></span></label></div>
+            <div class="field-block">
+              <label for="radarrUrl">URL<span class="help-tag" tabindex="0" title="Base URL of your Radarr instance, e.g. http://localhost:7878.">?<span class="help-tip">Base URL of your Radarr instance, e.g. http://localhost:7878.</span></span></label>
+              <input type="text" id="radarrUrl" />
+            </div>
+            <div class="field-block">
+              <label for="radarrApiKey">API Key<span class="help-tag" tabindex="0" title="Found in Radarr under Settings &gt; General &gt; Security.">?<span class="help-tip">Found in Radarr under Settings &gt; General &gt; Security.</span></span></label>
+              <div class="field-with-btn"><input type="password" id="radarrApiKey" /><button id="radarrTestBtn">Test Connection</button></div>
+              <div class="preset-status" id="radarrTestStatus"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="field-row">
-      <label>Clear configuration<span class="help-tag" tabindex="0" title="Resets every setting and every lane back to Compressarr's built-in defaults. Cannot be undone unless you've exported a backup first.">?<span class="help-tip">Resets every setting and every lane back to Compressarr's built-in defaults. Cannot be undone unless you've exported a backup first.</span></span></label>
-      <button id="clearConfigBtn" class="danger">Clear Configuration</button>
+
+    <div class="card">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <h2>Backup &amp; Restore</h2>
+      </div>
+      <div class="card-body">
+        <div class="two-col">
+          <div class="field-block">
+            <label>Export config<span class="help-tag" tabindex="0" title="Download your full configuration - lanes, presets path, HandBrake options, everything - as a JSON file.">?<span class="help-tip">Download your full configuration - lanes, presets path, HandBrake options, everything - as a JSON file.</span></span></label>
+            <button id="exportConfigBtn">Export</button>
+          </div>
+          <div class="field-block">
+            <label for="importConfigFile">Import config<span class="help-tag" tabindex="0" title="Replace your current configuration with one from a previously exported file. This overwrites all current settings and lanes.">?<span class="help-tip">Replace your current configuration with one from a previously exported file. This overwrites all current settings and lanes.</span></span></label>
+            <div class="field-with-btn"><input type="file" id="importConfigFile" accept="application/json,.json" /><button id="importConfigBtn">Import</button></div>
+          </div>
+        </div>
+        <div class="preset-status" id="backupStatus"></div>
+      </div>
     </div>
-    <div class="preset-status" id="maintenanceStatus"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+        <h2>Web UI</h2>
+      </div>
+      <div class="card-body">
+        <div class="field-block" style="max-width: 220px">
+          <label for="webPort">Port (requires restart to take effect)<span class="help-tag" tabindex="0" title="Port the web UI listens on. Changing this requires restarting Compressarr.">?<span class="help-tip">Port the web UI listens on. Changing this requires restarting Compressarr.</span></span></label>
+          <input type="number" id="webPort" min="1" max="65535" />
+        </div>
+      </div>
+    </div>
+
+    <div class="card danger">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+        <h2>Maintenance</h2>
+      </div>
+      <div class="card-body">
+        <div class="two-col">
+          <div class="field-block">
+            <label>Reset resume file<span class="help-tag" tabindex="0" title="Clears every tracked entry (Pending, Completed, and Error) from the resume-state file. The next pass does a completely fresh scan of every lane's Input folder instead of resuming or skipping anything.">?<span class="help-tip">Clears every tracked entry (Pending, Completed, and Error) from the resume-state file. The next pass does a completely fresh scan of every lane's Input folder instead of resuming or skipping anything.</span></span></label>
+            <button id="resetResumeBtn">Reset Resume File</button>
+          </div>
+          <div class="field-block">
+            <label>Clean up old logs &amp; reports<span class="help-tag" tabindex="0" title="Runs the same retention cleanup a normal pass already does automatically (using the Log/report retention setting above) right now, instead of waiting for the next one. Removed files go to the Recycle Bin, not a permanent delete.">?<span class="help-tip">Runs the same retention cleanup a normal pass already does automatically (using the Log/report retention setting above) right now, instead of waiting for the next one. Removed files go to the Recycle Bin, not a permanent delete.</span></span></label>
+            <button id="cleanupNowBtn">Clean Up Now</button>
+          </div>
+          <div class="field-block">
+            <label>Reset lanes<span class="help-tag" tabindex="0" title="Deletes every configured lane and replaces them with a single new, blank lane block. Every other setting (HandBrake path, Sonarr/Radarr, processing options, etc.) is left untouched. Cannot be undone unless you've exported a backup first.">?<span class="help-tip">Deletes every configured lane and replaces them with a single new, blank lane block. Every other setting (HandBrake path, Sonarr/Radarr, processing options, etc.) is left untouched. Cannot be undone unless you've exported a backup first.</span></span></label>
+            <button id="resetLanesBtn" class="danger">Reset Lanes</button>
+          </div>
+          <div class="field-block">
+            <label>Clear configuration<span class="help-tag" tabindex="0" title="Resets every setting and every lane back to Compressarr's built-in defaults. Cannot be undone unless you've exported a backup first.">?<span class="help-tip">Resets every setting and every lane back to Compressarr's built-in defaults. Cannot be undone unless you've exported a backup first.</span></span></label>
+            <button id="clearConfigBtn" class="danger">Clear Configuration</button>
+          </div>
+        </div>
+        <div class="preset-status" id="maintenanceStatus"></div>
+      </div>
+    </div>
 
     <div class="page-actions">
       <button id="saveBtn" class="primary"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Save Settings</button>
