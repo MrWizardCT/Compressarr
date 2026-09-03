@@ -596,16 +596,158 @@ a.primary:hover { opacity: 0.9; }
   font-weight: 600;
 }
 
+/* Lane card - fields grouped by what they mean (Folders, then Movie/TV Content routing) rather
+   than packed into alternating field-rows. See the approved "Lane Card Redesign" mockup. */
 .lane-card {
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 14px;
-  margin-bottom: 14px;
+  border-radius: 10px;
   background: var(--bg-alt);
+  margin-bottom: 16px;
+  overflow: hidden;
 }
 
-.lane-card .field-row label { width: 140px; }
-.lane-card .field-row { flex-wrap: wrap; row-gap: 8px; }
+.lane-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.lane-switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--border);
+  cursor: pointer;
+}
+
+.lane-switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.lane-switch .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+  pointer-events: none;
+}
+
+.lane-switch:has(input:checked) { background: var(--ok); }
+.lane-switch:has(input:checked) .knob { left: 16px; }
+
+.lane-name-input {
+  font-size: 15px;
+  font-weight: 700;
+  font-family: inherit;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  padding: 5px 7px;
+  border-radius: 6px;
+  max-width: 260px;
+  flex: 1;
+  min-width: 120px;
+}
+
+.lane-name-input:hover, .lane-name-input:focus {
+  border-color: var(--border);
+  background: var(--bg);
+  outline: none;
+}
+
+.lane-head-spacer { flex: 1; }
+
+.lane-head-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  font-size: 12.5px;
+}
+
+.icon-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.icon-btn.save { background: var(--accent); border-color: var(--accent); color: #fff; }
+.icon-btn.remove:hover { border-color: var(--err); color: var(--err); }
+
+.lane-body { padding: 16px; }
+
+.field-block { margin-bottom: 12px; }
+.field-block:last-child { margin-bottom: 0; }
+
+.field-block label {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.field-with-btn { display: flex; gap: 8px; }
+
+.folders-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.routing-heading {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.routing-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.routing-col {
+  padding: 14px;
+  background: var(--bg);
+}
+
+.routing-col + .routing-col { border-left: 1px solid var(--border); }
+
+.routing-col-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.routing-col-head svg { width: 16px; height: 16px; flex-shrink: 0; color: var(--accent); }
+
+@media (max-width: 760px) {
+  .folders-grid, .routing-grid { grid-template-columns: 1fr; }
+  .routing-col + .routing-col { border-left: none; border-top: 1px solid var(--border); }
+}
 
 table {
   border-collapse: separate;

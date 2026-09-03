@@ -24,33 +24,80 @@
 
   <template id="lane-template">
     <div class="lane-card" data-id="">
-      <div class="field-row">
-        <label><input type="checkbox" class="f-enabled" /> Enabled<span class="help-tag" tabindex="0" title="Whether this lane is included when a run or monitoring pass scans for files.">?<span class="help-tip">Whether this lane is included when a run or monitoring pass scans for files.</span></span></label>
-        <input type="text" class="f-displayName" placeholder="Lane name" style="max-width:240px" />
-        <button class="save-lane-btn primary">Save</button>
-        <button class="remove-lane-btn">Remove</button>
+      <div class="lane-head">
+        <label class="lane-switch" title="Whether this lane is included when a run or monitoring pass scans for files.">
+          <input type="checkbox" class="f-enabled" />
+          <span class="knob"></span>
+        </label>
+        <input type="text" class="f-displayName lane-name-input" placeholder="Lane name" />
+        <div class="lane-head-spacer"></div>
+        <div class="lane-head-actions">
+          <button class="save-lane-btn icon-btn save">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+            Save
+          </button>
+          <button class="remove-lane-btn icon-btn remove">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+            Remove
+          </button>
+        </div>
       </div>
-      <div class="field-row">
-        <label>Input<span class="help-tag" tabindex="0" title="Folder Compressarr scans for video files to convert.">?<span class="help-tip">Folder Compressarr scans for video files to convert.</span></span></label>
-        <input type="text" class="f-input" />
-        <button class="browse-btn" data-target="f-input">Browse...</button>
-        <label>Output<span class="help-tag" tabindex="0" title="Folder converted files are written to, unless &quot;Write output to same folder as input&quot; is enabled in Settings.">?<span class="help-tip">Folder converted files are written to, unless "Write output to same folder as input" is enabled in Settings.</span></span></label>
-        <input type="text" class="f-output" />
-        <button class="browse-btn" data-target="f-output">Browse...</button>
-      </div>
-      <div class="field-row">
-        <label>Movie preset<span class="help-tag" tabindex="0" title="HandBrake preset used for files detected as movies.">?<span class="help-tip">HandBrake preset used for files detected as movies.</span></span></label>
-        <select class="f-moviePreset"></select>
-        <label>TV preset<span class="help-tag" tabindex="0" title="HandBrake preset used for files detected as TV episodes.">?<span class="help-tip">HandBrake preset used for files detected as TV episodes.</span></span></label>
-        <select class="f-tvPreset"></select>
-      </div>
-      <div class="field-row">
-        <label>Movie destination path<span class="help-tag" tabindex="0" title="Destination folder converted movies are moved into, if Move converted files is enabled in Settings.">?<span class="help-tip">Destination folder converted movies are moved into, if Move converted files is enabled in Settings.</span></span></label>
-        <input type="text" class="f-movieBasePath" />
-        <button class="browse-btn" data-target="f-movieBasePath">Browse...</button>
-        <label>TV destination path<span class="help-tag" tabindex="0" title="Destination folder converted TV episodes are moved into, if Move converted files is enabled in Settings.">?<span class="help-tip">Destination folder converted TV episodes are moved into, if Move converted files is enabled in Settings.</span></span></label>
-        <input type="text" class="f-tvShowBasePath" />
-        <button class="browse-btn" data-target="f-tvShowBasePath">Browse...</button>
+
+      <div class="lane-body">
+        <div class="folders-grid">
+          <div class="field-block">
+            <label>Input<span class="help-tag" tabindex="0" title="Folder Compressarr scans for video files to convert.">?<span class="help-tip">Folder Compressarr scans for video files to convert.</span></span></label>
+            <div class="field-with-btn">
+              <input type="text" class="f-input" />
+              <button class="browse-btn" data-target="f-input">Browse...</button>
+            </div>
+          </div>
+          <div class="field-block">
+            <label>Output<span class="help-tag" tabindex="0" title="Folder converted files are written to, unless &quot;Write output to same folder as input&quot; is enabled in Settings.">?<span class="help-tip">Folder converted files are written to, unless "Write output to same folder as input" is enabled in Settings.</span></span></label>
+            <div class="field-with-btn">
+              <input type="text" class="f-output" />
+              <button class="browse-btn" data-target="f-output">Browse...</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="routing-heading">Content routing</div>
+        <div class="routing-grid">
+          <div class="routing-col">
+            <div class="routing-col-head">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+              Movie
+            </div>
+            <div class="field-block">
+              <label>Preset<span class="help-tag" tabindex="0" title="HandBrake preset used for files detected as movies.">?<span class="help-tip">HandBrake preset used for files detected as movies.</span></span></label>
+              <select class="f-moviePreset"></select>
+            </div>
+            <div class="field-block">
+              <label>Destination path<span class="help-tag" tabindex="0" title="Destination folder converted movies are moved into, if Move converted files is enabled in Settings.">?<span class="help-tip">Destination folder converted movies are moved into, if Move converted files is enabled in Settings.</span></span></label>
+              <div class="field-with-btn">
+                <input type="text" class="f-movieBasePath" />
+                <button class="browse-btn" data-target="f-movieBasePath">Browse...</button>
+              </div>
+            </div>
+          </div>
+          <div class="routing-col">
+            <div class="routing-col-head">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+              TV
+            </div>
+            <div class="field-block">
+              <label>Preset<span class="help-tag" tabindex="0" title="HandBrake preset used for files detected as TV episodes.">?<span class="help-tip">HandBrake preset used for files detected as TV episodes.</span></span></label>
+              <select class="f-tvPreset"></select>
+            </div>
+            <div class="field-block">
+              <label>Destination path<span class="help-tag" tabindex="0" title="Destination folder converted TV episodes are moved into, if Move converted files is enabled in Settings.">?<span class="help-tip">Destination folder converted TV episodes are moved into, if Move converted files is enabled in Settings.</span></span></label>
+              <div class="field-with-btn">
+                <input type="text" class="f-tvShowBasePath" />
+                <button class="browse-btn" data-target="f-tvShowBasePath">Browse...</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </template>
