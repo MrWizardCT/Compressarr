@@ -111,6 +111,12 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
   }
 });
 
+document.getElementById('clearChangesBtn').addEventListener('click', async () => {
+  if (settingsDirty && !confirm('Discard unsaved changes and reload the last saved settings?')) return;
+  await loadSettings();
+  setStatus('Changes cleared.');
+});
+
 // Warn before leaving with unsaved edits - covers tab close/reload and sidebar nav clicks alike,
 // since the sidebar's links are plain <a href> navigation (no client-side router intercepting
 // them), so both are a real page unload beforeunload actually fires for. importConfigFile is

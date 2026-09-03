@@ -147,6 +147,12 @@ document.getElementById('addLaneBtn').addEventListener('click', async () => {
 
 document.getElementById('saveAllLanesBtn').addEventListener('click', saveAllLanes);
 
+document.getElementById('clearChangesBtn').addEventListener('click', async () => {
+  if (lanesDirty && !confirm('Discard unsaved changes and reload the last saved lanes?')) return;
+  await loadLanes();
+  setStatus('Changes cleared.');
+});
+
 // Warn before leaving with unsaved field edits inside a lane card - Add/Remove/Save all persist
 // immediately on click, so they're never what this is protecting; only in-progress edits to a
 // card's own fields (typed but not yet Saved) are. Sidebar nav links are plain <a href>
