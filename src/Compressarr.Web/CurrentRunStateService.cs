@@ -10,6 +10,7 @@ public sealed record RunStateSnapshot(
     string? LaneDisplayName,
     bool CurrentLaneIsResumed,
     string? FileName,
+    string? PresetName,
     int FileIndex,
     int FileTotal,
     double? ProgressPercent,
@@ -36,6 +37,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
     private string? _laneDisplayName;
     private bool _currentLaneIsResumed;
     private string? _fileName;
+    private string? _presetName;
     private int _fileIndex;
     private int _fileTotal;
     private double? _progressPercent;
@@ -68,6 +70,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
             _laneDisplayName = null;
             _currentLaneIsResumed = false;
             _fileName = null;
+            _presetName = null;
             _fileIndex = 0;
             _fileTotal = 0;
             _progressPercent = null;
@@ -88,7 +91,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
         }
     }
 
-    public void FileStarted(string laneId, int index, int total, string fileName)
+    public void FileStarted(string laneId, int index, int total, string fileName, string? presetName)
     {
         lock (_lock)
         {
@@ -96,6 +99,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
             _laneDisplayNamesById.TryGetValue(laneId, out _laneDisplayName);
             _laneIsResumedById.TryGetValue(laneId, out _currentLaneIsResumed);
             _fileName = fileName;
+            _presetName = presetName;
             _fileIndex = index;
             _fileTotal = total;
             _progressPercent = null;
@@ -126,6 +130,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
         {
             _isRunning = false;
             _fileName = null;
+            _presetName = null;
             _fileIndex = 0;
             _fileTotal = 0;
             _progressPercent = null;
@@ -138,7 +143,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
     {
         lock (_lock)
         {
-            return new RunStateSnapshot(_isRunning, _laneDisplayName, _currentLaneIsResumed, _fileName, _fileIndex, _fileTotal, _progressPercent, _progressFps, _progressEta, _recentLines.ToList());
+            return new RunStateSnapshot(_isRunning, _laneDisplayName, _currentLaneIsResumed, _fileName, _presetName, _fileIndex, _fileTotal, _progressPercent, _progressFps, _progressEta, _recentLines.ToList());
         }
     }
 }

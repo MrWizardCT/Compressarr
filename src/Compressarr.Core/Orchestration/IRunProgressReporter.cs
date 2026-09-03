@@ -18,7 +18,7 @@ public interface IRunProgressReporter
     /// mutates that lane's entries, or it degrades into the same false positive it's meant to
     /// avoid.</summary>
     void LaneStarted(string laneId, string laneDisplayName, bool isResumed);
-    void FileStarted(string laneId, int index, int total, string fileName);
+    void FileStarted(string laneId, int index, int total, string fileName, string? presetName);
 
     /// <summary>Live progress within the file currently being encoded, parsed from HandBrakeCLI's
     /// own stdout ("Encoding: task 1 of 1, 42.10 % ..."). Fired frequently (roughly once a

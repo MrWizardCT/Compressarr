@@ -131,7 +131,9 @@ async function poll() {
   const stateValueEl = document.getElementById('stateValue');
   stateValueEl.textContent = s.isRunning ? 'Running' : (s.isMonitoring ? 'Watching' : 'Idle');
   stateValueEl.classList.toggle('running', s.isRunning);
-  document.getElementById('fileLabel').textContent = (s.isRunning && s.laneDisplayName) ? `Compressing File in Lane ${s.laneDisplayName}` : 'Waiting for files';
+  document.getElementById('fileLabel').textContent = (s.isRunning && s.laneDisplayName)
+    ? `Compressing File in Lane ${s.laneDisplayName}${s.presetName ? ` using preset ${s.presetName}` : ''}`
+    : 'Waiting for files';
   document.getElementById('fileValue').textContent = s.isRunning ? (s.fileName || '-') : '-';
 
   const hasPercent = s.progressPercent !== null && s.progressPercent !== undefined;

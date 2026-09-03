@@ -131,6 +131,7 @@ public static class RunEndpoints
                 isRunning = snapshot.IsRunning,
                 laneDisplayName = snapshot.LaneDisplayName,
                 fileName = snapshot.FileName,
+                presetName = snapshot.PresetName,
                 fileIndex = snapshot.FileIndex,
                 fileTotal = snapshot.FileTotal,
                 progressPercent = snapshot.ProgressPercent,
