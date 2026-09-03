@@ -15,17 +15,20 @@
     <h2 class="page-title">About</h2>
 
     <div class="card">
-      <div class="card-body">
-        <div class="about-logo-wrap"><img src="/assets/logo.png" alt="Compressarr" /></div>
-        <h2 class="about-title">Compressarr</h2>
-        <div class="about-version" id="versionText">Version -</div>
-
-        <div class="about-actions">
-          <button id="checkUpdateBtn">Check for Updates</button>
-          <a id="downloadUpdateBtn" class="primary hidden" href="#" target="_blank" rel="noopener">Download Update</a>
+      <div class="about-head-row">
+        <img src="/assets/logo.png" alt="Compressarr" />
+        <div>
+          <div class="about-name">Compressarr</div>
+          <div class="about-version" id="versionText">Version -</div>
         </div>
-        <div class="about-update-status" id="updateStatus"></div>
-
+        <div class="card-head-spacer"></div>
+        <button id="checkUpdateBtn">Check for Updates</button>
+      </div>
+      <div class="about-update-row">
+        <a id="downloadUpdateBtn" class="primary hidden" href="#" target="_blank" rel="noopener">Download Update</a>
+        <span class="about-update-status" id="updateStatus"></span>
+      </div>
+      <div class="card-body" style="border-top: 1px solid var(--border)">
         <dl class="credits-list">
           <dt>Created by</dt>
           <dd>Mark Wasserman</dd>
@@ -57,17 +60,18 @@
       <div class="card-head">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
         <h2>HandBrakeCLI</h2>
+        <div class="card-head-spacer"></div>
+        <button id="hbCheckUpdateBtn">Check for Updates</button>
       </div>
-      <div class="card-body">
-        <div class="field-block">
+      <div class="about-update-row" style="padding-top: 16px">
+        <a id="hbDownloadUpdateBtn" class="primary hidden" href="#" target="_blank" rel="noopener">Download Update</a>
+        <span class="about-update-status" id="hbUpdateStatus"></span>
+      </div>
+      <div class="card-body" style="padding-top: 0">
+        <div class="field-block" style="margin: 0">
           <label>Installed version</label>
           <span id="hbVersionText">-</span>
         </div>
-        <div class="dd-actions">
-          <button id="hbCheckUpdateBtn">Check for Updates</button>
-          <a id="hbDownloadUpdateBtn" class="primary hidden" href="#" target="_blank" rel="noopener">Download Update</a>
-        </div>
-        <div class="dd-status" id="hbUpdateStatus"></div>
       </div>
     </div>
   </main>
