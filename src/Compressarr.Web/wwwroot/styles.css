@@ -346,6 +346,8 @@ body {
   align-items: center;
   gap: 16px;
   padding: 20px 16px;
+  flex-wrap: wrap;
+  row-gap: 10px;
 }
 
 .about-head-row img { width: 56px; height: 56px; border-radius: 12px; flex-shrink: 0; }
@@ -363,16 +365,10 @@ body {
   font-family: var(--font-mono);
 }
 
-.about-update-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 16px 16px;
-  font-size: 13px;
-  flex-wrap: wrap;
-}
-
-.about-update-status { color: var(--text-dim); min-height: 18px; }
+/* Sits inline in the card-head itself, between the spacer and the Check for Updates button -
+   the result of a check reads immediately to the left of the button that triggered it, rather
+   than in a separate row below. */
+.about-update-status { color: var(--text-dim); font-size: 12.5px; font-weight: normal; }
 
 .credits-list { margin: 0; }
 
@@ -788,6 +784,10 @@ a.primary:hover { opacity: 0.9; }
   gap: 10px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--border);
+  /* Lets a variable-length trailing element (About's update-check status text) drop to its own
+     line on a narrow window instead of forcing the card wider or clipping. */
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
 
 .card-head svg { width: 17px; height: 17px; color: var(--accent); flex-shrink: 0; }
