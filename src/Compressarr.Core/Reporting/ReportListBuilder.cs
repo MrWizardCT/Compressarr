@@ -9,7 +9,9 @@ public sealed record ReportListEntry(
     double BeforeGb,
     double AfterGb,
     double SavedPercent,
-    DateTime Date);
+    DateTime Date,
+    int ErrorCount,
+    int WarningCount);
 
 /// <summary>
 /// Builds the "Reports" table for the web UI's History page: history rows within the configured
@@ -43,7 +45,9 @@ public static class ReportListBuilder
                 SavedPercent: x.Record.BeginSizeGb > 0
                     ? Math.Round(100 - (x.Record.EndSizeGb / x.Record.BeginSizeGb) * 100, 1)
                     : 0,
-                Date: x.Date))
+                Date: x.Date,
+                ErrorCount: x.Record.ErrorCount,
+                WarningCount: x.Record.WarningCount))
             .ToList();
     }
 }

@@ -18,7 +18,14 @@ public sealed record RunHistoryRecord(
     /// not a full path - the web UI resolves it against the *current* Report.ReportPath at
     /// request time, so a later change to that setting doesn't strand old links. Empty for rows
     /// written before this field existed.</summary>
-    string ReportFileName = "");
+    string ReportFileName = "",
+    /// <summary>How many files in this run failed outright (ReportModel.ErrorCount at record
+    /// time). 0 for rows written before this field existed - indistinguishable from a genuinely
+    /// clean run, same tradeoff RunNumber/ReportFileName already accept for old rows.</summary>
+    int ErrorCount = 0,
+    /// <summary>How many files succeeded but had a secondary post-process problem
+    /// (ReportModel.WarningCount at record time - see ConversionResult.PostProcessWarning).</summary>
+    int WarningCount = 0);
 
 /// <summary>
 /// Narrow history/run-count interface — deliberately not the final schema. Phase 4 (web-based

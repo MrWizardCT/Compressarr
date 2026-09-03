@@ -26,7 +26,7 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
         var totalEnd = Math.Round(model.Lanes.Sum(l => l.Results.Sum(r => r.EndSizeGb)), 3);
         var totalSavings = Math.Round(totalBeg - totalEnd, 3);
         var savingsPct = totalBeg > 0 ? Math.Round(100 - (totalEnd / totalBeg) * 100, 2) : 0;
-        var errorCount = model.Lanes.Sum(l => l.Results.Count(r => !r.Success));
+        var errorCount = model.ErrorCount;
 
         var logoTag = LoadEmbeddedBase64(LogoResourceName) is { } logoB64
             ? $"<img src=\"data:image/png;base64,{logoB64}\" alt=\"Compressarr\" class=\"logo\" />"

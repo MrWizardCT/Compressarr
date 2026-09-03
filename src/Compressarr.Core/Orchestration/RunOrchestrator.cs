@@ -195,13 +195,18 @@ public sealed class RunOrchestrator : IRunOrchestrator
         {
             var totalBeg = allResults.Sum(r => r.BeginSizeGb);
             var totalEnd = allResults.Sum(r => r.EndSizeGb);
+            // Mirrors ReportModel.ErrorCount/WarningCount - computed here too since the history
+            // record is written before reportModel exists below.
+            var errorCount = allResults.Count(r => !r.Success);
+            var warningCount = allResults.Count(r => r.Success && !string.IsNullOrEmpty(r.PostProcessWarning));
             // The run's own permanent number is "how many runs came before it, plus one" - read
             // before IncrementRunCount below so the record and the counter agree on the same value.
             runNumber = _historyStore.GetRunCount(runCountPath) + 1;
             _historyStore.AppendRun(logFilePath, new RunHistoryRecord(
                 endTime.Year, endTime.Month, endTime.Day, totalBeg, totalEnd, totalFiles,
                 runTime.Hours, runTime.Minutes, runTime.Seconds,
-                RunNumber: runNumber, ReportFileName: reportFileName));
+                RunNumber: runNumber, ReportFileName: reportFileName,
+                ErrorCount: errorCount, WarningCount: warningCount));
 
             // Only a pass that actually processed files counts as a "run" - an empty scan
             // (including every quiet monitor-mode poll) never moves this counter.

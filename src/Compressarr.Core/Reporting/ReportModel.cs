@@ -27,6 +27,13 @@ public sealed class ReportModel
 
     public int TotalFiles => Lanes.Sum(l => l.Results.Count);
     public int ErrorCount => Lanes.Sum(l => l.Results.Count(r => !r.Success));
+
+    /// <summary>Count of otherwise-successful files that still had a secondary post-process
+    /// problem (companion-file move or Sonarr/Radarr unmonitor) - see
+    /// <see cref="Conversion.ConversionResult.PostProcessWarning"/>. Distinct from
+    /// <see cref="ErrorCount"/>: these files did convert and get filed correctly.</summary>
+    public int WarningCount => Lanes.Sum(l => l.Results.Count(r => r.Success && !string.IsNullOrEmpty(r.PostProcessWarning)));
+
     public double TotalBeforeGb => Lanes.Sum(l => l.Results.Sum(r => r.BeginSizeGb));
     public double TotalAfterGb => Lanes.Sum(l => l.Results.Sum(r => r.EndSizeGb));
 }

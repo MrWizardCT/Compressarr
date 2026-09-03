@@ -12,7 +12,7 @@ public sealed class CsvRunHistoryStore : IRunHistoryStore
     private static readonly string[] Header =
     {
         "yyyy", "mm", "dd", "BegSize", "EndSize", "FileCount", "ProcessHours", "ProcessMinutes", "ProcessSeconds",
-        "RunNumber", "ReportFileName"
+        "RunNumber", "ReportFileName", "ErrorCount", "WarningCount"
     };
 
     public void AppendRun(string logFilePath, RunHistoryRecord record)
@@ -39,7 +39,9 @@ public sealed class CsvRunHistoryStore : IRunHistoryStore
             record.ProcessMinutes.ToString(CultureInfo.InvariantCulture),
             record.ProcessSeconds.ToString(CultureInfo.InvariantCulture),
             record.RunNumber.ToString(CultureInfo.InvariantCulture),
-            record.ReportFileName
+            record.ReportFileName,
+            record.ErrorCount.ToString(CultureInfo.InvariantCulture),
+            record.WarningCount.ToString(CultureInfo.InvariantCulture)
         };
         writer.WriteLine(string.Join(",", fields));
     }
@@ -58,10 +60,13 @@ public sealed class CsvRunHistoryStore : IRunHistoryStore
             var parts = line.Split(',');
             if (parts.Length < 9) continue;
 
-            // RunNumber/ReportFileName were added later - rows written before then simply don't
-            // have columns 9/10, so default them rather than rejecting/mis-parsing older rows.
+            // RunNumber/ReportFileName/ErrorCount/WarningCount were all added later - rows written
+            // before then simply don't have columns 9-12, so default them rather than
+            // rejecting/mis-parsing older rows.
             var runNumber = parts.Length > 9 && int.TryParse(parts[9], NumberStyles.Integer, CultureInfo.InvariantCulture, out var rn) ? rn : 0;
             var reportFileName = parts.Length > 10 ? parts[10] : "";
+            var errorCount = parts.Length > 11 && int.TryParse(parts[11], NumberStyles.Integer, CultureInfo.InvariantCulture, out var ec) ? ec : 0;
+            var warningCount = parts.Length > 12 && int.TryParse(parts[12], NumberStyles.Integer, CultureInfo.InvariantCulture, out var wc) ? wc : 0;
 
             results.Add(new RunHistoryRecord(
                 Year: int.Parse(parts[0], CultureInfo.InvariantCulture),
@@ -74,7 +79,9 @@ public sealed class CsvRunHistoryStore : IRunHistoryStore
                 ProcessMinutes: int.Parse(parts[7], CultureInfo.InvariantCulture),
                 ProcessSeconds: int.Parse(parts[8], CultureInfo.InvariantCulture),
                 RunNumber: runNumber,
-                ReportFileName: reportFileName));
+                ReportFileName: reportFileName,
+                ErrorCount: errorCount,
+                WarningCount: warningCount));
         }
 
         return results;
