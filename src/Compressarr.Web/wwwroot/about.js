@@ -11,6 +11,13 @@ const hbUpdateStatus = document.getElementById('hbUpdateStatus');
 const hbCheckUpdateBtn = document.getElementById('hbCheckUpdateBtn');
 const hbDownloadUpdateBtn = document.getElementById('hbDownloadUpdateBtn');
 
+// Same fade-after-a-few-seconds convention Settings uses for its own status messages
+// (setPresetStatus/runMaintenanceAction) - a transient confirmation ("You're up to date") clears
+// itself; anything the user still needs to act on (an error, or "a new version is available"
+// sitting next to the now-visible Download Update button) stays up until the next check.
+let updateStatusClearTimer = null;
+let hbUpdateStatusClearTimer = null;
+
 async function loadAbout() {
   const res = await fetch('/api/about');
   const dto = await res.json();
@@ -26,6 +33,7 @@ async function loadHandBrakeVersion() {
 
 hbCheckUpdateBtn.addEventListener('click', async () => {
   hbCheckUpdateBtn.disabled = true;
+  clearTimeout(hbUpdateStatusClearTimer);
   hbUpdateStatus.textContent = 'Checking...';
   hbDownloadUpdateBtn.classList.add('hidden');
 
@@ -42,6 +50,7 @@ hbCheckUpdateBtn.addEventListener('click', async () => {
 
       if (installed && installed === dto.version) {
         hbUpdateStatus.textContent = `You're up to date (latest: ${dto.version}).`;
+        hbUpdateStatusClearTimer = setTimeout(() => { hbUpdateStatus.textContent = ''; }, 4000);
       } else {
         hbUpdateStatus.textContent = installed
           ? `A newer version is available: ${dto.version} (installed: ${installed}).`
@@ -59,6 +68,7 @@ hbCheckUpdateBtn.addEventListener('click', async () => {
 
 checkUpdateBtn.addEventListener('click', async () => {
   checkUpdateBtn.disabled = true;
+  clearTimeout(updateStatusClearTimer);
   updateStatus.textContent = 'Checking...';
   downloadUpdateBtn.classList.add('hidden');
 
@@ -74,6 +84,7 @@ checkUpdateBtn.addEventListener('click', async () => {
       downloadUpdateBtn.classList.remove('hidden');
     } else {
       updateStatus.textContent = `You're up to date (latest release: ${dto.latestVersion}).`;
+      updateStatusClearTimer = setTimeout(() => { updateStatus.textContent = ''; }, 4000);
     }
   } catch (err) {
     updateStatus.textContent = `Couldn't check for updates: ${err.message}`;
