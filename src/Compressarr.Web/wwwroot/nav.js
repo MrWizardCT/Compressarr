@@ -60,10 +60,23 @@ function renderNav(activePage) {
   const mainCol = document.createElement('div');
   mainCol.className = 'main-col';
 
+  // A page's own <h2 class="page-title"> (if it has one) becomes the toolbar title and is
+  // removed from the content below it, so it isn't shown twice - falls back to this page's own
+  // nav label for pages that never had a title heading of their own (Settings, About).
+  const titleEl = existingMain ? existingMain.querySelector('.page-title') : null;
+  const titleText = titleEl ? titleEl.textContent : (links.find(l => l.page === activePage)?.label ?? '');
+  if (titleEl) titleEl.remove();
+
+  // A page's own primary action buttons (if marked) move into the toolbar too, right next to
+  // the title - pages without one (About) just get a title with no actions.
+  const actionsEl = existingMain ? existingMain.querySelector('.page-actions') : null;
+
   const currentTheme = getPreferredTheme();
   const toolbar = document.createElement('div');
   toolbar.className = 'toolbar';
   toolbar.innerHTML = `
+    <h1>${titleText}</h1>
+    <span class="toolbar-actions"></span>
     <label class="theme-toggle">
       <span>&#9728;</span>
       <span class="theme-switch">
@@ -73,6 +86,8 @@ function renderNav(activePage) {
       <span>&#127769;</span>
     </label>
   `;
+  if (actionsEl) toolbar.querySelector('.toolbar-actions').replaceWith(actionsEl);
+  else toolbar.querySelector('.toolbar-actions').remove();
 
   mainCol.appendChild(toolbar);
   if (existingMain) mainCol.appendChild(existingMain);

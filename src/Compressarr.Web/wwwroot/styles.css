@@ -137,16 +137,48 @@ body {
   background: var(--toolbar-bg);
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  gap: 16px;
   padding: 0 24px;
-  height: 52px;
+  min-height: 52px;
   flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.toolbar h1 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  white-space: nowrap;
+}
+
+/* A page's own action-button row/status text, relocated here from the content area - stripped
+   of the vertical spacing meant for sitting inside a form, and given a chrome that reads
+   correctly against the toolbar's fixed dark background regardless of the content theme toggle
+   (a plain button's usual colors are theme-dependent and were never designed for this context). */
+.toolbar .field-row,
+.toolbar .page-actions {
+  margin: 0;
+}
+
+.toolbar button {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.toolbar button:hover { border-color: #ffffff; }
+
+.toolbar .status,
+.toolbar .countdown {
+  color: var(--toolbar-text);
 }
 
 .theme-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-left: auto;
   font-size: 12px;
   color: var(--toolbar-text);
 }
