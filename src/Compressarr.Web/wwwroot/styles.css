@@ -386,7 +386,8 @@ body {
 .credits-list dd a { color: var(--accent); text-decoration: none; }
 .credits-list dd a:hover { text-decoration: underline; }
 
-.about-github-link { display: flex; margin-top: 20px; }
+/* Holds the website link (globe icon) followed by the GitHub link, despite the name. */
+.about-github-link { display: flex; gap: 14px; margin-top: 20px; }
 .about-github-link a { color: var(--text-dim); transition: color 0.15s; }
 .about-github-link a:hover { color: var(--text); }
 .about-github-link svg { width: 20px; height: 20px; display: block; }
