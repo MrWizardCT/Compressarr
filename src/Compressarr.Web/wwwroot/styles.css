@@ -699,6 +699,12 @@ a.primary:hover { opacity: 0.9; }
   margin-bottom: 6px;
 }
 
+/* The shared select rule only sets flex:1, which does nothing outside a flex container - a
+   preset <select> sitting directly in a field-block (not .field-with-btn like the path input
+   below it) was sizing to its own content instead of filling the column, so it read narrower
+   than the destination path + Browse button row under it. */
+.field-block select { width: 100%; }
+
 .field-with-btn { display: flex; gap: 8px; }
 
 .folders-grid {
