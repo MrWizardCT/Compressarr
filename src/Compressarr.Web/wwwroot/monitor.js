@@ -131,16 +131,19 @@ async function poll() {
   document.getElementById('laneValue').textContent = s.laneDisplayName || '-';
   document.getElementById('fileValue').textContent = s.fileName || '-';
 
-  let progressText = s.fileTotal ? `${s.fileIndex} of ${s.fileTotal}` : '-';
-  if (s.progressPercent !== null && s.progressPercent !== undefined) {
-    progressText += ` (${s.progressPercent.toFixed(1)}%`;
-    if (s.progressFps) progressText += `, ${s.progressFps.toFixed(1)} fps`;
-    if (s.progressEta) progressText += `, ETA ${s.progressEta}`;
-    progressText += ')';
-  }
-  document.getElementById('progressValue').textContent = progressText;
+  const hasPercent = s.progressPercent !== null && s.progressPercent !== undefined;
+  document.getElementById('progressFill').style.width = `${hasPercent ? s.progressPercent : 0}%`;
 
-  document.getElementById('cpuValue').textContent = (s.cpuUsagePercent === null || s.cpuUsagePercent === undefined) ? 'unavailable' : `${s.cpuUsagePercent}%`;
+  const subParts = [];
+  if (s.fileTotal) subParts.push(`${s.fileIndex} of ${s.fileTotal}`);
+  if (hasPercent) subParts.push(`${s.progressPercent.toFixed(1)}%`);
+  if (s.progressFps) subParts.push(`${s.progressFps.toFixed(1)} fps`);
+  if (s.progressEta) subParts.push(`ETA ${s.progressEta}`);
+  document.getElementById('progressSub').textContent = subParts.join(' · ');
+
+  // Whole numbers only - a percent to one decimal place reads as false precision for a value
+  // that's already sampled/smoothed server-side, and it isn't reproducible reading to reading.
+  document.getElementById('cpuValue').textContent = (s.cpuUsagePercent === null || s.cpuUsagePercent === undefined) ? 'unavailable' : `${Math.round(s.cpuUsagePercent)}%`;
 
   renderQueue(s.upNext);
   renderLog(s.recentLogLines);

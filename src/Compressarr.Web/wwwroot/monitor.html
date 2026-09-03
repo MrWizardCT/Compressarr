@@ -26,13 +26,13 @@
     <div class="stat-grid">
       <div class="stat"><div class="label">State</div><div class="value" id="stateValue">Idle</div></div>
       <div class="stat"><div class="label">Lane</div><div class="value" id="laneValue">-</div></div>
-      <div class="stat"><div class="label">CPU</div><div class="value" id="cpuValue">-</div></div>
-    </div>
-    <div class="stat-grid">
-      <div class="stat"><div class="label">File</div><div class="value" id="fileValue">-</div></div>
-    </div>
-    <div class="stat-grid">
-      <div class="stat"><div class="label">Progress</div><div class="value" id="progressValue">-</div></div>
+      <div class="stat stat-cpu"><div class="label">CPU</div><div class="value" id="cpuValue">-</div></div>
+      <div class="stat wide">
+        <div class="label">File</div>
+        <div class="value" id="fileValue">-</div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill" style="width: 0%"></div></div>
+        <div class="stat-sub" id="progressSub"></div>
+      </div>
     </div>
 
     <h2>In Queue</h2>

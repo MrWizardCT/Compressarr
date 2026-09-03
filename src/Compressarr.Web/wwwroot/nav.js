@@ -76,7 +76,7 @@ function renderNav(activePage) {
   toolbar.className = 'toolbar';
   toolbar.innerHTML = `
     <h1>${titleText}</h1>
-    <span class="toolbar-actions"></span>
+    <span class="toolbar-spacer"></span>
     <label class="theme-toggle">
       <span>&#9728;</span>
       <span class="theme-switch">
@@ -86,8 +86,12 @@ function renderNav(activePage) {
       <span>&#127769;</span>
     </label>
   `;
-  if (actionsEl) toolbar.querySelector('.toolbar-actions').replaceWith(actionsEl);
-  else toolbar.querySelector('.toolbar-actions').remove();
+  // The spacer always exists and always takes the room between the title and the theme toggle -
+  // a page's action buttons/status (if any) fill it edge to edge, so status text's own
+  // right-justification lands at the toolbar's true right edge instead of just the end of the
+  // button row. Pages with no actions (About) just leave it empty, which still does its job of
+  // pushing the toggle to the far right on its own.
+  if (actionsEl) toolbar.querySelector('.toolbar-spacer').appendChild(actionsEl);
 
   mainCol.appendChild(toolbar);
   if (existingMain) mainCol.appendChild(existingMain);
