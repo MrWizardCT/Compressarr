@@ -1,19 +1,28 @@
 renderNav('history');
 
-const historySection = document.getElementById('historySection');
-const toggleBtn = document.getElementById('toggleHistoryBtn');
+// Two independent show/hide toggles - History (the Period rollup table) and Reports (the run
+// list) - each remembers its own state and only ever affects its own section.
+function setupToggle(storageKey, sectionId, btnId, label) {
+  const section = document.getElementById(sectionId);
+  const btn = document.getElementById(btnId);
 
-function applyVisibility() {
-  const hidden = localStorage.getItem('compressarr.historyHidden') === 'true';
-  historySection.style.display = hidden ? 'none' : '';
-  toggleBtn.textContent = hidden ? 'Show History' : 'Hide History';
+  function applyVisibility() {
+    const hidden = localStorage.getItem(storageKey) === 'true';
+    section.style.display = hidden ? 'none' : '';
+    btn.textContent = hidden ? `Show ${label}` : `Hide ${label}`;
+  }
+
+  btn.addEventListener('click', () => {
+    const hidden = localStorage.getItem(storageKey) === 'true';
+    localStorage.setItem(storageKey, (!hidden).toString());
+    applyVisibility();
+  });
+
+  applyVisibility();
 }
 
-toggleBtn.addEventListener('click', () => {
-  const hidden = localStorage.getItem('compressarr.historyHidden') === 'true';
-  localStorage.setItem('compressarr.historyHidden', (!hidden).toString());
-  applyVisibility();
-});
+setupToggle('compressarr.historyHidden', 'historySection', 'toggleHistoryBtn', 'History');
+setupToggle('compressarr.reportsHidden', 'reportsSection', 'toggleReportsBtn', 'Reports');
 
 function row(label, bucket) {
   const saved = bucket.beforeGb > 0 ? Math.round((1 - bucket.afterGb / bucket.beforeGb) * 1000) / 10 : 0;
@@ -63,6 +72,5 @@ async function loadReports() {
   document.getElementById('reportsRows').innerHTML = entries.map(reportRow).join('');
 }
 
-applyVisibility();
 loadHistory();
 loadReports();
