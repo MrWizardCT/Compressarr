@@ -638,7 +638,13 @@ td { font-variant-numeric: tabular-nums; }
   white-space: nowrap;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+}
+
+/* Label stays put at the card's top; only the value centers in the leftover height below it. */
+.stat-state .value {
+  flex: 1;
+  display: flex;
+  align-items: center;
 }
 
 .stat-file {
