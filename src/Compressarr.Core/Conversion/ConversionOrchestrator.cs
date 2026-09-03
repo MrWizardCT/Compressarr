@@ -103,14 +103,22 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
         List<FileInfo> videoFiles;
 
-        // A pending job whose source file is gone (e.g. removed by hand between runs) can never
-        // be resumed - drop it rather than let it block this lane forever. Without this, a lane
-        // with only dead pending entries falls into the branch below, finds nothing to process,
-        // and returns without ever falling back to scanning Input for genuinely new files.
-        var deadPending = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending && !File.Exists(e.FullName)).ToList();
-        if (deadPending.Count > 0)
+        // A Pending or Error entry whose source file is gone (e.g. removed by hand, or already
+        // handled by Sonarr/Radarr, between runs) can never be resumed or retried - drop it
+        // rather than let it block this lane forever. Without this, a lane with only dead pending
+        // entries falls into the branch below, finds nothing to process, and returns without ever
+        // falling back to scanning Input for genuinely new files. Error entries need the same
+        // treatment for a different reason: unlike Pending, they're never re-checked by anything
+        // else once their source disappears, so a single dead Error entry pins resumeState.Count
+        // and RunOrchestrator's "stillOutstanding" check permanently - the whole resume.json
+        // (including every already-Completed entry sitting alongside it) never gets cleaned up,
+        // and "Resuming previous incomplete run" keeps logging that inflated count on every pass.
+        var deadEntries = resumeState.Where(e => e.LaneId == lane.Id
+            && e.Status is ResumeStatus.Pending or ResumeStatus.Error
+            && !File.Exists(e.FullName)).ToList();
+        if (deadEntries.Count > 0)
         {
-            foreach (var dead in deadPending)
+            foreach (var dead in deadEntries)
             {
                 _logger.Log($"Resume entry for '{dead.FullName}' no longer exists - removing it.", LogSeverity.Error);
                 resumeState.Remove(dead);

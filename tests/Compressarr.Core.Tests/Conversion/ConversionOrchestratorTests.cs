@@ -536,6 +536,63 @@ public class ConversionOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessLaneAsync_ErrorEntryWithMissingSourceFile_IsRemoved()
+    {
+        // A file that failed to encode (Error) and whose source later disappeared (deleted by
+        // hand, or already handled by Sonarr/Radarr) can never be retried - unlike a dead Pending
+        // entry, nothing else in this codebase ever re-checks or clears a dead Error entry.
+        // Without this, it sits in resume.json forever and permanently blocks
+        // RunOrchestrator's "stillOutstanding" cleanup for every other entry alongside it (even
+        // ones that are fully Completed) - reproduced live: a resume.json with 14 Completed
+        // entries plus one dead Error entry kept logging "Resuming previous incomplete run (15
+        // file(s) tracked)" on every single pass, forever.
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var lane = new LaneConfig
+        {
+            Id = "hdsd",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset"
+        };
+
+        var config = BuildConfig(DeleteAfterConvertMode.Maintain);
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var deadFilePath = Path.Combine(_tempDir, "Gone Now (2020).mkv"); // never created on disk
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "hdsd", FullName = deadFilePath, Status = ResumeStatus.Error }
+        };
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(),
+            new RealFolderScanner(),
+            new FixedExtensionPresetService(),
+            new MetadataService(),
+            new FakeProcessRunner(),
+            new FileRouter(),
+            new NoOpCompanionFileService(),
+            new NoOpArrUnmonitorService(),
+            new RecordingTrashService(),
+            new NoOpRunLogger(),
+            new NoOpResumeStateStore(),
+            new NoOpProgressReporter(),
+            configStore);
+
+        await orchestrator.ProcessLaneAsync(
+            lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        Assert.Empty(resumeState);
+    }
+
+    [Fact]
     public async Task ProcessLaneAsync_CompanionFileMoveFails_SetsWarningButStaysSuccessful()
     {
         var inputDir = Path.Combine(_tempDir, "Input");
