@@ -226,7 +226,9 @@ public sealed class RunOrchestrator : IRunOrchestrator
             process?.WaitForExit();
         }
 
-        _logger.Log($"\nCompressarr run completed. {totalFiles} file(s) processed in {runTime.Hours}h {runTime.Minutes}m {runTime.Seconds}s.");
+        _logger.Log(totalFiles == 0
+            ? "\nCompressarr run completed. No new files to process."
+            : $"\nCompressarr run completed. {totalFiles} file(s) processed in {runTime.Hours}h {runTime.Minutes}m {runTime.Seconds}s.");
 
         var (today, thisMonth, thisYear) = _rollupCalculator.Calculate(logFilePath);
 
