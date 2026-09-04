@@ -64,7 +64,7 @@ public static class RunEndpoints
             // Same Order-based sort ConversionOrchestrator applies when it actually picks files up
             // - the queue display matches what would actually get processed next, not just an
             // unordered list.
-            var pendingFiles = pending.OrderBy(p => p.Order ?? int.MaxValue).Select(p => new FileInfo(p.FullName)).Where(f => f.Exists);
+            var pendingFiles = pending.Where(p => !p.Removed).OrderBy(p => p.Order ?? int.MaxValue).Select(p => new FileInfo(p.FullName)).Where(f => f.Exists);
             var freshlyScanned = scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit)
                 .Where(f => !trackedPaths.Contains(f.FullName));
             var files = pendingFiles.Concat(freshlyScanned).ToList();
@@ -236,19 +236,32 @@ public static class RunEndpoints
             return found ? Results.Ok() : Results.NotFound();
         });
 
-        // "Remove from queue" for a regular (non-Error) queue item - clears its tracked Pending
-        // entry, same "file stays on disk, may resurface on a future scan" semantics as
-        // remove-error above. Unlike skip/reorder/preset-override, this never creates an entry
-        // first - there's nothing meaningful to remove for a file that was never tracked, and it
-        // would just be re-scanned back into view on the very next poll regardless.
-        app.MapPost("/api/run/queue/remove", (RemoveQueueEntryRequest request, IResumeStateStore resumeStore) =>
+        // "Remove from queue" for a regular (non-Error) queue item - marks the entry Removed (and
+        // implicitly Skipped, so it's never encoded) rather than deleting its resume entry. The
+        // file itself is left untouched on disk. Deleting the entry outright was the original
+        // implementation, but ComputeUpNext live-rescans each lane's Input folder on every poll -
+        // with no tracked entry left behind, an untouched file was rediscovered as "new" and
+        // reappeared within ~1.5s, making Remove look like it silently did nothing. Keeping a
+        // Removed entry around (same FindOrCreatePendingEntry path skip/preset-override use) keeps
+        // the file in trackedPaths so the rescan leaves it alone, while ComputeUpNext's own
+        // pendingFiles filter hides it from the list.
+        app.MapPost("/api/run/queue/remove", (RemoveQueueEntryRequest request, IConfigStore configStore, IPathExpander pathExpander, IResumeStateStore resumeStore) =>
         {
-            var removed = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState => resumeState.RemoveAll(e =>
-                e.LaneId == request.LaneId &&
-                e.Status == ResumeStatus.Pending &&
-                string.Equals(Path.GetFileName(e.FullName), request.FileName, StringComparison.Ordinal)));
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+            var lane = config.Lanes.FirstOrDefault(l => l.Id == request.LaneId);
+            if (lane is null) return Results.NotFound();
 
-            return Results.Json(new { removed });
+            var inputPath = pathExpander.Expand(lane.Input);
+            var found = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
+            {
+                var entry = FindOrCreatePendingEntry(resumeState, lane.Id, inputPath, request.FileName);
+                if (entry is null) return false;
+                entry.Removed = true;
+                entry.Skipped = true;
+                return true;
+            });
+
+            return found ? Results.Ok() : Results.NotFound();
         });
 
         // Per-file preset override, set by clicking the preset name on a queue row - overrides the

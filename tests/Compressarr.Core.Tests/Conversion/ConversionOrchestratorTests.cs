@@ -354,6 +354,48 @@ public class ConversionOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessLaneAsync_RemovedEntry_IsExcludedButStaysTracked()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var keepPath = Path.Combine(inputDir, "process-me.mkv");
+        var removedPath = Path.Combine(inputDir, "removed-me.mkv");
+        File.WriteAllText(keepPath, "keep");
+        File.WriteAllText(removedPath, "removed");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir, MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        // Removed implies Skipped, same as the "Remove from queue" endpoint sets both - a Removed
+        // entry with Skipped left false would be a state the UI never actually produces, and isn't
+        // what this test is verifying.
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "lane1", FullName = keepPath, Status = ResumeStatus.Pending },
+            new() { LaneId = "lane1", FullName = removedPath, Status = ResumeStatus.Pending, Skipped = true, Removed = true }
+        };
+
+        var results = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.Equal("process-me.mkv", result.FileName);
+
+        var removedEntry = resumeState.Single(e => e.FullName == removedPath);
+        Assert.Equal(ResumeStatus.Pending, removedEntry.Status);
+        Assert.True(removedEntry.Removed);
+    }
+
+    [Fact]
     public async Task ProcessLaneAsync_PresetOverride_WinsOverLaneDefault()
     {
         var inputDir = Path.Combine(_tempDir, "Input");

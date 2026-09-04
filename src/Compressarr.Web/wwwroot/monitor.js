@@ -299,6 +299,7 @@ function renderQueueList() {
       pop.className = 'queue-popover';
       pop.innerHTML = `
         <div class="queue-popover-item" data-act="skip">${item.isSkipped ? 'Unskip' : 'Skip'}</div>
+        ${item.isCustomPreset ? `<div class="queue-popover-item" data-act="use-lane-preset">Use Lane Preset</div>` : ''}
         <div class="queue-popover-item danger" data-act="remove">Remove from queue</div>
       `;
       row.querySelector('.queue-menu-wrap').appendChild(pop);
@@ -311,6 +312,12 @@ function renderQueueList() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName, skipped: !item.isSkipped })
+          });
+        } else if (act === 'use-lane-preset') {
+          await fetch('/api/run/queue/preset-override', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName, preset: null })
           });
         } else if (act === 'remove') {
           await fetch('/api/run/queue/remove', {
@@ -343,7 +350,7 @@ function renderQueueList() {
 function startQueueDrag(e, item, row) {
   e.preventDefault();
   row.querySelectorAll('.queue-popover').forEach(p => p.remove());
-  openMenuKey = null; openPresetKey = null;
+  openMenuKey = null; selectOpenKey = null;
 
   const rect = row.getBoundingClientRect();
   grabOffsetY = e.clientY - rect.top;

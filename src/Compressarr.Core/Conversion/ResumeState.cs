@@ -41,6 +41,16 @@ public sealed class ResumeEntry
     /// <summary>User-set preset for this specific file, overriding the lane's TvPreset/MoviePreset
     /// for this one entry only. Null/empty means "use the lane default" (the normal behavior).</summary>
     public string? PresetOverride { get; set; }
+
+    /// <summary>User-set "Remove from queue" - unlike Skipped, a Removed entry is dropped from the
+    /// Monitor page's In Queue list entirely, not just dimmed. Confirmed live: the queue's Input
+    /// folder is live-rescanned on every poll, so simply deleting the resume entry (the original
+    /// implementation) let an untouched file get rediscovered and reappear within ~1.5s, making
+    /// Remove look like it did nothing. Setting this flag instead - and having it also imply
+    /// Skipped, so ConversionOrchestrator never encodes it - keeps the file tracked (so the live
+    /// rescan skips it, same as any other tracked path) while hiding it from the UI, with the same
+    /// "stays until explicitly toggled back" reasoning as Skipped.</summary>
+    public bool Removed { get; set; }
 }
 
 public interface IResumeStateStore

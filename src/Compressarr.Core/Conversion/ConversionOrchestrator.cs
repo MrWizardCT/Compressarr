@@ -194,7 +194,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             // is excluded from this pass's actual encode list.
             videoFiles = pending
                 .OrderBy(p => p.Order ?? int.MaxValue)
-                .Where(p => !p.Skipped)
+                .Where(p => !p.Skipped && !p.Removed)
                 .Select(p => new FileInfo(p.FullName))
                 .ToList();
         }
@@ -247,7 +247,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             RefreshResumeStateFromDisk(resumeState, resumeFilePath);
 
             var resumeEntry = resumeState
-                .Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending && !e.Skipped)
+                .Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending && !e.Skipped && !e.Removed)
                 .OrderBy(e => e.Order ?? int.MaxValue)
                 .FirstOrDefault(e => File.Exists(e.FullName));
 
@@ -567,11 +567,11 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
     private static string AppendWarning(string? existing, string next) =>
         existing is null ? next : $"{existing}; {next}";
 
-    /// <summary>Merges Order/Skipped/PresetOverride from whatever is currently on disk onto the
-    /// matching entries in resumeState (by LaneId+FullName), mutating resumeState in place rather
-    /// than replacing it - callers (RunOrchestrator, tests) that hold a reference to this same
-    /// List&lt;ResumeEntry&gt; automatically see the refresh too, with no signature change needed.
-    /// Deliberately narrow: only those three user-editable fields are ever touched, never Status or
+    /// <summary>Merges Order/Skipped/PresetOverride/Removed from whatever is currently on disk onto
+    /// the matching entries in resumeState (by LaneId+FullName), mutating resumeState in place
+    /// rather than replacing it - callers (RunOrchestrator, tests) that hold a reference to this
+    /// same List&lt;ResumeEntry&gt; automatically see the refresh too, with no signature change
+    /// needed. Deliberately narrow: only those four user-editable fields are ever touched, never Status or
     /// EncodedFilePath, so this can never resurrect an entry ConversionOrchestrator itself is
     /// actively driving through its own state machine, or misclassify one - it only pulls in what
     /// a queue-control web request (reorder/skip/preset-override) could actually have changed. A
@@ -591,6 +591,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 inMemory.Order = diskEntry.Order;
                 inMemory.Skipped = diskEntry.Skipped;
                 inMemory.PresetOverride = diskEntry.PresetOverride;
+                inMemory.Removed = diskEntry.Removed;
             }
             else
             {
