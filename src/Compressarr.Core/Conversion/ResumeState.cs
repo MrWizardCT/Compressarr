@@ -48,6 +48,16 @@ public interface IResumeStateStore
     List<ResumeEntry> Load(string path);
     void Save(List<ResumeEntry> state, string path);
     void DeleteIfComplete(List<ResumeEntry> state, string path);
+
+    /// <summary>Atomically loads resume state, applies mutate, and saves the result - all under
+    /// one lock. Mirrors IConfigStore.Update for the exact same reason: the web UI's queue-control
+    /// endpoints (reorder/skip/preset-override/remove) can fire concurrently with each other and
+    /// with ConversionOrchestrator's own in-flight pass, and separate Load()+Save() calls race on
+    /// the read - each starts from the same pre-mutation snapshot, so whichever Save happens last
+    /// silently clobbers the other's change (a lost update), even though neither call throws.
+    /// Confirmed live: a user's reorder/skip/preset-override change was wiped out the moment the
+    /// in-flight file being encoded finished and ConversionOrchestrator did its own next Save.</summary>
+    T Update<T>(string path, Func<List<ResumeEntry>, T> mutate);
 }
 
 /// <summary>Ported from Import-CompressarrResumeState/Export-CompressarrResumeState. Written to
@@ -61,6 +71,8 @@ public sealed class JsonResumeStateStore : IResumeStateStore
         WriteIndented = true,
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
     };
+
+    private readonly SemaphoreSlim _lock = new(1, 1);
 
     public List<ResumeEntry> Load(string path)
     {
@@ -87,6 +99,22 @@ public sealed class JsonResumeStateStore : IResumeStateStore
         if (!hasOutstanding && File.Exists(path))
         {
             File.Delete(path);
+        }
+    }
+
+    public T Update<T>(string path, Func<List<ResumeEntry>, T> mutate)
+    {
+        _lock.Wait();
+        try
+        {
+            var state = Load(path);
+            var result = mutate(state);
+            Save(state, path);
+            return result;
+        }
+        finally
+        {
+            _lock.Release();
         }
     }
 }

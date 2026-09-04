@@ -220,25 +220,49 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             _resumeStore.Save(resumeState, resumeFilePath);
         }
 
+        // fileCount/padSize are a point-in-time estimate from the snapshot above, used only for
+        // the "file i of N" display and log-filename padding - a queue-control edit that skips or
+        // reorders files mid-pass can make the real count drift slightly from N, which is a
+        // cosmetic imprecision, not a correctness issue (unlike which file actually gets picked
+        // next, handled by the dynamic re-query below).
         var fileCount = videoFiles.Count;
         if (fileCount == 0) return results;
 
         var padSize = fileCount.ToString().Length;
 
         var i = 0;
-        foreach (var file in videoFiles)
+        while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            // Re-derive the next file to process from the *current* disk state on every
+            // iteration, rather than continuing to walk the videoFiles snapshot captured above -
+            // a drag-reorder/skip/preset-override request from the Monitor page's queue can land
+            // in the web process at any moment while this lane is mid-pass (e.g. while the
+            // previous file is still encoding), and the next file picked here must honor it
+            // instead of a stale pass-start order. RefreshResumeStateFromDisk merges in exactly
+            // the fields a queue-control request can change (Order/Skipped/PresetOverride) without
+            // touching Status, so it can never resurrect/misclassify the entry this method itself
+            // is actively driving.
+            RefreshResumeStateFromDisk(resumeState, resumeFilePath);
+
+            var resumeEntry = resumeState
+                .Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending && !e.Skipped)
+                .OrderBy(e => e.Order ?? int.MaxValue)
+                .FirstOrDefault(e => File.Exists(e.FullName));
+
+            if (resumeEntry is null) break;
+
             i++;
+            var file = new FileInfo(resumeEntry.FullName);
 
             var isTv = ContentClassifier.IsTvFile(file.Name);
             var contentType = isTv ? "TV Show" : "Movie";
-            var resumeEntry = resumeState.FirstOrDefault(e => e.LaneId == lane.Id && e.FullName == file.FullName);
             // A per-file preset override (set from the Monitor page's queue) wins over the lane's
             // own TvPreset/MoviePreset for this one entry only - looked up before presetName is
             // used anywhere (logging, the FileStarted progress event, the "no preset" check) so
             // all of it reflects the actual preset this file will encode with.
-            var presetName = !string.IsNullOrWhiteSpace(resumeEntry?.PresetOverride)
+            var presetName = !string.IsNullOrWhiteSpace(resumeEntry.PresetOverride)
                 ? resumeEntry.PresetOverride
                 : (isTv ? lane.TvPreset : lane.MoviePreset);
 
@@ -251,7 +275,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             if (string.IsNullOrWhiteSpace(presetName))
             {
                 _logger.Log($"  No {contentType} preset configured for this lane - skipping.", LogSeverity.Error);
-                if (resumeEntry is not null) resumeEntry.Status = ResumeStatus.Error;
+                resumeEntry.Status = ResumeStatus.Error;
                 _resumeStore.Save(resumeState, resumeFilePath);
 
                 results.Add(new ConversionResult
@@ -325,11 +349,17 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             presetsPath = _pathExpander.Expand(config.HandBrake.PresetsPath);
             _metadata.Enabled = config.Processing.ClearTitleMetadata;
 
+            // Same reasoning as the config reload just above, for resume state: pull in whatever a
+            // queue-control request changed on OTHER entries while this file was encoding, so the
+            // save below (and whichever entry gets picked next) doesn't clobber/ignore it. Never
+            // touches resumeEntry's own Status - only RefreshResumeStateFromDisk's own three fields.
+            RefreshResumeStateFromDisk(resumeState, resumeFilePath);
+
             if (runResult.Cancelled)
             {
                 try { File.Delete(tempFileName); } catch { }
                 _logger.Log($"  Conversion of '{file.Name}' aborted by user.", LogSeverity.Error);
-                if (resumeEntry is not null) resumeEntry.Status = ResumeStatus.Error;
+                resumeEntry.Status = ResumeStatus.Error;
                 _resumeStore.Save(resumeState, resumeFilePath);
                 cancellationToken.ThrowIfCancellationRequested();
             }
@@ -440,23 +470,20 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 // sets moveFailed) - the file is genuinely stuck unrouted in Output. MoveFailed (not
                 // Completed) so the retry loop at the top of this lane's next pass picks it back up
                 // instead of a resume entry silently lying that this file is fully done.
-                if (resumeEntry is not null)
+                if (moveFailed)
                 {
-                    if (moveFailed)
-                    {
-                        resumeEntry.Status = ResumeStatus.MoveFailed;
-                        resumeEntry.EncodedFilePath = newFileName;
-                    }
-                    else
-                    {
-                        resumeEntry.Status = ResumeStatus.Completed;
-                    }
+                    resumeEntry.Status = ResumeStatus.MoveFailed;
+                    resumeEntry.EncodedFilePath = newFileName;
+                }
+                else
+                {
+                    resumeEntry.Status = ResumeStatus.Completed;
                 }
             }
             else
             {
                 try { File.Delete(tempFileName); } catch { }
-                if (resumeEntry is not null) resumeEntry.Status = ResumeStatus.Error;
+                resumeEntry.Status = ResumeStatus.Error;
 
                 // HandBrakeCLI still writes its own log even on a failed encode - confirmed live
                 // against a genuinely full disk that its mux error names the cause explicitly
@@ -539,4 +566,36 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
     /// fail for the same file, and neither should silently overwrite the other's message.</summary>
     private static string AppendWarning(string? existing, string next) =>
         existing is null ? next : $"{existing}; {next}";
+
+    /// <summary>Merges Order/Skipped/PresetOverride from whatever is currently on disk onto the
+    /// matching entries in resumeState (by LaneId+FullName), mutating resumeState in place rather
+    /// than replacing it - callers (RunOrchestrator, tests) that hold a reference to this same
+    /// List&lt;ResumeEntry&gt; automatically see the refresh too, with no signature change needed.
+    /// Deliberately narrow: only those three user-editable fields are ever touched, never Status or
+    /// EncodedFilePath, so this can never resurrect an entry ConversionOrchestrator itself is
+    /// actively driving through its own state machine, or misclassify one - it only pulls in what
+    /// a queue-control web request (reorder/skip/preset-override) could actually have changed. A
+    /// disk entry with no in-memory match (a freshly-scanned file the user acted on before this
+    /// pass ever tracked it) is adopted as a new entry. Confirmed live: without this, a resume
+    /// entry the user had just reordered/skipped/preset-overridden via the Monitor page's queue
+    /// had those changes silently wiped the moment the file already in flight finished and this
+    /// method's own next Save ran with its stale, pass-start-old in-memory copy.</summary>
+    private void RefreshResumeStateFromDisk(List<ResumeEntry> resumeState, string resumeFilePath)
+    {
+        var onDisk = _resumeStore.Load(resumeFilePath);
+        foreach (var diskEntry in onDisk)
+        {
+            var inMemory = resumeState.FirstOrDefault(e => e.LaneId == diskEntry.LaneId && e.FullName == diskEntry.FullName);
+            if (inMemory is not null)
+            {
+                inMemory.Order = diskEntry.Order;
+                inMemory.Skipped = diskEntry.Skipped;
+                inMemory.PresetOverride = diskEntry.PresetOverride;
+            }
+            else
+            {
+                resumeState.Add(diskEntry);
+            }
+        }
+    }
 }

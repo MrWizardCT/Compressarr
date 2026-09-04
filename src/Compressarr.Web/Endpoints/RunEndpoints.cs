@@ -55,12 +55,18 @@ public static class RunEndpoints
             var pendingPaths = pending.Select(p => p.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var pendingByPath = pending.ToDictionary(p => p.FullName, StringComparer.OrdinalIgnoreCase);
 
+            // Excludes every path already tracked under ANY status for this lane, not just
+            // Pending - otherwise a file that just became Error (e.g. Abort mid-encode) or
+            // MoveFailed shows up twice: once here as a "fresh" untracked file, and again from its
+            // own real entry (the Error bucket below, or invisible-but-real for MoveFailed).
+            var trackedPaths = resumeState.Where(e => e.LaneId == lane.Id).Select(e => e.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
             // Same Order-based sort ConversionOrchestrator applies when it actually picks files up
             // - the queue display matches what would actually get processed next, not just an
             // unordered list.
             var pendingFiles = pending.OrderBy(p => p.Order ?? int.MaxValue).Select(p => new FileInfo(p.FullName)).Where(f => f.Exists);
             var freshlyScanned = scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit)
-                .Where(f => !pendingPaths.Contains(f.FullName));
+                .Where(f => !trackedPaths.Contains(f.FullName));
             var files = pendingFiles.Concat(freshlyScanned).ToList();
 
             // pending.Count > 0 is the right "new vs. resumed" signal for a lane this pass hasn't
@@ -176,14 +182,11 @@ public static class RunEndpoints
         // as a brand-new Pending entry, same as any other file that was never tracked before.
         app.MapPost("/api/run/queue/remove-error", (RemoveErrorQueueEntryRequest request, IResumeStateStore resumeStore) =>
         {
-            var resumeFilePath = AppPaths.GetResumeFilePath();
-            var resumeState = resumeStore.Load(resumeFilePath);
-            var removed = resumeState.RemoveAll(e =>
+            var removed = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState => resumeState.RemoveAll(e =>
                 e.LaneId == request.LaneId &&
                 e.Status == ResumeStatus.Error &&
-                string.Equals(Path.GetFileName(e.FullName), request.FileName, StringComparison.Ordinal));
+                string.Equals(Path.GetFileName(e.FullName), request.FileName, StringComparison.Ordinal)));
 
-            if (removed > 0) resumeStore.Save(resumeState, resumeFilePath);
             return Results.Json(new { removed });
         });
 
@@ -199,16 +202,16 @@ public static class RunEndpoints
             if (lane is null) return Results.NotFound();
 
             var inputPath = pathExpander.Expand(lane.Input);
-            var resumeFilePath = AppPaths.GetResumeFilePath();
-            var resumeState = resumeStore.Load(resumeFilePath);
-
-            for (var i = 0; i < request.OrderedFileNames.Count; i++)
+            resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
             {
-                var entry = FindOrCreatePendingEntry(resumeState, lane.Id, inputPath, request.OrderedFileNames[i]);
-                if (entry is not null) entry.Order = i;
-            }
+                for (var i = 0; i < request.OrderedFileNames.Count; i++)
+                {
+                    var entry = FindOrCreatePendingEntry(resumeState, lane.Id, inputPath, request.OrderedFileNames[i]);
+                    if (entry is not null) entry.Order = i;
+                }
+                return true;
+            });
 
-            resumeStore.Save(resumeState, resumeFilePath);
             return Results.Ok();
         });
 
@@ -222,15 +225,15 @@ public static class RunEndpoints
             if (lane is null) return Results.NotFound();
 
             var inputPath = pathExpander.Expand(lane.Input);
-            var resumeFilePath = AppPaths.GetResumeFilePath();
-            var resumeState = resumeStore.Load(resumeFilePath);
+            var found = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
+            {
+                var entry = FindOrCreatePendingEntry(resumeState, lane.Id, inputPath, request.FileName);
+                if (entry is null) return false;
+                entry.Skipped = request.Skipped;
+                return true;
+            });
 
-            var entry = FindOrCreatePendingEntry(resumeState, lane.Id, inputPath, request.FileName);
-            if (entry is null) return Results.NotFound();
-
-            entry.Skipped = request.Skipped;
-            resumeStore.Save(resumeState, resumeFilePath);
-            return Results.Ok();
+            return found ? Results.Ok() : Results.NotFound();
         });
 
         // "Remove from queue" for a regular (non-Error) queue item - clears its tracked Pending
@@ -240,14 +243,11 @@ public static class RunEndpoints
         // would just be re-scanned back into view on the very next poll regardless.
         app.MapPost("/api/run/queue/remove", (RemoveQueueEntryRequest request, IResumeStateStore resumeStore) =>
         {
-            var resumeFilePath = AppPaths.GetResumeFilePath();
-            var resumeState = resumeStore.Load(resumeFilePath);
-            var removed = resumeState.RemoveAll(e =>
+            var removed = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState => resumeState.RemoveAll(e =>
                 e.LaneId == request.LaneId &&
                 e.Status == ResumeStatus.Pending &&
-                string.Equals(Path.GetFileName(e.FullName), request.FileName, StringComparison.Ordinal));
+                string.Equals(Path.GetFileName(e.FullName), request.FileName, StringComparison.Ordinal)));
 
-            if (removed > 0) resumeStore.Save(resumeState, resumeFilePath);
             return Results.Json(new { removed });
         });
 
@@ -261,15 +261,15 @@ public static class RunEndpoints
             if (lane is null) return Results.NotFound();
 
             var inputPath = pathExpander.Expand(lane.Input);
-            var resumeFilePath = AppPaths.GetResumeFilePath();
-            var resumeState = resumeStore.Load(resumeFilePath);
+            var found = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
+            {
+                var entry = FindOrCreatePendingEntry(resumeState, lane.Id, inputPath, request.FileName);
+                if (entry is null) return false;
+                entry.PresetOverride = string.IsNullOrWhiteSpace(request.Preset) ? null : request.Preset;
+                return true;
+            });
 
-            var entry = FindOrCreatePendingEntry(resumeState, lane.Id, inputPath, request.FileName);
-            if (entry is null) return Results.NotFound();
-
-            entry.PresetOverride = string.IsNullOrWhiteSpace(request.Preset) ? null : request.Preset;
-            resumeStore.Save(resumeState, resumeFilePath);
-            return Results.Ok();
+            return found ? Results.Ok() : Results.NotFound();
         });
 
         app.MapPost("/api/run/pause", (IActiveHandBrakeProcess activeProcess) =>

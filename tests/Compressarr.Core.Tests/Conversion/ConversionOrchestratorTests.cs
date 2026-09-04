@@ -43,6 +43,32 @@ file sealed class FakeProcessRunner : IHandBrakeProcessRunner
     }
 }
 
+/// <summary>Fires a callback the first time RunAsync is called, before writing the fake encoded
+/// output - simulates a concurrent web request (e.g. POST /api/run/queue/reorder) landing while
+/// HandBrakeCLI is still "encoding" the first file, the exact live scenario that exposed the
+/// resume-state lost-update bug (a user's reorder/skip/preset-override change got silently wiped
+/// the moment the in-flight file finished).</summary>
+file sealed class ConcurrentEditProcessRunner : IHandBrakeProcessRunner
+{
+    private readonly Action _onFirstRun;
+    private bool _fired;
+
+    public ConcurrentEditProcessRunner(Action onFirstRun) => _onFirstRun = onFirstRun;
+
+    public Task<HandBrakeRunResult> RunAsync(
+        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
+        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken)
+    {
+        if (!_fired)
+        {
+            _fired = true;
+            _onFirstRun();
+        }
+        File.WriteAllText(tempOutputPath, "fake encoded output");
+        return Task.FromResult(new HandBrakeRunResult(Success: true, DetailLogFile: detailLogFile));
+    }
+}
+
 /// <summary>Simulates the exact real failure captured live against a genuinely full disk: a
 /// truncated temp output file, a failed HandBrakeRunResult, and the real HandBrakeCLI log content
 /// observed (mux error naming "No space left on device", "Finished work at" printed anyway,
@@ -167,6 +193,7 @@ file sealed class NoOpResumeStateStore : IResumeStateStore
     public List<ResumeEntry> Load(string path) => new();
     public void Save(List<ResumeEntry> state, string path) { }
     public void DeleteIfComplete(List<ResumeEntry> state, string path) { }
+    public T Update<T>(string path, Func<List<ResumeEntry>, T> mutate) => mutate(new List<ResumeEntry>());
 }
 
 /// <summary>Covers the mid-run config-reload fix: settings used to be read once per run/loop
@@ -384,6 +411,71 @@ public class ConversionOrchestratorTests : IDisposable
 
         var result = Assert.Single(results);
         Assert.Equal("Lane Default Preset", result.PresetName);
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_ConcurrentQueueEditDuringEncode_IsHonoredNotLost()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var path1 = Path.Combine(inputDir, "episode1.mkv");
+        var path2 = Path.Combine(inputDir, "episode2.mkv");
+        var path3 = Path.Combine(inputDir, "episode3.mkv");
+        File.WriteAllText(path1, "1");
+        File.WriteAllText(path2, "2");
+        File.WriteAllText(path3, "3");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir, MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        // A REAL file-backed store, not NoOp - this test needs Load/Update to genuinely round-trip
+        // through disk, the same channel a real web request and a real in-flight pass actually
+        // share (there's no way to reproduce a lost update against an in-memory-only fake).
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+        var realResumeStore = new JsonResumeStateStore();
+
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "lane1", FullName = path1, Status = ResumeStatus.Pending, Order = 0 },
+            new() { LaneId = "lane1", FullName = path2, Status = ResumeStatus.Pending, Order = 1 },
+            new() { LaneId = "lane1", FullName = path3, Status = ResumeStatus.Pending, Order = 2 }
+        };
+        realResumeStore.Save(resumeState, resumeFilePath);
+
+        // Simulates POST /api/run/queue/reorder landing while episode1 is still "encoding" -
+        // moves episode3 to the front of what's left, exactly the reported live scenario (user
+        // drags a file to the top of the queue mid-pass).
+        var processRunner = new ConcurrentEditProcessRunner(() =>
+        {
+            realResumeStore.Update(resumeFilePath, state =>
+            {
+                state.Single(e => e.FullName == path3).Order = 0;
+                state.Single(e => e.FullName == path2).Order = 1;
+                return true;
+            });
+        });
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            processRunner, new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), realResumeStore, new NoOpProgressReporter(), configStore);
+
+        var results = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, resumeFilePath, CancellationToken.None);
+
+        Assert.Equal(3, results.Count);
+        Assert.Equal("episode1.mkv", results[0].FileName); // already in flight when the edit landed
+        Assert.Equal("episode3.mkv", results[1].FileName); // the concurrent reorder's effect
+        Assert.Equal("episode2.mkv", results[2].FileName);
+
+        // The concurrent edit must have survived ConversionOrchestrator's own subsequent saves,
+        // not been silently overwritten by them.
+        var finalState = realResumeStore.Load(resumeFilePath);
+        Assert.All(finalState, e => Assert.Equal(ResumeStatus.Completed, e.Status));
     }
 
     [Fact]
