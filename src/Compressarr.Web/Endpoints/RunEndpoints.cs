@@ -158,8 +158,15 @@ public static class RunEndpoints
             string.Equals(Path.GetFileName(e.FullName), fileName, StringComparison.Ordinal));
         if (existing is not null) return existing;
 
-        var fullPath = Path.Combine(inputPath, fileName);
-        if (!File.Exists(fullPath)) return null;
+        // Not just Path.Combine(inputPath, fileName) - a lane's Input folder can have files nested
+        // in subfolders (e.g. one folder per movie), which IVideoFileScanner already scans
+        // recursively. The flat-only assumption here used to silently fail to find/create an entry
+        // for any such file, making reorder/skip/preset-override a no-op with no visible error for
+        // exactly that file.
+        var fullPath = Directory.Exists(inputPath)
+            ? Directory.EnumerateFiles(inputPath, fileName, SearchOption.AllDirectories).FirstOrDefault()
+            : null;
+        if (fullPath is null) return null;
 
         var created = new ResumeEntry { LaneId = laneId, FullName = fullPath, Status = ResumeStatus.Pending, CreatedByQueueEdit = true };
         resumeState.Add(created);
