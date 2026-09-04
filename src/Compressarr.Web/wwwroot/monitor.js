@@ -141,9 +141,12 @@ let latestItems = [];
 let displayItems = [];
 let draggingKey = null;
 let openMenuKey = null;
+let selectOpenKey = null;
 let ghostEl = null;
 let grabOffsetY = 0;
 let presetNames = [];
+
+const PRESET_DEFAULT_VALUE = '__lane_default__';
 
 const QUEUE_ICON_GRIP = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.6"></circle><circle cx="16" cy="6" r="1.6"></circle><circle cx="8" cy="12" r="1.6"></circle><circle cx="16" cy="12" r="1.6"></circle><circle cx="8" cy="18" r="1.6"></circle><circle cx="16" cy="18" r="1.6"></circle></svg>';
 const QUEUE_ICON_DOTS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="12" cy="19" r="1.8"></circle></svg>';
@@ -160,14 +163,20 @@ async function loadQueuePresetNames() {
 
 // Same pattern lanes.js's fillPresetSelect uses for the lane card's own TV/Movie preset
 // dropdowns - a plain native <select>, not a custom popover list, so a long presets.json reads
-// the same familiar, scrollable way everywhere in the app. "" means "use the lane default" (no
-// per-file override); if the file's current value isn't in presetNames (a stale override from a
-// presets.json that's since changed), it's kept as a selectable option anyway rather than
-// silently dropped.
+// the same familiar, scrollable way everywhere in the app.
+//
+// Shows the preset actually in effect (item.preset - the override if set, otherwise whatever the
+// lane resolves to) as the selected value, rather than a generic "Lane default" placeholder that
+// hides which preset is really running. A "Use lane default" entry is still offered as an
+// explicit choice to clear an override, but only when there IS one to clear - it's never what's
+// shown by default for a file that's already just using the lane's own preset.
 function fillQueuePresetSelect(select, item) {
-  const currentValue = item.isCustomPreset ? item.preset : '';
+  const currentValue = item.preset || '';
+  // If the file's current value isn't in presetNames (a stale override from a presets.json
+  // that's since changed), keep it as a selectable option anyway rather than silently dropping it.
   const names = (currentValue && !presetNames.includes(currentValue)) ? [currentValue, ...presetNames] : presetNames;
-  select.innerHTML = '<option value="">Lane default</option>' + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  const resetOption = item.isCustomPreset ? `<option value="${PRESET_DEFAULT_VALUE}">Use lane default</option>` : '';
+  select.innerHTML = resetOption + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
   select.value = currentValue;
 }
 
@@ -192,6 +201,15 @@ function renderQueue(items) {
   // leave a dangling open popover referencing it.
   const keys = new Set(displayItems.map(queueKey));
   if (openMenuKey !== null && !keys.has(openMenuKey)) openMenuKey = null;
+  if (selectOpenKey !== null && !keys.has(selectOpenKey)) selectOpenKey = null;
+
+  // The 1.5s poll rebuilding the whole list out from under an open native <select> or 3-dot
+  // popover was the actual bug behind "the preset list collapses" and "Remove doesn't work" -
+  // rebuilding destroys those DOM nodes (and their event listeners) mid-interaction, sometimes
+  // between the user's click landing and the row it was attached to still existing. While any of
+  // those are active, skip the rebuild entirely and just let it resume once the user finishes
+  // (each action already clears its own key before triggering the next poll).
+  if (draggingKey !== null || openMenuKey !== null || selectOpenKey !== null) return;
 
   renderQueueList();
 }
@@ -259,11 +277,18 @@ function renderQueueList() {
       const select = row.querySelector('.queue-preset-select');
       fillQueuePresetSelect(select, item);
       select.addEventListener('click', e => e.stopPropagation());
+      // Marks this select as "open" for as long as it holds focus, so a poll landing mid-choice
+      // can't rebuild the row out from under it (see renderQueue's guard above) - focus is the
+      // closest thing the DOM exposes to "the dropdown is actually showing."
+      select.addEventListener('focus', () => { selectOpenKey = key; });
+      select.addEventListener('blur', () => { if (selectOpenKey === key) selectOpenKey = null; });
       select.addEventListener('change', async e => {
+        selectOpenKey = null;
+        const chosen = e.target.value === PRESET_DEFAULT_VALUE ? null : e.target.value;
         await fetch('/api/run/queue/preset-override', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName, preset: e.target.value || null })
+          body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName, preset: chosen })
         });
         poll();
       });
