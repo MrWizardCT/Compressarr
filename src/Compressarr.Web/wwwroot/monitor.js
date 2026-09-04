@@ -129,6 +129,16 @@ function renderLog(lines) {
   }
 }
 
+function queueBadgeClass(item) {
+  if (item.isError) return 'error';
+  return item.isResumed ? 'resumed' : 'new';
+}
+
+function queueBadgeLabel(item) {
+  if (item.isError) return 'Error';
+  return item.isResumed ? 'Resumed' : 'New';
+}
+
 function renderQueue(items) {
   const list = document.getElementById('queueList');
   if (!items || items.length === 0) {
@@ -136,14 +146,37 @@ function renderQueue(items) {
     return;
   }
 
-  list.innerHTML = items
-    .map(item => `<div class="queue-item">
-      <span class="queue-badge ${item.isResumed ? 'resumed' : 'new'}">${item.isResumed ? 'Resumed' : 'New'}</span>
+  list.innerHTML = '';
+  for (const item of items) {
+    const row = document.createElement('div');
+    row.className = 'queue-item';
+    row.innerHTML = `
+      <span class="queue-badge ${queueBadgeClass(item)}">${queueBadgeLabel(item)}</span>
       <div class="queue-lane">${escapeHtml(item.laneDisplayName)}</div>
       <div class="queue-file">${escapeHtml(item.fileName)}</div>
       <div class="queue-meta">${item.sizeGb.toFixed(2)} GB &middot; ${escapeHtml(item.preset || '-')}</div>
-    </div>`)
-    .join('');
+    `;
+
+    if (item.isError) {
+      const removeBtn = document.createElement('button');
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', () => removeErrorQueueEntry(item.laneId, item.fileName));
+      row.appendChild(removeBtn);
+    }
+
+    list.appendChild(row);
+  }
+}
+
+async function removeErrorQueueEntry(laneId, fileName) {
+  if (!confirm(`Remove '${fileName}' from the queue?\n\nThis only clears its tracked error status - the file itself is left untouched on disk, and a future scan can pick it back up as new.`)) return;
+
+  await fetch('/api/run/queue/remove-error', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ laneId, fileName })
+  });
+  poll();
 }
 
 function escapeHtml(text) {

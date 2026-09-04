@@ -8,7 +8,9 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Compressarr.Web.Endpoints;
 
-public sealed record UpNextItem(string LaneDisplayName, string FileName, double SizeGb, string? Preset, bool IsResumed);
+public sealed record UpNextItem(string LaneId, string LaneDisplayName, string FileName, double SizeGb, string? Preset, bool IsResumed, bool IsError);
+
+public sealed record RemoveErrorQueueEntryRequest(string LaneId, string FileName);
 
 public static class RunEndpoints
 {
@@ -18,7 +20,16 @@ public static class RunEndpoints
     /// Monitor page's "Up Next" section - mirrors ConversionOrchestrator.ProcessLaneAsync's own
     /// "resume-state Pending entries if any exist, else a fresh scan" logic so the list matches
     /// what will actually get picked up next, not an independent re-scan. Skips whichever file is
-    /// currently being converted (already shown in "Current status").</summary>
+    /// currently being converted (already shown in "Current status").
+    ///
+    /// Always does a live Input scan for every lane, not just ones with no Pending entries yet -
+    /// this is what lets a file dropped into the *currently-running* lane's Input folder show up
+    /// here on the very next poll instead of only after that lane's whole pass finishes. Files
+    /// already known via a Pending resume entry are deduplicated against the scan by full path.
+    ///
+    /// Error entries are surfaced too (their own bucket, IsError=true) purely for visibility - they
+    /// are never fed into ConversionOrchestrator's own Pending filter, so listing them here doesn't
+    /// change what gets processed.</summary>
     private static List<UpNextItem> ComputeUpNext(
         CompressarrConfig config,
         IPathExpander pathExpander,
@@ -27,8 +38,7 @@ public static class RunEndpoints
         RunStateSnapshot currentRun)
     {
         var items = new List<UpNextItem>();
-        var resumeFilePath = Path.Combine(AppPaths.GetAppDataDirectory(), "compressarr.resume.json");
-        var resumeState = resumeStore.Load(resumeFilePath);
+        var resumeState = resumeStore.Load(AppPaths.GetResumeFilePath());
 
         foreach (var lane in config.Lanes)
         {
@@ -38,9 +48,12 @@ public static class RunEndpoints
             if (string.IsNullOrWhiteSpace(inputPath) || !Directory.Exists(inputPath)) continue;
 
             var pending = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending).ToList();
-            var files = pending.Count > 0
-                ? pending.Select(p => new FileInfo(p.FullName)).Where(f => f.Exists).ToList()
-                : scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit).ToList();
+            var pendingPaths = pending.Select(p => p.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var pendingFiles = pending.Select(p => new FileInfo(p.FullName)).Where(f => f.Exists);
+            var freshlyScanned = scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit)
+                .Where(f => !pendingPaths.Contains(f.FullName));
+            var files = pendingFiles.Concat(freshlyScanned).ToList();
 
             // pending.Count > 0 is the right "new vs. resumed" signal for a lane this pass hasn't
             // reached yet - but once a lane actually starts, a clean start writes its own fresh
@@ -49,7 +62,7 @@ public static class RunEndpoints
             // interrupted. For whichever lane is currently running, trust the flag captured before
             // that mutation happened (RunOrchestrator, via CurrentRunStateService) instead.
             var isCurrentLane = currentRun.IsRunning && string.Equals(lane.DisplayName, currentRun.LaneDisplayName, StringComparison.Ordinal);
-            var isResumed = isCurrentLane ? currentRun.CurrentLaneIsResumed : pending.Count > 0;
+            var laneIsResumed = isCurrentLane ? currentRun.CurrentLaneIsResumed : pending.Count > 0;
 
             foreach (var file in files)
             {
@@ -59,9 +72,29 @@ public static class RunEndpoints
                     continue;
                 }
 
+                // A freshly-scanned file with no Pending entry yet is always "New", regardless of
+                // whatever this lane's own overall pass-resumed state is - it was never tracked
+                // before this very poll.
+                var isResumed = pendingPaths.Contains(file.FullName) && laneIsResumed;
+
                 var preset = ContentClassifier.IsTvFile(file.Name) ? lane.TvPreset : lane.MoviePreset;
                 var sizeGb = Math.Round(file.Length / (double)BytesPerGb, 3);
-                items.Add(new UpNextItem(lane.DisplayName, file.Name, sizeGb, preset, isResumed));
+                items.Add(new UpNextItem(lane.Id, lane.DisplayName, file.Name, sizeGb, preset, isResumed, IsError: false));
+            }
+
+            var errorEntries = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Error).ToList();
+            foreach (var entry in errorEntries)
+            {
+                var fileInfo = new FileInfo(entry.FullName);
+                // A dead Error entry (source file gone) is cleaned up automatically by
+                // ConversionOrchestrator the next time this lane's pass actually runs - just skip
+                // showing a ghost row for it here in the meantime, rather than duplicating that
+                // cleanup in a read-only status endpoint.
+                if (!fileInfo.Exists) continue;
+
+                var preset = ContentClassifier.IsTvFile(fileInfo.Name) ? lane.TvPreset : lane.MoviePreset;
+                var sizeGb = Math.Round(fileInfo.Length / (double)BytesPerGb, 3);
+                items.Add(new UpNextItem(lane.Id, lane.DisplayName, fileInfo.Name, sizeGb, preset, IsResumed: false, IsError: true));
             }
         }
 
@@ -102,6 +135,23 @@ public static class RunEndpoints
         {
             var triggered = loopController.TriggerNow();
             return Results.Json(new { triggered });
+        });
+
+        // Clears a single Error-status resume entry, surfaced on the In Queue list's Error badge -
+        // the file itself is left untouched on disk, only its tracking entry is dropped so it stops
+        // showing up here. A later fresh scan of the lane's Input folder can pick the file back up
+        // as a brand-new Pending entry, same as any other file that was never tracked before.
+        app.MapPost("/api/run/queue/remove-error", (RemoveErrorQueueEntryRequest request, IResumeStateStore resumeStore) =>
+        {
+            var resumeFilePath = AppPaths.GetResumeFilePath();
+            var resumeState = resumeStore.Load(resumeFilePath);
+            var removed = resumeState.RemoveAll(e =>
+                e.LaneId == request.LaneId &&
+                e.Status == ResumeStatus.Error &&
+                string.Equals(Path.GetFileName(e.FullName), request.FileName, StringComparison.Ordinal));
+
+            if (removed > 0) resumeStore.Save(resumeState, resumeFilePath);
+            return Results.Json(new { removed });
         });
 
         app.MapPost("/api/run/pause", (IActiveHandBrakeProcess activeProcess) =>
