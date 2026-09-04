@@ -5,10 +5,15 @@ namespace Compressarr.Web;
 
 public sealed record LogLineEntry(string Text, string Severity);
 
+// LaneIsResumedById: per-lane "did this lane have real incomplete work when its most recent
+// pass began" - recorded by LaneStarted and, unlike a single "current lane" flag, kept around
+// (keyed by lane id) even after that lane stops being the active one (pass finished, Stop
+// Monitoring, or a different lane started) - see ComputeUpNext's use of it for why a lane that
+// stops being "current" must still be able to answer this correctly.
 public sealed record RunStateSnapshot(
     bool IsRunning,
     string? LaneDisplayName,
-    bool CurrentLaneIsResumed,
+    IReadOnlyDictionary<string, bool> LaneIsResumedById,
     string? FileName,
     string? PresetName,
     int FileIndex,
@@ -35,7 +40,6 @@ public sealed class CurrentRunStateService : IRunProgressReporter
     private bool _isRunning;
     private string? _laneId;
     private string? _laneDisplayName;
-    private bool _currentLaneIsResumed;
     private string? _fileName;
     private string? _presetName;
     private int _fileIndex;
@@ -68,7 +72,6 @@ public sealed class CurrentRunStateService : IRunProgressReporter
             _isRunning = true;
             _laneId = null;
             _laneDisplayName = null;
-            _currentLaneIsResumed = false;
             _fileName = null;
             _presetName = null;
             _fileIndex = 0;
@@ -85,7 +88,6 @@ public sealed class CurrentRunStateService : IRunProgressReporter
         {
             _laneId = laneId;
             _laneDisplayName = laneDisplayName;
-            _currentLaneIsResumed = isResumed;
             _laneDisplayNamesById[laneId] = laneDisplayName;
             _laneIsResumedById[laneId] = isResumed;
         }
@@ -97,7 +99,6 @@ public sealed class CurrentRunStateService : IRunProgressReporter
         {
             _laneId = laneId;
             _laneDisplayNamesById.TryGetValue(laneId, out _laneDisplayName);
-            _laneIsResumedById.TryGetValue(laneId, out _currentLaneIsResumed);
             _fileName = fileName;
             _presetName = presetName;
             _fileIndex = index;
@@ -143,7 +144,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
     {
         lock (_lock)
         {
-            return new RunStateSnapshot(_isRunning, _laneDisplayName, _currentLaneIsResumed, _fileName, _presetName, _fileIndex, _fileTotal, _progressPercent, _progressFps, _progressEta, _recentLines.ToList());
+            return new RunStateSnapshot(_isRunning, _laneDisplayName, new Dictionary<string, bool>(_laneIsResumedById), _fileName, _presetName, _fileIndex, _fileTotal, _progressPercent, _progressFps, _progressEta, _recentLines.ToList());
         }
     }
 }

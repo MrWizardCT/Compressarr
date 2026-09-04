@@ -83,18 +83,24 @@ public static class RunEndpoints
                 .ThenBy(f => naturalIndex[f.FullName])
                 .ToList();
 
-            // pending.Count > 0 is the right "new vs. resumed" signal for a lane this pass hasn't
-            // reached yet - but once a lane actually starts, a clean start writes its own fresh
-            // Pending entries as bookkeeping before converting anything, which would otherwise
-            // make every file in it look "resumed" a moment later even though nothing was ever
-            // interrupted. For whichever lane is currently running, trust the flag captured before
-            // that mutation happened (RunOrchestrator, via CurrentRunStateService) instead.
-            // Only counts entries ConversionOrchestrator's own scan-and-track bookkeeping created -
-            // a CreatedByQueueEdit entry (bookkeeping for a skip/reorder/preset-override/remove
-            // action on a file the pass hasn't reached yet) doesn't mean any real prior work is
-            // outstanding, and must never taint this lane-wide flag on its own.
-            var isCurrentLane = currentRun.IsRunning && string.Equals(lane.DisplayName, currentRun.LaneDisplayName, StringComparison.Ordinal);
-            var laneIsResumed = isCurrentLane ? currentRun.CurrentLaneIsResumed : pending.Any(p => !p.CreatedByQueueEdit);
+            // Whether this lane genuinely had incomplete work outstanding when its OWN most recent
+            // pass began - recorded once by RunOrchestrator (via CurrentRunStateService.LaneStarted)
+            // right before ProcessLaneAsync's own bookkeeping could add fresh Pending entries and
+            // make it look "resumed" a moment later even though nothing was ever interrupted. Kept
+            // per-lane (LaneIsResumedById), not just for whichever lane happens to be running RIGHT
+            // NOW - confirmed live: pressing Stop Monitoring mid-pass (or the pass simply finishing)
+            // used to make every remaining untouched file in the queue flip to "Resumed", because
+            // the old isCurrentLane-only signal fell back to "pending.Any(...)" the instant the lane
+            // stopped being current - which is true for ANY tracked Pending entry, including ones
+            // that were only ever freshly scanned this same pass and never actually attempted.
+            //
+            // Falls back to the old pending.Any(...) heuristic only when this lane has no recorded
+            // entry yet at all - the gap between the app starting up and its very first pass ever
+            // running, where genuinely-carried-over-from-a-prior-session Pending entries exist but
+            // LaneStarted hasn't fired even once to record whether they're real resumed work.
+            var laneIsResumed = currentRun.LaneIsResumedById.TryGetValue(lane.Id, out var recordedResumed)
+                ? recordedResumed
+                : pending.Any(p => !p.CreatedByQueueEdit);
 
             foreach (var file in files)
             {
