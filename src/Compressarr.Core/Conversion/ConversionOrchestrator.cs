@@ -167,7 +167,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 {
                     try
                     {
-                        _companionFiles.MoveCompanionFiles(entry.EncodedFilePath!, Path.GetDirectoryName(entry.EncodedFilePath)!, Path.GetDirectoryName(retryDestPath)!, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath, HeldBackFullPaths(resumeState, lane.Id));
+                        _companionFiles.MoveCompanionFiles(entry.EncodedFilePath!, Path.GetDirectoryName(entry.EncodedFilePath)!, Path.GetDirectoryName(retryDestPath)!, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath);
                     }
                     catch (Exception ex)
                     {
@@ -469,7 +469,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     try
                     {
                         var routedDestFolder = Path.GetDirectoryName(routedDestPath)!;
-                        _companionFiles.MoveCompanionFiles(file.FullName, file.DirectoryName!, routedDestFolder, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath, HeldBackFullPaths(resumeState, lane.Id));
+                        _companionFiles.MoveCompanionFiles(file.FullName, file.DirectoryName!, routedDestFolder, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath);
                     }
                     catch (Exception ex)
                     {
@@ -578,20 +578,6 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
     /// fail for the same file, and neither should silently overwrite the other's message.</summary>
     private static string AppendWarning(string? existing, string next) =>
         existing is null ? next : $"{existing}; {next}";
-
-    /// <summary>Full paths of this lane's Skipped (which, per ResumeEntry.Removed's own doc comment,
-    /// also covers Removed) Pending entries - files that will never be picked up for real
-    /// processing and so must never block, or themselves be swept up by, a sibling's own
-    /// companion-file move. See ICompanionFileService.MoveCompanionFiles' heldBackFullPaths.
-    /// Confirmed live: a permanently-skipped file left sitting in a lane's flat Input folder
-    /// (subtitles alongside videos, no per-episode subfolders) silently blocked companion-file
-    /// moves for every OTHER file in that same folder too, since MoveCompanionFiles' own "only the
-    /// last video left" safety guard couldn't distinguish "genuinely still queued" from
-    /// "deliberately held back forever."</summary>
-    private static HashSet<string> HeldBackFullPaths(List<ResumeEntry> resumeState, string laneId) =>
-        resumeState.Where(e => e.LaneId == laneId && e.Status == ResumeStatus.Pending && e.Skipped)
-            .Select(e => e.FullName)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Merges Order/Skipped/PresetOverride/Removed from whatever is currently on disk onto
     /// the matching entries in resumeState (by LaneId+FullName), mutating resumeState in place

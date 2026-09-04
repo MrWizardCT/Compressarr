@@ -179,13 +179,13 @@ file sealed class ThrowingArrUnmonitorService : IArrUnmonitorService
 
 file sealed class ThrowingCompanionFileService : ICompanionFileService
 {
-    public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string destinationFolder, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, string inputRoot, IReadOnlySet<string>? heldBackFullPaths = null) =>
+    public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string destinationFolder, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, string inputRoot) =>
         throw new IOException("Access to the path is denied.");
 }
 
 file sealed class NoOpCompanionFileService : ICompanionFileService
 {
-    public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string destinationFolder, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, string inputRoot, IReadOnlySet<string>? heldBackFullPaths = null) { }
+    public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string destinationFolder, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, string inputRoot) { }
 }
 
 file sealed class NoOpResumeStateStore : IResumeStateStore

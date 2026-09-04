@@ -4,32 +4,32 @@ namespace Compressarr.Core.Routing;
 
 public interface ICompanionFileService
 {
-    /// <summary>After a file has been routed into its destination folder, handles whatever else
-    /// was sitting alongside it in its original source folder (subtitles, .nfo, artwork, etc).
-    /// Safety guard: only acts if originalFileFullName was the ONLY video file (per vidTypes) in
-    /// its source folder — a shared/flat folder holding other not-yet-processed videos is left
-    /// completely alone. In Delete/Recycle mode, siblings are moved into the destination and the
-    /// source folder (plus now-empty ancestors, up to but not including inputRoot) is removed;
-    /// in Maintain mode, siblings are copied and the source is left untouched.
+    /// <summary>After a file has been routed into its destination folder, moves whatever else in
+    /// its source folder belongs to it - subtitles, .nfo, artwork, etc - matched by shared base
+    /// name (e.g. "Show.eng.srt" alongside "Show.mp4"). Runs immediately, every time, regardless
+    /// of whether other videos are still sitting in the same shared/flat folder - a sibling
+    /// episode's own companions are never touched, only this file's own. In Delete/Recycle mode
+    /// they're moved into the destination; in Maintain mode they're copied and the source is left
+    /// untouched. Once no video files remain in the source folder at all, it (and now-empty
+    /// ancestors, up to but not including inputRoot) is removed too.
     ///
-    /// heldBackFullPaths - full paths of sibling videos in this same lane that are Skipped/Removed
-    /// from the Monitor page's queue and so will never be picked up for real processing. These are
-    /// excluded from the "other videos still present" guard (a permanently-held-back sibling should
-    /// never block this file's own companion move indefinitely) but are also never themselves
-    /// moved, deleted, or swept as part of any folder cleanup - they, and their OWN companion files
-    /// (matched by shared base name, e.g. a held-back video's own .srt), stay exactly where they
-    /// are, same as the "file stays on disk, untouched" guarantee Skip/Remove make on their own.</summary>
+    /// Confirmed live: an earlier "wait until this is the only video left in the folder, then
+    /// sweep everything at once" design meant a file's own companions didn't move until the WHOLE
+    /// shared batch finished - or never, if a sibling was permanently skipped/removed from the
+    /// queue - and even Stop Monitoring landing right after one file finished (before the next
+    /// started) left that file's own companions stranded. Moving per-file, immediately, by name
+    /// match rather than by "am I the last one" sidesteps all of that.</summary>
     void MoveCompanionFiles(
         string originalFileFullName,
         string originalFileDirectory,
         string destinationFolder,
         IReadOnlyList<string> vidTypes,
         DeleteAfterConvertMode deleteAfterConvert,
-        string inputRoot,
-        IReadOnlySet<string>? heldBackFullPaths = null);
+        string inputRoot);
 }
 
-/// <summary>Ported from Move-CompressarrCompanionFiles.</summary>
+/// <summary>Ported from Move-CompressarrCompanionFiles; redesigned from a batch-at-the-end sweep
+/// to an immediate per-file move (see ICompanionFileService's doc comment for why).</summary>
 public sealed class CompanionFileService : ICompanionFileService
 {
     private readonly ITrashService _trash;
@@ -45,49 +45,25 @@ public sealed class CompanionFileService : ICompanionFileService
         string destinationFolder,
         IReadOnlyList<string> vidTypes,
         DeleteAfterConvertMode deleteAfterConvert,
-        string inputRoot,
-        IReadOnlySet<string>? heldBackFullPaths = null)
+        string inputRoot)
     {
         if (!Directory.Exists(originalFileDirectory)) return;
-        heldBackFullPaths ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // A held-back video's own companions (subtitles etc.) share its base name, differing only
-        // by a language code/extension suffix - e.g. "Show.eng.srt" alongside "Show.mp4" - so they
-        // must be protected right along with the video itself, not just the video file's own exact
-        // path. Matched as "the video's own extension-stripped name, followed by a '.'" rather than
-        // a plain prefix, so "S03E1"'s own held-back stem can't accidentally also swallow
-        // "S03E10 - Magic.eng.srt" (both start with "S03E1", but only one is followed by ".").
-        var heldBackStemPrefixes = heldBackFullPaths
-            .Select(p => Path.GetFileNameWithoutExtension(p) + ".")
-            .ToList();
-        bool IsHeldBack(string fullPath) =>
-            heldBackFullPaths.Contains(fullPath) ||
-            heldBackStemPrefixes.Any(prefix => Path.GetFileName(fullPath).StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
 
         var extensions = vidTypes
             .Where(t => !string.IsNullOrWhiteSpace(t))
             .Select(t => "." + t.Trim().TrimStart('.'))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var otherVideos = Directory.EnumerateFiles(originalFileDirectory)
-            .Where(f => extensions.Contains(Path.GetExtension(f)))
+        // Matched as "the video's own extension-stripped name, followed by a '.'" rather than a
+        // plain prefix, so "S03E1"'s own stem can't accidentally also claim "S03E10 - Magic.eng.srt"
+        // (both start with "S03E1", but only one is followed by ".").
+        var stemPrefix = Path.GetFileNameWithoutExtension(originalFileFullName) + ".";
+        var ownCompanions = Directory.EnumerateFiles(originalFileDirectory)
             .Where(f => !string.Equals(f, originalFileFullName, StringComparison.OrdinalIgnoreCase))
-            .Where(f => !heldBackFullPaths.Contains(f))
+            .Where(f => Path.GetFileName(f).StartsWith(stemPrefix, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        if (otherVideos.Count > 0)
-        {
-            // Shared/flat folder - leave everything alone except the file that was actually
-            // converted (already handled elsewhere).
-            return;
-        }
-
-        var siblings = Directory.EnumerateFiles(originalFileDirectory)
-            .Where(f => !string.Equals(f, originalFileFullName, StringComparison.OrdinalIgnoreCase))
-            .Where(f => !IsHeldBack(f))
-            .ToList();
-
-        foreach (var sibling in siblings)
+        foreach (var sibling in ownCompanions)
         {
             var destPath = Path.Combine(destinationFolder, Path.GetFileName(sibling));
             if (deleteAfterConvert == DeleteAfterConvertMode.Maintain)
@@ -105,7 +81,7 @@ public sealed class CompanionFileService : ICompanionFileService
 
         // Never sweep or remove the lane's Input root itself - it's the lane's persistent watch
         // folder for the next run, and may still hold other unrelated content this function never
-        // inspected (only originalFileFullName's own siblings were considered above).
+        // inspected (only originalFileFullName's own companions were considered above).
         var inputRootFull = SafeFullPath(inputRoot);
         var originalDirFull = SafeFullPath(originalFileDirectory);
         if (inputRootFull is not null && string.Equals(originalDirFull, inputRootFull, StringComparison.OrdinalIgnoreCase))
@@ -113,12 +89,16 @@ public sealed class CompanionFileService : ICompanionFileService
             return;
         }
 
-        // A held-back sibling (Skipped/Removed from the queue) still legitimately sits here -
-        // the folder isn't really empty, and it must never be swept/deleted along with it.
-        var remaining = Directory.EnumerateFileSystemEntries(originalFileDirectory).ToList();
-        if (remaining.Any(IsHeldBack)) return;
+        // A shared/flat folder still holding another video (still queued, skipped, whatever) isn't
+        // really empty yet - leave it, and whatever's still sitting alongside that other video,
+        // completely alone. Only once every video is gone does cleanup make sense.
+        var stillHasVideo = Directory.EnumerateFiles(originalFileDirectory)
+            .Any(f => extensions.Contains(Path.GetExtension(f)));
+        if (stillHasVideo) return;
 
-        // Clear out anything still left, then remove the now-empty source folder itself.
+        // Clear out anything still left (companions of the last file just moved above; anything
+        // else here is orphaned, non-per-file content), then remove the now-empty source folder.
+        var remaining = Directory.EnumerateFileSystemEntries(originalFileDirectory).ToList();
         foreach (var item in remaining)
         {
             if (Directory.Exists(item))
