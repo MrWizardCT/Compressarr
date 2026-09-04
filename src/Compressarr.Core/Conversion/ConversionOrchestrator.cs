@@ -7,29 +7,88 @@ using Compressarr.Core.Routing;
 
 namespace Compressarr.Core.Conversion;
 
+/// <summary>Per-lane state that survives across non-contiguous visits to the same lane in a global,
+/// cross-lane processing order - one lane's file can now be processed, then a different lane's
+/// file, then this lane's next file, so the config/path snapshot a mid-run settings reload updates
+/// (see ProcessOneFileAsync) needs an explicit home instead of a local variable closed over by a
+/// single lane's own while loop. InputPath is deliberately init-only and never refreshed, matching
+/// the original method's own asymmetry: companion-file routing math depends on the ORIGINAL Input
+/// path as its relative-move cutoff root, not whatever it's reloaded to mid-run.</summary>
+public sealed class LaneProcessingContext
+{
+    public required LaneConfig Lane { get; set; }
+    public required CompressarrConfig Config { get; set; }
+    public required string InputPath { get; init; }
+    public required string OutputBase { get; set; }
+    public required string TvShowBasePath { get; set; }
+    public required string MovieBasePath { get; set; }
+    public required string HbLoc { get; set; }
+    public required string PresetsPath { get; set; }
+
+    /// <summary>"File i of N" and log-filename zero-padding - a point-in-time estimate from this
+    /// lane's own prep, cosmetic only (a queue-control edit mid-run can make the real count drift
+    /// slightly), kept per-lane rather than switched to a global count across every lane so today's
+    /// "Compressing File in Lane X, i of N" UI copy keeps meaning what it already says.</summary>
+    public int FileIndex { get; set; }
+    public int FileTotal { get; set; }
+    public int PadSize { get; set; }
+
+    /// <summary>This lane's own natural (recursive folder scan) order, by full path - the fallback
+    /// tie-break for entries with no explicit user-set Order, used identically by both the global
+    /// cross-lane picking loop (RunOrchestrator) and the Monitor page's queue display
+    /// (RunEndpoints.ComputeUpNext) so the two can never disagree about "what's next" for a file
+    /// nobody has ever dragged.</summary>
+    public required IReadOnlyDictionary<string, int> NaturalOrderIndex { get; init; }
+}
+
 public interface IConversionOrchestrator
 {
-    /// <summary>Processes every pending file for one lane, strictly sequentially: each file is
-    /// fully finished (converted, routed, arr-unmonitored, companions handled) before the next
-    /// one starts — no concurrent HandBrakeCLI processes, no job-list polling. This also means
-    /// the resume state on disk is always accurate up to the file currently in flight. Ported
-    /// from Invoke-CompressarrLaneConversion.
-    ///
-    /// cancellationToken (Abort) kills the in-flight HandBrakeCLI process immediately -
-    /// IHandBrakeProcessRunner registers a Kill(entireProcessTree) callback directly on it.
-    /// stopToken (Stop Monitoring) is a separate, gentler signal: checked only at the top of this
-    /// method's own per-file loop, before picking up the NEXT file, and never passed to the
-    /// process runner - so a graceful stop lets the file actively encoding right now finish
-    /// completely (encode, route, companions, arr-unmonitor) rather than killing it mid-encode.</summary>
-    Task<IReadOnlyList<ConversionResult>> ProcessLaneAsync(
+    /// <summary>Per-lane setup, run once per enabled lane before any cross-lane interleaved
+    /// processing begins: validates the lane's Input/Output configuration, drops dead Pending/Error
+    /// entries whose source file is gone, retries any MoveFailed entries from a prior pass, always
+    /// scans Input recursively (both to seed resumeState with Pending entries when none exist yet,
+    /// and to build the natural fallback order used for untouched entries either way). Returns null
+    /// if this lane can't be processed at
+    /// all (bad Input path, or no Output configured with "write output to same folder as input"
+    /// off) - the caller should skip the lane entirely in that case, the same way the lane-scoped
+    /// early-returns worked before this method existed.</summary>
+    LaneProcessingContext? PrepareLane(
         LaneConfig lane,
         CompressarrConfig config,
+        List<ResumeEntry> resumeState,
+        string resumeFilePath);
+
+    /// <summary>Processes exactly one already-selected file for the lane context carries - fully
+    /// finished (converted, routed, arr-unmonitored, companions handled) before returning, so the
+    /// resume state on disk is always accurate up to the file currently in flight, the same
+    /// guarantee ProcessLaneAsync used to make for a whole lane. Mutates context in place (config
+    /// reload, derived paths) so this lane's NEXT call - however many other lanes' files are
+    /// processed in between - picks up mid-run settings changes exactly like before.
+    ///
+    /// cancellationToken (Abort) kills the in-flight HandBrakeCLI process immediately -
+    /// IHandBrakeProcessRunner registers a Kill(entireProcessTree) callback directly on it. The
+    /// caller is responsible for checking the separate, gentler stopToken (Stop Monitoring) BEFORE
+    /// calling this method for the next file - once a file is in flight here, it always finishes
+    /// completely.</summary>
+    Task<ConversionResult> ProcessOneFileAsync(
+        LaneProcessingContext context,
+        ResumeEntry resumeEntry,
         string logFilePath,
         string timestamp,
         List<ResumeEntry> resumeState,
         string resumeFilePath,
-        CancellationToken cancellationToken,
-        CancellationToken stopToken = default);
+        CancellationToken cancellationToken);
+
+    /// <summary>Merges Order/Skipped/PresetOverride/Removed from whatever is currently on disk onto
+    /// the matching entries in resumeState (by LaneId+FullName), mutating resumeState in place.
+    /// Deliberately narrow: only those four user-editable fields are ever touched, never Status or
+    /// EncodedFilePath, so this can never resurrect/misclassify an entry actively being driven
+    /// through ProcessOneFileAsync's own state machine - it only pulls in what a queue-control web
+    /// request (reorder/skip/preset-override/remove) could actually have changed. A disk entry with
+    /// no in-memory match (a freshly-scanned file the user acted on before it was ever tracked) is
+    /// adopted as a new entry. The caller is responsible for calling this before picking the next
+    /// file to process, across every lane - see RunOrchestrator's global picking loop.</summary>
+    void RefreshResumeState(List<ResumeEntry> resumeState, string resumeFilePath);
 }
 
 public sealed class ConversionOrchestrator : IConversionOrchestrator
@@ -80,18 +139,12 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         _configStore = configStore;
     }
 
-    public async Task<IReadOnlyList<ConversionResult>> ProcessLaneAsync(
+    public LaneProcessingContext? PrepareLane(
         LaneConfig lane,
         CompressarrConfig config,
-        string logFilePath,
-        string timestamp,
         List<ResumeEntry> resumeState,
-        string resumeFilePath,
-        CancellationToken cancellationToken,
-        CancellationToken stopToken = default)
+        string resumeFilePath)
     {
-        var results = new List<ConversionResult>();
-
         var inputPath = _pathExpander.Expand(lane.Input);
         var outputBase = _pathExpander.Expand(lane.Output);
         var tvShowBasePath = _pathExpander.Expand(lane.TvShowBasePath);
@@ -99,12 +152,12 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
         if (string.IsNullOrWhiteSpace(inputPath) || !Directory.Exists(inputPath))
         {
-            return results;
+            return null;
         }
         if (string.IsNullOrWhiteSpace(outputBase) && !config.Processing.OutSameAsIn)
         {
             _logger.Log($"Lane '{lane.DisplayName}' has no Output folder configured and 'write output to same folder as input' is off - skipping.", LogSeverity.Error);
-            return results;
+            return null;
         }
 
         var hbloc = _pathExpander.Expand(config.HandBrake.CliPath);
@@ -113,15 +166,15 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         List<FileInfo> videoFiles;
 
         // A Pending or Error entry whose source file is gone (e.g. removed by hand, or already
-        // handled by Sonarr/Radarr, between runs) can never be resumed or retried - drop it
-        // rather than let it block this lane forever. Without this, a lane with only dead pending
-        // entries falls into the branch below, finds nothing to process, and returns without ever
-        // falling back to scanning Input for genuinely new files. Error entries need the same
-        // treatment for a different reason: unlike Pending, they're never re-checked by anything
-        // else once their source disappears, so a single dead Error entry pins resumeState.Count
-        // and RunOrchestrator's "stillOutstanding" check permanently - the whole resume.json
-        // (including every already-Completed entry sitting alongside it) never gets cleaned up,
-        // and "Resuming previous incomplete run" keeps logging that inflated count on every pass.
+        // handled by Sonarr/Radarr, between runs) can never be resumed or retried - drop it rather
+        // than let it block this lane forever. Without this, a lane with only dead pending entries
+        // falls into the branch below, finds nothing to process, and never falls back to scanning
+        // Input for genuinely new files. Error entries need the same treatment for a different
+        // reason: unlike Pending, they're never re-checked by anything else once their source
+        // disappears, so a single dead Error entry pins resumeState.Count and RunOrchestrator's
+        // "stillOutstanding" check permanently - the whole resume.json (including every already-
+        // Completed entry sitting alongside it) never gets cleaned up, and "Resuming previous
+        // incomplete run" keeps logging that inflated count on every pass.
         var deadEntries = resumeState.Where(e => e.LaneId == lane.Id
             && e.Status is ResumeStatus.Pending or ResumeStatus.Error
             && !File.Exists(e.FullName)).ToList();
@@ -192,15 +245,24 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             _resumeStore.Save(resumeState, resumeFilePath);
         }
 
+        // Always scan (recursively - a lane's files can be nested in subfolders, e.g. one per
+        // movie) so the natural fallback order for entries with no explicit user-set Order matches
+        // exactly what RunEndpoints.ComputeUpNext independently computes the same way for the
+        // Monitor page's own queue display - both must never disagree about "what's next" for a
+        // file nobody has ever dragged.
+        var scanned = _scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit).ToList();
+        var naturalOrderIndex = scanned
+            .Select((f, idx) => (f.FullName, idx))
+            .ToDictionary(x => x.FullName, x => x.idx, StringComparer.OrdinalIgnoreCase);
+
         var pending = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending).ToList();
         if (pending.Count > 0)
         {
-            // User-set Order (drag-to-reorder on the Monitor page) drives processing order within
-            // this lane's Pending entries - lower first; entries without one (untouched by the
-            // user) sort after, in their original relative order (OrderBy is a stable sort, and
-            // int.MaxValue is the same tie-break value for every one of them). A Skipped entry
-            // stays Pending (still shown in the queue, still eligible to be un-skipped later) but
-            // is excluded from this pass's actual encode list.
+            // User-set Order (drag-to-reorder on the Monitor page) drives processing order - lower
+            // first; entries without one (untouched by the user) sort after, in their original
+            // relative order (OrderBy is a stable sort, and int.MaxValue is the same tie-break
+            // value for every one of them). A Skipped entry stays Pending (still shown in the
+            // queue, still eligible to be un-skipped later) but is excluded from this count.
             videoFiles = pending
                 .OrderBy(p => p.Order ?? int.MaxValue)
                 .Where(p => !p.Skipped && !p.Removed)
@@ -209,7 +271,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         }
         else
         {
-            videoFiles = _scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit).ToList();
+            videoFiles = scanned;
             foreach (var f in videoFiles)
             {
                 // A file can reappear at a path that already has a resume entry - e.g. the same
@@ -229,321 +291,329 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             _resumeStore.Save(resumeState, resumeFilePath);
         }
 
-        // fileCount/padSize are a point-in-time estimate from the snapshot above, used only for
-        // the "file i of N" display and log-filename padding - a queue-control edit that skips or
-        // reorders files mid-pass can make the real count drift slightly from N, which is a
-        // cosmetic imprecision, not a correctness issue (unlike which file actually gets picked
-        // next, handled by the dynamic re-query below).
         var fileCount = videoFiles.Count;
-        if (fileCount == 0) return results;
-
         var padSize = fileCount.ToString().Length;
 
-        var i = 0;
-        while (true)
+        return new LaneProcessingContext
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            // A graceful Stop Monitoring request - checked only here, before starting the NEXT
-            // file, never inside the encode itself, so the file already in flight always finishes.
-            stopToken.ThrowIfCancellationRequested();
+            Lane = lane,
+            Config = config,
+            InputPath = inputPath,
+            OutputBase = outputBase,
+            TvShowBasePath = tvShowBasePath,
+            MovieBasePath = movieBasePath,
+            HbLoc = hbloc,
+            PresetsPath = presetsPath,
+            FileIndex = 0,
+            FileTotal = fileCount,
+            PadSize = padSize,
+            NaturalOrderIndex = naturalOrderIndex
+        };
+    }
 
-            // Re-derive the next file to process from the *current* disk state on every
-            // iteration, rather than continuing to walk the videoFiles snapshot captured above -
-            // a drag-reorder/skip/preset-override request from the Monitor page's queue can land
-            // in the web process at any moment while this lane is mid-pass (e.g. while the
-            // previous file is still encoding), and the next file picked here must honor it
-            // instead of a stale pass-start order. RefreshResumeStateFromDisk merges in exactly
-            // the fields a queue-control request can change (Order/Skipped/PresetOverride) without
-            // touching Status, so it can never resurrect/misclassify the entry this method itself
-            // is actively driving.
-            RefreshResumeStateFromDisk(resumeState, resumeFilePath);
+    public async Task<ConversionResult> ProcessOneFileAsync(
+        LaneProcessingContext context,
+        ResumeEntry resumeEntry,
+        string logFilePath,
+        string timestamp,
+        List<ResumeEntry> resumeState,
+        string resumeFilePath,
+        CancellationToken cancellationToken)
+    {
+        context.FileIndex++;
+        var i = context.FileIndex;
+        var fileCount = context.FileTotal;
+        var padSize = context.PadSize;
+        var lane = context.Lane;
+        var config = context.Config;
+        var inputPath = context.InputPath;
+        var outputBase = context.OutputBase;
+        var tvShowBasePath = context.TvShowBasePath;
+        var movieBasePath = context.MovieBasePath;
+        var hbloc = context.HbLoc;
+        var presetsPath = context.PresetsPath;
 
-            var resumeEntry = resumeState
-                .Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending && !e.Skipped && !e.Removed)
-                .OrderBy(e => e.Order ?? int.MaxValue)
-                .FirstOrDefault(e => File.Exists(e.FullName));
+        var file = new FileInfo(resumeEntry.FullName);
 
-            if (resumeEntry is null) break;
+        var isTv = ContentClassifier.IsTvFile(file.Name);
+        var contentType = isTv ? "TV Show" : "Movie";
+        // A per-file preset override (set from the Monitor page's queue) wins over the lane's own
+        // TvPreset/MoviePreset for this one entry only - looked up before presetName is used
+        // anywhere (logging, the FileStarted progress event, the "no preset" check) so all of it
+        // reflects the actual preset this file will encode with.
+        var presetName = !string.IsNullOrWhiteSpace(resumeEntry.PresetOverride)
+            ? resumeEntry.PresetOverride
+            : (isTv ? lane.TvPreset : lane.MoviePreset);
 
-            i++;
-            var file = new FileInfo(resumeEntry.FullName);
+        var beginSizeGb = Math.Round(file.Length / (double)BytesPerGb, 3);
+        var startTime = DateTime.Now;
 
-            var isTv = ContentClassifier.IsTvFile(file.Name);
-            var contentType = isTv ? "TV Show" : "Movie";
-            // A per-file preset override (set from the Monitor page's queue) wins over the lane's
-            // own TvPreset/MoviePreset for this one entry only - looked up before presetName is
-            // used anywhere (logging, the FileStarted progress event, the "no preset" check) so
-            // all of it reflects the actual preset this file will encode with.
-            var presetName = !string.IsNullOrWhiteSpace(resumeEntry.PresetOverride)
-                ? resumeEntry.PresetOverride
-                : (isTv ? lane.TvPreset : lane.MoviePreset);
+        _logger.FileStart(lane.DisplayName, i, fileCount, file.Name, beginSizeGb, contentType, presetName);
+        _progress.FileStarted(lane.Id, i, fileCount, file.Name, presetName);
 
-            var beginSizeGb = Math.Round(file.Length / (double)BytesPerGb, 3);
-            var startTime = DateTime.Now;
-
-            _logger.FileStart(lane.DisplayName, i, fileCount, file.Name, beginSizeGb, contentType, presetName);
-            _progress.FileStarted(lane.Id, i, fileCount, file.Name, presetName);
-
-            if (string.IsNullOrWhiteSpace(presetName))
-            {
-                _logger.Log($"  No {contentType} preset configured for this lane - skipping.", LogSeverity.Error);
-                resumeEntry.Status = ResumeStatus.Error;
-                _resumeStore.Save(resumeState, resumeFilePath);
-
-                results.Add(new ConversionResult
-                {
-                    LaneId = lane.Id,
-                    FileName = file.Name,
-                    FullName = file.FullName,
-                    ContentType = contentType,
-                    PresetName = presetName,
-                    BeginSizeGb = beginSizeGb,
-                    EndSizeGb = 0,
-                    Success = false,
-                    FailureReason = $"No {contentType} preset configured for this lane",
-                    StartTime = startTime,
-                    EndTime = DateTime.Now
-                });
-                continue;
-            }
-
-            var extension = _presets.GetOutputExtension(presetName, presetsPath, out var extensionWarning);
-            if (extensionWarning is not null) _logger.Log(extensionWarning, LogSeverity.Error);
-
-            _metadata.ClearTitle(file.FullName);
-
-            var destFolder = config.Processing.OutSameAsIn ? file.DirectoryName! : outputBase;
-            Directory.CreateDirectory(destFolder);
-
-            var baseName = Path.GetFileNameWithoutExtension(file.Name);
-            var newFileName = Path.Combine(destFolder, baseName + extension);
-            var tempFileName = Path.Combine(destFolder, baseName + ".compressarr-" + Guid.NewGuid().ToString("N")[..8] + extension);
-
-            var logName = $"{baseName}_{timestamp}_{i.ToString().PadLeft(padSize, '0')}_HBdetails.txt";
-            var detailLogFile = Path.Combine(logFilePath, logName);
-
-            var lastLoggedPercent = -10.0;
-            void OnOutputLine(string line)
-            {
-                var progress = HandBrakeProgressParser.TryParse(line);
-                if (progress is null) return;
-
-                _progress.FileProgress(lane.Id, progress.Percent, progress.Fps, progress.Eta);
-
-                // HandBrakeCLI emits a progress line roughly once a second - logging every one of
-                // them would flood the recent-log window, so only a real 10% step gets written.
-                if (progress.Percent - lastLoggedPercent >= 10.0)
-                {
-                    lastLoggedPercent = progress.Percent;
-                    var etaSuffix = progress.Eta is not null ? $", ETA {progress.Eta}" : "";
-                    var fpsSuffix = progress.Fps is not null ? $", {progress.Fps:0.0} fps" : "";
-                    _logger.Log($"  {progress.Percent:0.0}%{fpsSuffix}{etaSuffix}");
-                }
-            }
-
-            var runResult = await _processRunner.RunAsync(hbloc, file.FullName, tempFileName, presetsPath, presetName, config.HandBrake.Options, detailLogFile, OnOutputLine, cancellationToken);
-            var endTime = DateTime.Now;
-
-            // Settings are otherwise only read once, at the start of a manual run or for the
-            // whole lifetime of the monitoring loop - a change made mid-run (delete-after-convert
-            // mode, clear title metadata, a lane's base path, etc.) would otherwise have no effect
-            // until the run/loop is restarted. Re-read as soon as HandBrakeCLI is done for this
-            // file, before any of the post-processing below, so it takes effect on this file's
-            // own routing/cleanup and on every file still to come in this lane. The derived paths
-            // computed once at the top of this method must be refreshed too, or the reload above
-            // would be a no-op for anything that reads them instead of lane/config directly.
-            config = _configStore.Load(AppPaths.GetConfigFilePath());
-            lane = config.Lanes.FirstOrDefault(l => l.Id == lane.Id) ?? lane;
-            outputBase = _pathExpander.Expand(lane.Output);
-            tvShowBasePath = _pathExpander.Expand(lane.TvShowBasePath);
-            movieBasePath = _pathExpander.Expand(lane.MovieBasePath);
-            hbloc = _pathExpander.Expand(config.HandBrake.CliPath);
-            presetsPath = _pathExpander.Expand(config.HandBrake.PresetsPath);
-            _metadata.Enabled = config.Processing.ClearTitleMetadata;
-
-            // Same reasoning as the config reload just above, for resume state: pull in whatever a
-            // queue-control request changed on OTHER entries while this file was encoding, so the
-            // save below (and whichever entry gets picked next) doesn't clobber/ignore it. Never
-            // touches resumeEntry's own Status - only RefreshResumeStateFromDisk's own three fields.
-            RefreshResumeStateFromDisk(resumeState, resumeFilePath);
-
-            if (runResult.Cancelled)
-            {
-                try { File.Delete(tempFileName); } catch { }
-                _logger.Log($"  Conversion of '{file.Name}' aborted by user.", LogSeverity.Error);
-                resumeEntry.Status = ResumeStatus.Error;
-                _resumeStore.Save(resumeState, resumeFilePath);
-                cancellationToken.ThrowIfCancellationRequested();
-            }
-
-            var success = runResult.Success;
-
-            double endSizeGb = 0;
-            string? arrStatus = null;
-            string? finalFileName = newFileName;
-            var moveFailed = false;
-            var diskFull = false;
-            string? failureReason = null;
-            string? postProcessWarning = null;
-
-            if (success)
-            {
-                _metadata.ClearTitle(tempFileName);
-                File.Move(tempFileName, newFileName, overwrite: true);
-                endSizeGb = Math.Round(new FileInfo(newFileName).Length / (double)BytesPerGb, 3);
-
-                // If source and final destination are the same path (in-place conversion), the
-                // rename above already replaced the original with the converted result - there
-                // is nothing left to separately delete.
-                var sameAsSource = string.Equals(file.FullName, newFileName, StringComparison.OrdinalIgnoreCase);
-                if (!sameAsSource && config.Processing.DeleteAfterConvert != DeleteAfterConvertMode.Maintain)
-                {
-                    if (File.Exists(file.FullName))
-                    {
-                        var attrs = File.GetAttributes(file.FullName);
-                        if (attrs.HasFlag(FileAttributes.ReadOnly))
-                        {
-                            File.SetAttributes(file.FullName, attrs & ~FileAttributes.ReadOnly);
-                        }
-                    }
-                    _trash.DeleteFile(file.FullName, config.Processing.DeleteAfterConvert);
-                }
-
-                string? routedDestPath = null;
-                try
-                {
-                    routedDestPath = _fileRouter.RouteFile(newFileName, isTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
-                }
-                catch (DestinationCollisionSkippedException ex)
-                {
-                    // Configured to skip on collision, not an error - the encode succeeded and the
-                    // result is sitting in Output exactly as configured, so this stays a warning
-                    // (postProcessWarning), not moveFailed/overallSuccess=false.
-                    postProcessWarning = AppendWarning(postProcessWarning, ex.Message);
-                    _logger.Log($"  {ex.Message}");
-                }
-                catch (Exception ex)
-                {
-                    // The conversion itself already succeeded - a bad/unreachable base path (e.g.
-                    // an offline network drive) shouldn't take down the whole run, just leave the
-                    // file where HandBrake wrote it. Still flagged as an error on this file's own
-                    // result (see moveFailed below) so it doesn't quietly report "OK" while sitting
-                    // unfiled in the Output folder - the log line alone is too easy to miss.
-                    moveFailed = true;
-                    if (LooksLikeDiskFull(ex.Message))
-                    {
-                        diskFull = true;
-                        failureReason = "Output drive full, monitoring stopped";
-                    }
-                    else if (LooksLikePathUnavailable(ex))
-                    {
-                        failureReason = "Base folder path unavailable, move skipped";
-                    }
-                    // else: some other move failure (permission denied, file locked, etc.) - leave
-                    // failureReason null so the report shows generic "ERROR" rather than a
-                    // path-unavailable message that would be actively wrong for this cause.
-                    _logger.Log($"  Move skipped: {ex.Message} - file remains at '{newFileName}'.", LogSeverity.Error);
-                }
-
-                // Deliberately before companion-file/folder cleanup below: the rescan should see
-                // the source folder still on disk rather than already gone.
-                try
-                {
-                    var arrResult = await _arrUnmonitor.UnmonitorAsync(config, file.Name, isTv);
-                    if (arrResult is not null)
-                    {
-                        _logger.Log($"  {arrResult}");
-                        arrStatus = arrResult;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.Log($"  Arr unmonitor skipped: {ex.Message}", LogSeverity.Error);
-                    arrStatus = $"Failed: {ex.Message}";
-                    postProcessWarning = AppendWarning(postProcessWarning, $"Sonarr/Radarr unmonitor failed: {ex.Message}");
-                }
-
-                if (routedDestPath is not null)
-                {
-                    finalFileName = routedDestPath;
-                    try
-                    {
-                        var routedDestFolder = Path.GetDirectoryName(routedDestPath)!;
-                        _companionFiles.MoveCompanionFiles(file.FullName, file.DirectoryName!, routedDestFolder, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.Log($"  Companion file handling skipped: {ex.Message}", LogSeverity.Error);
-                        postProcessWarning = AppendWarning(postProcessWarning, $"Companion files not moved: {ex.Message}");
-                    }
-                }
-
-                // moveFailed here means the real-error branch above (not the Skip case, which never
-                // sets moveFailed) - the file is genuinely stuck unrouted in Output. MoveFailed (not
-                // Completed) so the retry loop at the top of this lane's next pass picks it back up
-                // instead of a resume entry silently lying that this file is fully done.
-                if (moveFailed)
-                {
-                    resumeEntry.Status = ResumeStatus.MoveFailed;
-                    resumeEntry.EncodedFilePath = newFileName;
-                }
-                else
-                {
-                    resumeEntry.Status = ResumeStatus.Completed;
-                }
-            }
-            else
-            {
-                try { File.Delete(tempFileName); } catch { }
-                resumeEntry.Status = ResumeStatus.Error;
-
-                // HandBrakeCLI still writes its own log even on a failed encode - confirmed live
-                // against a genuinely full disk that its mux error names the cause explicitly
-                // ("No space left on device"), which is a much more specific signal than just
-                // "the encode failed" (which covers plenty of other, unrelated causes too).
-                if (File.Exists(detailLogFile) && File.ReadLines(detailLogFile).Any(l => LooksLikeDiskFull(l)))
-                {
-                    diskFull = true;
-                    failureReason = "Output drive full, monitoring stopped";
-                }
-            }
-
-            var duration = endTime - startTime;
-            if (duration < TimeSpan.Zero) duration = duration.Negate();
-
-            // The encode can succeed while the file still doesn't end up where it's supposed to
-            // (an unreachable TV/Movie base path) - reflect that in this file's own reported
-            // status rather than only in the log, so a report/History reader isn't told "OK" for
-            // a file that's actually sitting unfiled in the Output folder.
-            var overallSuccess = success && !moveFailed;
-
-            _logger.FileComplete(finalFileName ?? newFileName, beginSizeGb, endSizeGb, duration, overallSuccess, detailLogFile);
-            _progress.FileCompleted(lane.Id, finalFileName ?? newFileName, overallSuccess);
-
+        if (string.IsNullOrWhiteSpace(presetName))
+        {
+            _logger.Log($"  No {contentType} preset configured for this lane - skipping.", LogSeverity.Error);
+            resumeEntry.Status = ResumeStatus.Error;
             _resumeStore.Save(resumeState, resumeFilePath);
 
-            results.Add(new ConversionResult
+            return new ConversionResult
             {
                 LaneId = lane.Id,
                 FileName = file.Name,
                 FullName = file.FullName,
-                NewFileName = finalFileName,
                 ContentType = contentType,
                 PresetName = presetName,
                 BeginSizeGb = beginSizeGb,
-                EndSizeGb = endSizeGb,
-                Success = overallSuccess,
-                DiskFull = diskFull,
-                FailureReason = failureReason,
-                DetailLogFile = detailLogFile,
+                EndSizeGb = 0,
+                Success = false,
+                FailureReason = $"No {contentType} preset configured for this lane",
                 StartTime = startTime,
-                EndTime = endTime,
-                ArrStatus = arrStatus,
-                PostProcessWarning = postProcessWarning
-            });
+                EndTime = DateTime.Now
+            };
         }
 
-        return results;
+        var extension = _presets.GetOutputExtension(presetName, presetsPath, out var extensionWarning);
+        if (extensionWarning is not null) _logger.Log(extensionWarning, LogSeverity.Error);
+
+        _metadata.ClearTitle(file.FullName);
+
+        var destFolder = config.Processing.OutSameAsIn ? file.DirectoryName! : outputBase;
+        Directory.CreateDirectory(destFolder);
+
+        var baseName = Path.GetFileNameWithoutExtension(file.Name);
+        var newFileName = Path.Combine(destFolder, baseName + extension);
+        var tempFileName = Path.Combine(destFolder, baseName + ".compressarr-" + Guid.NewGuid().ToString("N")[..8] + extension);
+
+        var logName = $"{baseName}_{timestamp}_{i.ToString().PadLeft(padSize, '0')}_HBdetails.txt";
+        var detailLogFile = Path.Combine(logFilePath, logName);
+
+        var lastLoggedPercent = -10.0;
+        void OnOutputLine(string line)
+        {
+            var progress = HandBrakeProgressParser.TryParse(line);
+            if (progress is null) return;
+
+            _progress.FileProgress(lane.Id, progress.Percent, progress.Fps, progress.Eta);
+
+            // HandBrakeCLI emits a progress line roughly once a second - logging every one of them
+            // would flood the recent-log window, so only a real 10% step gets written.
+            if (progress.Percent - lastLoggedPercent >= 10.0)
+            {
+                lastLoggedPercent = progress.Percent;
+                var etaSuffix = progress.Eta is not null ? $", ETA {progress.Eta}" : "";
+                var fpsSuffix = progress.Fps is not null ? $", {progress.Fps:0.0} fps" : "";
+                _logger.Log($"  {progress.Percent:0.0}%{fpsSuffix}{etaSuffix}");
+            }
+        }
+
+        var runResult = await _processRunner.RunAsync(hbloc, file.FullName, tempFileName, presetsPath, presetName, config.HandBrake.Options, detailLogFile, OnOutputLine, cancellationToken);
+        var endTime = DateTime.Now;
+
+        // Settings are otherwise only read once, at the start of a manual run or for the whole
+        // lifetime of the monitoring loop - a change made mid-run (delete-after-convert mode, clear
+        // title metadata, a lane's base path, etc.) would otherwise have no effect until the run/
+        // loop is restarted. Re-read as soon as HandBrakeCLI is done for this file, before any of
+        // the post-processing below, so it takes effect on this file's own routing/cleanup and on
+        // every file still to come in this lane, however many OTHER lanes' files get processed in
+        // between - written back onto context so this lane's next call sees it, not just local
+        // variables that would otherwise be lost between non-contiguous visits to this lane.
+        config = _configStore.Load(AppPaths.GetConfigFilePath());
+        lane = config.Lanes.FirstOrDefault(l => l.Id == lane.Id) ?? lane;
+        outputBase = _pathExpander.Expand(lane.Output);
+        tvShowBasePath = _pathExpander.Expand(lane.TvShowBasePath);
+        movieBasePath = _pathExpander.Expand(lane.MovieBasePath);
+        hbloc = _pathExpander.Expand(config.HandBrake.CliPath);
+        presetsPath = _pathExpander.Expand(config.HandBrake.PresetsPath);
+        _metadata.Enabled = config.Processing.ClearTitleMetadata;
+        context.Lane = lane;
+        context.Config = config;
+        context.OutputBase = outputBase;
+        context.TvShowBasePath = tvShowBasePath;
+        context.MovieBasePath = movieBasePath;
+        context.HbLoc = hbloc;
+        context.PresetsPath = presetsPath;
+
+        // Same reasoning as the config reload just above, for resume state: pull in whatever a
+        // queue-control request changed on OTHER entries while this file was encoding, so the save
+        // below (and whichever entry gets picked next, across any lane) doesn't clobber/ignore it.
+        // Never touches resumeEntry's own Status - only RefreshResumeState's own three fields.
+        RefreshResumeState(resumeState, resumeFilePath);
+
+        if (runResult.Cancelled)
+        {
+            try { File.Delete(tempFileName); } catch { }
+            _logger.Log($"  Conversion of '{file.Name}' aborted by user.", LogSeverity.Error);
+            resumeEntry.Status = ResumeStatus.Error;
+            _resumeStore.Save(resumeState, resumeFilePath);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        var success = runResult.Success;
+
+        double endSizeGb = 0;
+        string? arrStatus = null;
+        string? finalFileName = newFileName;
+        var moveFailed = false;
+        var diskFull = false;
+        string? failureReason = null;
+        string? postProcessWarning = null;
+
+        if (success)
+        {
+            _metadata.ClearTitle(tempFileName);
+            File.Move(tempFileName, newFileName, overwrite: true);
+            endSizeGb = Math.Round(new FileInfo(newFileName).Length / (double)BytesPerGb, 3);
+
+            // If source and final destination are the same path (in-place conversion), the rename
+            // above already replaced the original with the converted result - there is nothing left
+            // to separately delete.
+            var sameAsSource = string.Equals(file.FullName, newFileName, StringComparison.OrdinalIgnoreCase);
+            if (!sameAsSource && config.Processing.DeleteAfterConvert != DeleteAfterConvertMode.Maintain)
+            {
+                if (File.Exists(file.FullName))
+                {
+                    var attrs = File.GetAttributes(file.FullName);
+                    if (attrs.HasFlag(FileAttributes.ReadOnly))
+                    {
+                        File.SetAttributes(file.FullName, attrs & ~FileAttributes.ReadOnly);
+                    }
+                }
+                _trash.DeleteFile(file.FullName, config.Processing.DeleteAfterConvert);
+            }
+
+            string? routedDestPath = null;
+            try
+            {
+                routedDestPath = _fileRouter.RouteFile(newFileName, isTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
+            }
+            catch (DestinationCollisionSkippedException ex)
+            {
+                // Configured to skip on collision, not an error - the encode succeeded and the
+                // result is sitting in Output exactly as configured, so this stays a warning
+                // (postProcessWarning), not moveFailed/overallSuccess=false.
+                postProcessWarning = AppendWarning(postProcessWarning, ex.Message);
+                _logger.Log($"  {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                // The conversion itself already succeeded - a bad/unreachable base path (e.g. an
+                // offline network drive) shouldn't take down the whole run, just leave the file
+                // where HandBrake wrote it. Still flagged as an error on this file's own result (see
+                // moveFailed below) so it doesn't quietly report "OK" while sitting unfiled in the
+                // Output folder - the log line alone is too easy to miss.
+                moveFailed = true;
+                if (LooksLikeDiskFull(ex.Message))
+                {
+                    diskFull = true;
+                    failureReason = "Output drive full, monitoring stopped";
+                }
+                else if (LooksLikePathUnavailable(ex))
+                {
+                    failureReason = "Base folder path unavailable, move skipped";
+                }
+                // else: some other move failure (permission denied, file locked, etc.) - leave
+                // failureReason null so the report shows generic "ERROR" rather than a
+                // path-unavailable message that would be actively wrong for this cause.
+                _logger.Log($"  Move skipped: {ex.Message} - file remains at '{newFileName}'.", LogSeverity.Error);
+            }
+
+            // Deliberately before companion-file/folder cleanup below: the rescan should see the
+            // source folder still on disk rather than already gone.
+            try
+            {
+                var arrResult = await _arrUnmonitor.UnmonitorAsync(config, file.Name, isTv);
+                if (arrResult is not null)
+                {
+                    _logger.Log($"  {arrResult}");
+                    arrStatus = arrResult;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Log($"  Arr unmonitor skipped: {ex.Message}", LogSeverity.Error);
+                arrStatus = $"Failed: {ex.Message}";
+                postProcessWarning = AppendWarning(postProcessWarning, $"Sonarr/Radarr unmonitor failed: {ex.Message}");
+            }
+
+            if (routedDestPath is not null)
+            {
+                finalFileName = routedDestPath;
+                try
+                {
+                    var routedDestFolder = Path.GetDirectoryName(routedDestPath)!;
+                    _companionFiles.MoveCompanionFiles(file.FullName, file.DirectoryName!, routedDestFolder, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Log($"  Companion file handling skipped: {ex.Message}", LogSeverity.Error);
+                    postProcessWarning = AppendWarning(postProcessWarning, $"Companion files not moved: {ex.Message}");
+                }
+            }
+
+            // moveFailed here means the real-error branch above (not the Skip case, which never
+            // sets moveFailed) - the file is genuinely stuck unrouted in Output. MoveFailed (not
+            // Completed) so the retry logic in this lane's next PrepareLane call picks it back up
+            // instead of a resume entry silently lying that this file is fully done.
+            if (moveFailed)
+            {
+                resumeEntry.Status = ResumeStatus.MoveFailed;
+                resumeEntry.EncodedFilePath = newFileName;
+            }
+            else
+            {
+                resumeEntry.Status = ResumeStatus.Completed;
+            }
+        }
+        else
+        {
+            try { File.Delete(tempFileName); } catch { }
+            resumeEntry.Status = ResumeStatus.Error;
+
+            // HandBrakeCLI still writes its own log even on a failed encode - confirmed live
+            // against a genuinely full disk that its mux error names the cause explicitly ("No
+            // space left on device"), which is a much more specific signal than just "the encode
+            // failed" (which covers plenty of other, unrelated causes too).
+            if (File.Exists(detailLogFile) && File.ReadLines(detailLogFile).Any(l => LooksLikeDiskFull(l)))
+            {
+                diskFull = true;
+                failureReason = "Output drive full, monitoring stopped";
+            }
+        }
+
+        var duration = endTime - startTime;
+        if (duration < TimeSpan.Zero) duration = duration.Negate();
+
+        // The encode can succeed while the file still doesn't end up where it's supposed to (an
+        // unreachable TV/Movie base path) - reflect that in this file's own reported status rather
+        // than only in the log, so a report/History reader isn't told "OK" for a file that's
+        // actually sitting unfiled in the Output folder.
+        var overallSuccess = success && !moveFailed;
+
+        _logger.FileComplete(finalFileName ?? newFileName, beginSizeGb, endSizeGb, duration, overallSuccess, detailLogFile);
+        _progress.FileCompleted(lane.Id, finalFileName ?? newFileName, overallSuccess);
+
+        _resumeStore.Save(resumeState, resumeFilePath);
+
+        return new ConversionResult
+        {
+            LaneId = lane.Id,
+            FileName = file.Name,
+            FullName = file.FullName,
+            NewFileName = finalFileName,
+            ContentType = contentType,
+            PresetName = presetName,
+            BeginSizeGb = beginSizeGb,
+            EndSizeGb = endSizeGb,
+            Success = overallSuccess,
+            DiskFull = diskFull,
+            FailureReason = failureReason,
+            DetailLogFile = detailLogFile,
+            StartTime = startTime,
+            EndTime = endTime,
+            ArrStatus = arrStatus,
+            PostProcessWarning = postProcessWarning
+        };
     }
 
     /// <summary>Matches the specific wording HandBrakeCLI/libav (Linux/macOS-style "No space left
@@ -573,26 +643,13 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             ex.Message.Contains("cannot find the path", StringComparison.OrdinalIgnoreCase) ||
             ex.Message.Contains("is not accessible", StringComparison.OrdinalIgnoreCase)));
 
-    /// <summary>Combines a new post-process warning onto any existing one for the same file -
-    /// the companion-file move and the arr-unmonitor call are independent steps that can both
-    /// fail for the same file, and neither should silently overwrite the other's message.</summary>
+    /// <summary>Combines a new post-process warning onto any existing one for the same file - the
+    /// companion-file move and the arr-unmonitor call are independent steps that can both fail for
+    /// the same file, and neither should silently overwrite the other's message.</summary>
     private static string AppendWarning(string? existing, string next) =>
         existing is null ? next : $"{existing}; {next}";
 
-    /// <summary>Merges Order/Skipped/PresetOverride/Removed from whatever is currently on disk onto
-    /// the matching entries in resumeState (by LaneId+FullName), mutating resumeState in place
-    /// rather than replacing it - callers (RunOrchestrator, tests) that hold a reference to this
-    /// same List&lt;ResumeEntry&gt; automatically see the refresh too, with no signature change
-    /// needed. Deliberately narrow: only those four user-editable fields are ever touched, never Status or
-    /// EncodedFilePath, so this can never resurrect an entry ConversionOrchestrator itself is
-    /// actively driving through its own state machine, or misclassify one - it only pulls in what
-    /// a queue-control web request (reorder/skip/preset-override) could actually have changed. A
-    /// disk entry with no in-memory match (a freshly-scanned file the user acted on before this
-    /// pass ever tracked it) is adopted as a new entry. Confirmed live: without this, a resume
-    /// entry the user had just reordered/skipped/preset-overridden via the Monitor page's queue
-    /// had those changes silently wiped the moment the file already in flight finished and this
-    /// method's own next Save ran with its stale, pass-start-old in-memory copy.</summary>
-    private void RefreshResumeStateFromDisk(List<ResumeEntry> resumeState, string resumeFilePath)
+    public void RefreshResumeState(List<ResumeEntry> resumeState, string resumeFilePath)
     {
         var onDisk = _resumeStore.Load(resumeFilePath);
         foreach (var diskEntry in onDisk)

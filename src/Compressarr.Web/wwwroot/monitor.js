@@ -375,13 +375,9 @@ function onQueueDragMove(e) {
 
   const list = document.getElementById('queueList');
   const draggedIdx = displayItems.findIndex(i => queueKey(i) === draggingKey);
-  const draggedLaneId = displayItems[draggedIdx].laneId;
 
   for (const el of [...list.children]) {
     if (el.dataset.key === draggingKey) continue;
-    // Reordering only makes sense within the same lane - each lane's Order is independent, and
-    // there's no "move this file to a different lane" operation for a drag to imply.
-    if (el.dataset.laneId !== draggedLaneId) continue;
 
     const r = el.getBoundingClientRect();
     const mid = r.top + r.height / 2;
@@ -407,9 +403,12 @@ async function onQueueDragEnd() {
     ghostEl.style.top = target.top + 'px';
   }
 
-  const draggedItem = displayItems.find(i => queueKey(i) === draggingKey);
-  const laneId = draggedItem.laneId;
-  const orderedFileNames = displayItems.filter(i => i.laneId === laneId).map(i => i.fileName);
+  // The whole cross-lane list, in its current display order - a not-yet-started file from any
+  // lane can be prioritized ahead of any other lane's now, matching the engine's own global
+  // picking order. Error rows are excluded: they're never actually processed, and including one
+  // here would let FindOrCreatePendingEntry silently create a duplicate, wrongly re-encodable
+  // Pending entry for an already-failed file (a real bug, fixed server-side too as a backstop).
+  const items = displayItems.filter(i => !i.isError).map(i => ({ laneId: i.laneId, fileName: i.fileName }));
 
   setTimeout(() => {
     if (ghostEl) { ghostEl.remove(); ghostEl = null; }
@@ -420,7 +419,7 @@ async function onQueueDragEnd() {
   await fetch('/api/run/queue/reorder', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ laneId, orderedFileNames })
+    body: JSON.stringify({ items })
   });
   poll();
 }

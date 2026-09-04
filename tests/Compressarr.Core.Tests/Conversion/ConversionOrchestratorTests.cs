@@ -211,6 +211,50 @@ public class ConversionOrchestratorTests : IDisposable
         Processing = new ProcessingSettings { DeleteAfterConvert = mode, MoveFiles = false, ClearTitleMetadata = false }
     };
 
+    /// <summary>Reproduces the old single-lane ProcessLaneAsync's full-drain driving loop against
+    /// the new PrepareLane + ProcessOneFileAsync split - lets every existing test below keep
+    /// asserting "process this whole lane, get back every ConversionResult" without needing to
+    /// know about RunOrchestrator's own global cross-lane picking loop, which is what actually
+    /// drives ProcessOneFileAsync in production now. Deliberately mirrors the OLD per-lane-only
+    /// picking query (Order within this lane, no cross-lane tie-break) exactly, since these tests
+    /// are about ConversionOrchestrator's own per-file behavior, not RunOrchestrator's interleaving
+    /// (see RunOrchestratorTests.cs for that).</summary>
+    private static async Task<List<ConversionResult>> RunLaneAsync(
+        IConversionOrchestrator orchestrator,
+        LaneConfig lane,
+        CompressarrConfig config,
+        string logFilePath,
+        string timestamp,
+        List<ResumeEntry> resumeState,
+        string resumeFilePath,
+        CancellationToken cancellationToken,
+        CancellationToken stopToken = default)
+    {
+        var results = new List<ConversionResult>();
+        var context = orchestrator.PrepareLane(lane, config, resumeState, resumeFilePath);
+        if (context is null) return results;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            stopToken.ThrowIfCancellationRequested();
+
+            orchestrator.RefreshResumeState(resumeState, resumeFilePath);
+
+            var entry = resumeState
+                .Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending && !e.Skipped && !e.Removed)
+                .OrderBy(e => e.Order ?? int.MaxValue)
+                .FirstOrDefault(e => File.Exists(e.FullName));
+
+            if (entry is null) break;
+
+            var result = await orchestrator.ProcessOneFileAsync(context, entry, logFilePath, timestamp, resumeState, resumeFilePath, cancellationToken);
+            results.Add(result);
+        }
+
+        return results;
+    }
+
     [Fact]
     public async Task ProcessLaneAsync_ConfigChangedMidRun_SecondFileHonorsNewValue_FirstFileDoesNot()
     {
@@ -260,7 +304,7 @@ public class ConversionOrchestratorTests : IDisposable
             new NoOpProgressReporter(),
             configStore);
 
-        var results = await orchestrator.ProcessLaneAsync(
+        var results = await RunLaneAsync(orchestrator,
             lane, initialConfig, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         Assert.Equal(2, results.Count);
@@ -307,7 +351,7 @@ public class ConversionOrchestratorTests : IDisposable
             new() { LaneId = "lane1", FullName = aPath, Status = ResumeStatus.Pending, Order = 1 }
         };
 
-        var results = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        var results = await RunLaneAsync(orchestrator,lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         Assert.Equal(2, results.Count);
         Assert.Equal("z-file.mkv", results[0].FileName);
@@ -343,7 +387,7 @@ public class ConversionOrchestratorTests : IDisposable
             new() { LaneId = "lane1", FullName = skipPath, Status = ResumeStatus.Pending, Skipped = true }
         };
 
-        var results = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        var results = await RunLaneAsync(orchestrator,lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var result = Assert.Single(results);
         Assert.Equal("process-me.mkv", result.FileName);
@@ -385,7 +429,7 @@ public class ConversionOrchestratorTests : IDisposable
             new() { LaneId = "lane1", FullName = removedPath, Status = ResumeStatus.Pending, Skipped = true, Removed = true }
         };
 
-        var results = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        var results = await RunLaneAsync(orchestrator,lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var result = Assert.Single(results);
         Assert.Equal("process-me.mkv", result.FileName);
@@ -421,7 +465,7 @@ public class ConversionOrchestratorTests : IDisposable
             new() { LaneId = "lane1", FullName = sourcePath, Status = ResumeStatus.Pending, PresetOverride = "Custom Per-File Preset" }
         };
 
-        var results = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        var results = await RunLaneAsync(orchestrator,lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var result = Assert.Single(results);
         Assert.Equal("Custom Per-File Preset", result.PresetName);
@@ -448,7 +492,7 @@ public class ConversionOrchestratorTests : IDisposable
             new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
-        var results = await orchestrator.ProcessLaneAsync(
+        var results = await RunLaneAsync(orchestrator,
             lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var result = Assert.Single(results);
@@ -496,7 +540,7 @@ public class ConversionOrchestratorTests : IDisposable
         };
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None, stopCts.Token));
+            RunLaneAsync(orchestrator,lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None, stopCts.Token));
 
         var firstEntry = resumeState.Single(e => e.FullName == firstPath);
         var secondEntry = resumeState.Single(e => e.FullName == secondPath);
@@ -556,7 +600,7 @@ public class ConversionOrchestratorTests : IDisposable
             processRunner, new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new RecordingTrashService(), new NoOpRunLogger(), realResumeStore, new NoOpProgressReporter(), configStore);
 
-        var results = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, resumeFilePath, CancellationToken.None);
+        var results = await RunLaneAsync(orchestrator,lane, config, _tempDir, "20260101_000000", resumeState, resumeFilePath, CancellationToken.None);
 
         Assert.Equal(3, results.Count);
         Assert.Equal("episode1.mkv", results[0].FileName); // already in flight when the edit landed
@@ -614,7 +658,7 @@ public class ConversionOrchestratorTests : IDisposable
             new NoOpProgressReporter(),
             configStore);
 
-        var results = await orchestrator.ProcessLaneAsync(
+        var results = await RunLaneAsync(orchestrator,
             lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var result = Assert.Single(results);
@@ -669,7 +713,7 @@ public class ConversionOrchestratorTests : IDisposable
 
         var resumeState = new List<ResumeEntry> { new() { LaneId = "lane1", FullName = sourcePath, Status = ResumeStatus.Pending } };
 
-        await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        await RunLaneAsync(orchestrator,lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var entry = Assert.Single(resumeState);
         // Previously this incorrectly ended up Completed even though the file never got filed -
@@ -716,7 +760,7 @@ public class ConversionOrchestratorTests : IDisposable
             new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
         var resumeState = new List<ResumeEntry>();
-        await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        await RunLaneAsync(orchestrator,lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var entryAfterFirstPass = Assert.Single(resumeState);
         Assert.Equal(ResumeStatus.MoveFailed, entryAfterFirstPass.Status);
@@ -725,7 +769,7 @@ public class ConversionOrchestratorTests : IDisposable
         // Second pass: the base path is reachable now - only the move should be retried, no
         // re-encode (nothing left in Input to encode anyway).
         lane.MovieBasePath = movieBaseDir;
-        var secondPassResults = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000100", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        var secondPassResults = await RunLaneAsync(orchestrator,lane, config, _tempDir, "20260101_000100", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         Assert.Empty(secondPassResults); // the retry itself doesn't add a new ConversionResult
         var entryAfterRetry = Assert.Single(resumeState);
@@ -771,11 +815,11 @@ public class ConversionOrchestratorTests : IDisposable
             new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
         var resumeState = new List<ResumeEntry>();
-        await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        await RunLaneAsync(orchestrator,lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
         var encodedPath = Assert.Single(resumeState).EncodedFilePath!;
 
         // Second pass: base path is still unreachable.
-        await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000100", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        await RunLaneAsync(orchestrator,lane, config, _tempDir, "20260101_000100", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var entry = Assert.Single(resumeState);
         Assert.Equal(ResumeStatus.MoveFailed, entry.Status);
@@ -822,7 +866,7 @@ public class ConversionOrchestratorTests : IDisposable
             }
         };
 
-        await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        await RunLaneAsync(orchestrator,lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         Assert.Empty(resumeState);
     }
@@ -869,7 +913,7 @@ public class ConversionOrchestratorTests : IDisposable
 
         var resumeState = new List<ResumeEntry> { new() { LaneId = "lane1", FullName = sourcePath, Status = ResumeStatus.Pending } };
 
-        var results = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        var results = await RunLaneAsync(orchestrator,lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var result = Assert.Single(results);
         // A deliberate, configured skip is not a failure - the encode itself worked fine.
@@ -928,7 +972,7 @@ public class ConversionOrchestratorTests : IDisposable
             new NoOpProgressReporter(),
             configStore);
 
-        var results = await orchestrator.ProcessLaneAsync(
+        var results = await RunLaneAsync(orchestrator,
             lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var result = Assert.Single(results);
@@ -988,7 +1032,7 @@ public class ConversionOrchestratorTests : IDisposable
             new NoOpProgressReporter(),
             configStore);
 
-        var results = await orchestrator.ProcessLaneAsync(
+        var results = await RunLaneAsync(orchestrator,
             lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         // The dead pending entry pointing at the removed file is gone from resume state...
@@ -1047,7 +1091,7 @@ public class ConversionOrchestratorTests : IDisposable
             new NoOpProgressReporter(),
             configStore);
 
-        var results = await orchestrator.ProcessLaneAsync(
+        var results = await RunLaneAsync(orchestrator,
             lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         Assert.Single(results);
@@ -1109,7 +1153,7 @@ public class ConversionOrchestratorTests : IDisposable
             new NoOpProgressReporter(),
             configStore);
 
-        var results = await orchestrator.ProcessLaneAsync(
+        var results = await RunLaneAsync(orchestrator,
             lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var result = Assert.Single(results);
@@ -1168,7 +1212,7 @@ public class ConversionOrchestratorTests : IDisposable
             new NoOpProgressReporter(),
             configStore);
 
-        await orchestrator.ProcessLaneAsync(
+        await RunLaneAsync(orchestrator,
             lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         Assert.Empty(resumeState);
@@ -1218,7 +1262,7 @@ public class ConversionOrchestratorTests : IDisposable
             new NoOpProgressReporter(),
             configStore);
 
-        var results = await orchestrator.ProcessLaneAsync(
+        var results = await RunLaneAsync(orchestrator,
             lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var result = Assert.Single(results);
@@ -1268,7 +1312,7 @@ public class ConversionOrchestratorTests : IDisposable
             new NoOpProgressReporter(),
             configStore);
 
-        var results = await orchestrator.ProcessLaneAsync(
+        var results = await RunLaneAsync(orchestrator,
             lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var result = Assert.Single(results);
@@ -1317,7 +1361,7 @@ public class ConversionOrchestratorTests : IDisposable
             new NoOpProgressReporter(),
             configStore);
 
-        var results = await orchestrator.ProcessLaneAsync(
+        var results = await RunLaneAsync(orchestrator,
             lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var result = Assert.Single(results);
@@ -1369,7 +1413,7 @@ public class ConversionOrchestratorTests : IDisposable
             new NoOpProgressReporter(),
             configStore);
 
-        var results = await orchestrator.ProcessLaneAsync(
+        var results = await RunLaneAsync(orchestrator,
             lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
 
         var result = Assert.Single(results);

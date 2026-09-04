@@ -22,16 +22,19 @@ public sealed class RunResult
 
 public interface IRunOrchestrator
 {
-    /// <summary>One full pass: validate HandBrakeCLI/presets paths, process every enabled lane
-    /// with configured input, purge old logs/reports by retention, record history + increment
-    /// the run counter (only if files were processed), run the optional post-exec command, build
-    /// the HTML report, and fire a notification. Ported from Invoke-CompressarrRun. Returns null
-    /// if HandBrakeCLI or presets.json can't be found (the whole run aborts, matching v1).
+    /// <summary>One full pass: validate HandBrakeCLI/presets paths, prepare every enabled lane with
+    /// configured input, then process pending files in one global, cross-lane priority order (not
+    /// lane-by-lane) - a file's explicit drag-set Order always wins regardless of which lane it's
+    /// in, so a not-yet-started file from any lane can be prioritized ahead of any other lane's.
+    /// Purges old logs/reports by retention, records history + increments the run counter (only if
+    /// files were processed), runs the optional post-exec command, builds the HTML report, and
+    /// fires a notification. Ported from Invoke-CompressarrRun. Returns null if HandBrakeCLI or
+    /// presets.json can't be found (the whole run aborts, matching v1).
     ///
     /// stopToken is a graceful "Stop Monitoring" signal, distinct from Abort's hard-kill token -
-    /// checked between lanes and (via IConversionOrchestrator.ProcessLaneAsync) between files
-    /// within a lane, so the file actively encoding right now always finishes before this pass
-    /// unwinds, rather than being killed mid-encode.</summary>
+    /// checked before every file (across every lane, not just between lanes), so the file actively
+    /// encoding right now always finishes before this pass unwinds, rather than being killed
+    /// mid-encode.</summary>
     Task<RunResult?> RunOnceAsync(CompressarrConfig config, CancellationToken stopToken = default);
 }
 
@@ -138,28 +141,34 @@ public sealed class RunOrchestrator : IRunOrchestrator
 
         _metadata.Enabled = config.Processing.ClearTitleMetadata;
 
-        var laneResults = new Dictionary<string, IReadOnlyList<ConversionResult>>();
+        var laneResults = new Dictionary<string, List<ConversionResult>>();
         try
         {
+            // Phase 1: per-lane prep, unchanged validation/logging - every enabled, valid lane gets
+            // scanned and seeded up front, before any file from any lane starts converting. Lanes
+            // that don't pass validation are simply never added to laneContexts/laneOrderIndex, so
+            // Phase 2's cross-lane picking query below naturally never considers their entries.
+            var laneContexts = new Dictionary<string, LaneProcessingContext>();
+            var laneOrderIndex = new Dictionary<string, int>();
+            var configLaneIndex = 0;
             foreach (var lane in config.Lanes)
             {
                 token.ThrowIfCancellationRequested();
-                // Graceful Stop Monitoring - checked between lanes too, so a stop requested while
-                // one lane still has queued files doesn't go on to start an entirely different
-                // lane's worth of work before honoring it.
                 stopToken.ThrowIfCancellationRequested();
 
                 if (!lane.Enabled)
                 {
                     _logger.Log($"Skipping lane [{lane.DisplayName}] - lane is disabled.");
+                    configLaneIndex++;
                     continue;
                 }
 
-                if (string.IsNullOrWhiteSpace(lane.Input)) continue;
+                if (string.IsNullOrWhiteSpace(lane.Input)) { configLaneIndex++; continue; }
 
                 if (string.IsNullOrWhiteSpace(lane.TvPreset) && string.IsNullOrWhiteSpace(lane.MoviePreset))
                 {
                     _logger.Log($"Skipping lane [{lane.DisplayName}] - no TV or Movie preset configured.", LogSeverity.Error);
+                    configLaneIndex++;
                     continue;
                 }
                 if (!string.IsNullOrWhiteSpace(lane.TvPreset) && !_presets.PresetExists(lane.TvPreset, presetsPath))
@@ -172,14 +181,50 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 }
 
                 _logger.Log($"\nScanning lane [{lane.DisplayName}] - {_pathExpander.Expand(lane.Input)}");
-                // Captured from resumeState before ProcessLaneAsync touches it - a lane starting
-                // clean writes its own fresh Pending entries for bookkeeping before converting
-                // anything, which would otherwise make it look "resumed" a moment later even
-                // though nothing was ever interrupted.
+                // Captured from resumeState before PrepareLane touches it - a lane starting clean
+                // writes its own fresh Pending entries for bookkeeping before converting anything,
+                // which would otherwise make it look "resumed" a moment later even though nothing
+                // was ever interrupted.
                 var laneIsResumed = resumeState.Any(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending);
                 _progress.LaneStarted(lane.Id, lane.DisplayName, laneIsResumed);
-                var results = await _conversionOrchestrator.ProcessLaneAsync(lane, config, logFilePath, timestamp, resumeState, resumeFilePath, token, stopToken);
-                laneResults[lane.Id] = results;
+
+                var context = _conversionOrchestrator.PrepareLane(lane, config, resumeState, resumeFilePath);
+                configLaneIndex++;
+                if (context is null) continue;
+
+                laneContexts[lane.Id] = context;
+                laneOrderIndex[lane.Id] = configLaneIndex - 1;
+                laneResults[lane.Id] = new List<ConversionResult>();
+            }
+
+            // Phase 2: one global loop across every prepared lane, picking whichever eligible entry
+            // is highest priority regardless of which lane it belongs to - lower explicit Order
+            // first, then (for entries nobody has ever dragged) each lane's own position in
+            // config.Lanes, then that file's natural scan order within its own lane. This is the
+            // same three-level tie-break RunEndpoints.ComputeUpNext computes independently for the
+            // Monitor page's own queue display, so the two can never disagree about "what's next."
+            while (true)
+            {
+                token.ThrowIfCancellationRequested();
+                // Graceful Stop Monitoring - checked before every file, across every lane, so a
+                // stop requested while other lanes still have queued files doesn't go on to start
+                // an entirely different file's worth of work before honoring it.
+                stopToken.ThrowIfCancellationRequested();
+
+                _conversionOrchestrator.RefreshResumeState(resumeState, resumeFilePath);
+
+                var next = resumeState
+                    .Where(e => laneContexts.ContainsKey(e.LaneId) && e.Status == ResumeStatus.Pending && !e.Skipped && !e.Removed)
+                    .OrderBy(e => e.Order ?? int.MaxValue)
+                    .ThenBy(e => laneOrderIndex[e.LaneId])
+                    .ThenBy(e => laneContexts[e.LaneId].NaturalOrderIndex.TryGetValue(e.FullName, out var idx) ? idx : int.MaxValue)
+                    .FirstOrDefault(e => File.Exists(e.FullName));
+
+                if (next is null) break;
+
+                var context = laneContexts[next.LaneId];
+                var result = await _conversionOrchestrator.ProcessOneFileAsync(context, next, logFilePath, timestamp, resumeState, resumeFilePath, token);
+                laneResults[next.LaneId].Add(result);
             }
         }
         catch (OperationCanceledException)
