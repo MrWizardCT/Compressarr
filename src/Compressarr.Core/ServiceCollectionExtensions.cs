@@ -61,6 +61,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotifier, TelegramNotifier>();
         services.AddSingleton<INotifier, PushoverNotifier>();
         services.AddSingleton<INotifier, NtfyNotifier>();
+        services.AddSingleton<INotifier, GotifyNotifier>();
+        services.AddSingleton<INotifier, NotifiarrNotifier>();
         services.AddSingleton<INotificationDispatcher, NotificationDispatcher>();
 
         services.AddSingleton<IActiveRunController, ActiveRunController>();
