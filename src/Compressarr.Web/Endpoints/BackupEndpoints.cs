@@ -75,5 +75,23 @@ public static class BackupEndpoints
                 ? Results.Ok(new { fileName = result.FileName })
                 : Results.Json(new { message = result.Error }, statusCode: 500);
         });
+
+        // folder is optional and, when given, wins over the saved config's Backup.FolderPath -
+        // lets Settings list (and restore from) a folder the user has typed/browsed to but not
+        // saved yet, including on a first launch before any settings exist at all.
+        app.MapGet("/api/backups/list", (string? folder, IBackupService backupService) =>
+        {
+            return Results.Json(backupService.ListBackups(folder));
+        });
+
+        app.MapPost("/api/backups/restore", async (RestoreBackupRequest request, IBackupService backupService) =>
+        {
+            var result = await backupService.RestoreBackupAsync(request.FileName, request.Folder);
+            return result.Success
+                ? Results.Ok(new { fileName = result.FileName })
+                : Results.Json(new { message = result.Error }, statusCode: 500);
+        });
     }
 }
+
+public sealed record RestoreBackupRequest(string FileName, string? Folder);

@@ -21,6 +21,9 @@ file sealed class FakeBackupService : IBackupService
         Interlocked.Increment(ref CallCount);
         return Task.FromResult(new BackupResult(true, "fake.zip", null));
     }
+
+    public IReadOnlyList<BackupFileInfo> ListBackups(string? folderOverride = null) => Array.Empty<BackupFileInfo>();
+    public Task<BackupResult> RestoreBackupAsync(string fileName, string? folderOverride = null) => Task.FromResult(new BackupResult(true, fileName, null));
 }
 
 public class BackupSchedulerTests

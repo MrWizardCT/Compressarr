@@ -99,4 +99,92 @@ public sealed class BackupServiceTests : IDisposable
 
         Assert.Contains(trash.Calls, c => c.Path == oldZip && c.Mode == DeleteAfterConvertMode.Recycle);
     }
+
+    [Fact]
+    public void ListBackups_ReturnsZipsNewestFirst_UsingSavedFolder_WhenNoOverride()
+    {
+        var backupFolder = Path.Combine(_tempDir, "Backups");
+        Directory.CreateDirectory(backupFolder);
+        var older = Path.Combine(backupFolder, "Compressarr_Backup_2020-01-01_000000.zip");
+        var newer = Path.Combine(backupFolder, "Compressarr_Backup_2026-01-01_000000.zip");
+        File.WriteAllText(older, "old");
+        File.WriteAllText(newer, "new");
+        File.SetCreationTime(older, DateTime.Now.AddDays(-10));
+        File.SetCreationTime(newer, DateTime.Now);
+
+        var configStore = new FixedConfigStore(MakeConfig(backupFolder));
+        var service = new BackupService(configStore, new PassThroughPathExpander(), new RecordingTrashService());
+
+        var backups = service.ListBackups();
+
+        Assert.Equal(new[] { "Compressarr_Backup_2026-01-01_000000.zip", "Compressarr_Backup_2020-01-01_000000.zip" },
+            backups.Select(b => b.FileName).ToArray());
+    }
+
+    [Fact]
+    public void ListBackups_FolderOverride_WinsOverSavedConfig()
+    {
+        var savedFolder = Path.Combine(_tempDir, "SavedBackups");
+        var overrideFolder = Path.Combine(_tempDir, "OverrideBackups");
+        Directory.CreateDirectory(savedFolder);
+        Directory.CreateDirectory(overrideFolder);
+        File.WriteAllText(Path.Combine(savedFolder, "Compressarr_Backup_saved.zip"), "x");
+        File.WriteAllText(Path.Combine(overrideFolder, "Compressarr_Backup_override.zip"), "x");
+
+        var configStore = new FixedConfigStore(MakeConfig(savedFolder));
+        var service = new BackupService(configStore, new PassThroughPathExpander(), new RecordingTrashService());
+
+        var backups = service.ListBackups(overrideFolder);
+
+        Assert.Equal(new[] { "Compressarr_Backup_override.zip" }, backups.Select(b => b.FileName).ToArray());
+    }
+
+    [Fact]
+    public void ListBackups_ReturnsEmpty_WhenFolderDoesNotExist()
+    {
+        var configStore = new FixedConfigStore(MakeConfig(Path.Combine(_tempDir, "does-not-exist")));
+        var service = new BackupService(configStore, new PassThroughPathExpander(), new RecordingTrashService());
+
+        Assert.Empty(service.ListBackups());
+    }
+
+    [Fact]
+    public void RestoreEntry_CopiesFile_WhenPresentInExtractedBackup()
+    {
+        Directory.CreateDirectory(Path.Combine(_tempDir, "extracted"));
+        var extractedDir = Path.Combine(_tempDir, "extracted");
+        File.WriteAllText(Path.Combine(extractedDir, "compressarr.runcount.json"), "42");
+        var dest = Path.Combine(_tempDir, "restored", "compressarr.runcount.json");
+
+        BackupService.RestoreEntry(extractedDir, "compressarr.runcount.json", dest);
+
+        Assert.Equal("42", File.ReadAllText(dest));
+    }
+
+    [Fact]
+    public void RestoreEntry_OverwritesExistingDestinationFile()
+    {
+        var extractedDir = Path.Combine(_tempDir, "extracted");
+        Directory.CreateDirectory(extractedDir);
+        File.WriteAllText(Path.Combine(extractedDir, "compressarr.resume.json"), "from-backup");
+        var dest = Path.Combine(_tempDir, "compressarr.resume.json");
+        File.WriteAllText(dest, "stale-current-value");
+
+        BackupService.RestoreEntry(extractedDir, "compressarr.resume.json", dest);
+
+        Assert.Equal("from-backup", File.ReadAllText(dest));
+    }
+
+    [Fact]
+    public void RestoreEntry_DoesNothing_WhenEntryNotPresentInBackup()
+    {
+        var extractedDir = Path.Combine(_tempDir, "extracted");
+        Directory.CreateDirectory(extractedDir);
+        var dest = Path.Combine(_tempDir, "compressarr.resume.json");
+        File.WriteAllText(dest, "left-untouched");
+
+        BackupService.RestoreEntry(extractedDir, "compressarr.resume.json", dest);
+
+        Assert.Equal("left-untouched", File.ReadAllText(dest));
+    }
 }

@@ -75,6 +75,7 @@ function fillForm(dto) {
   document.getElementById('backupIntervalDays').value = dto.backupIntervalDays;
   document.getElementById('backupRetentionDays').value = dto.backupRetentionDays;
   setAutomatedBackupStatus(formatLastBackup(dto.backupLastRunUtc), false);
+  loadBackupList();
 }
 
 function formatLastBackup(lastRunUtc) {
@@ -356,8 +357,15 @@ function setAutomatedBackupStatus(text, success) {
 
 document.querySelector('.browse-btn[data-target="backupFolderPath"]').addEventListener('click', () => {
   const field = document.getElementById('backupFolderPath');
-  openFolderBrowser(field.value, chosenPath => { field.value = chosenPath; });
+  openFolderBrowser(field.value, chosenPath => {
+    field.value = chosenPath;
+    loadBackupList(); // a folder was just deliberately chosen - show what's actually in it
+  });
 });
+
+// Covers typing/pasting a path (e.g. a UNC share) by hand instead of using Browse - refreshing on
+// blur (not every keystroke) avoids spamming /api/backups/list while the user is still mid-edit.
+document.getElementById('backupFolderPath').addEventListener('blur', () => loadBackupList());
 
 document.getElementById('runBackupNowBtn').addEventListener('click', async () => {
   setAutomatedBackupStatus('Creating backup...', false);
@@ -365,10 +373,75 @@ document.getElementById('runBackupNowBtn').addEventListener('click', async () =>
   if (res.ok) {
     const body = await res.json();
     setAutomatedBackupStatus(`Backup created: ${body.fileName}`, true);
+    loadBackupList();
   } else {
     const body = await res.json().catch(() => ({}));
     setAutomatedBackupStatus(body.message || 'Failed to create backup.', false);
   }
 });
+
+function formatBackupSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Reads straight from the Folder input's current (possibly unsaved) value, not the saved config -
+// this is what makes Restore usable before Settings has ever been saved, e.g. on a fresh
+// install/new machine: point the field at where old backups live and they show up immediately.
+async function loadBackupList() {
+  const folder = document.getElementById('backupFolderPath').value;
+  const res = await fetch(`/api/backups/list?folder=${encodeURIComponent(folder || '')}`);
+  const backups = res.ok ? await res.json() : [];
+
+  const body = document.getElementById('backupListBody');
+  body.innerHTML = '';
+
+  if (backups.length === 0) {
+    const row = document.createElement('tr');
+    row.innerHTML = '<td colspan="4">No backups found in this folder.</td>';
+    body.appendChild(row);
+    return;
+  }
+
+  for (const b of backups) {
+    const row = document.createElement('tr');
+    const restoreBtn = document.createElement('button');
+    restoreBtn.textContent = 'Restore';
+    restoreBtn.addEventListener('click', () => restoreBackup(b.fileName));
+
+    const fileCell = document.createElement('td');
+    fileCell.textContent = b.fileName;
+    const sizeCell = document.createElement('td');
+    sizeCell.textContent = formatBackupSize(b.sizeBytes);
+    const createdCell = document.createElement('td');
+    createdCell.textContent = new Date(b.createdUtc).toLocaleString();
+    const actionCell = document.createElement('td');
+    actionCell.appendChild(restoreBtn);
+
+    row.append(fileCell, sizeCell, createdCell, actionCell);
+    body.appendChild(row);
+  }
+}
+
+async function restoreBackup(fileName) {
+  if (!confirm(`Restore from ${fileName}?\n\nThis will overwrite your current settings, lanes, resume state, and history with the contents of this backup. This cannot be undone.`)) return;
+
+  setAutomatedBackupStatus(`Restoring ${fileName}...`, false);
+  const folder = document.getElementById('backupFolderPath').value;
+  const res = await fetch('/api/backups/restore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileName, folder })
+  });
+
+  if (res.ok) {
+    setAutomatedBackupStatus(`Restored from ${fileName}.`, true);
+    loadSettings(); // the config on disk just changed out from under this page - reload the form
+  } else {
+    const body = await res.json().catch(() => ({}));
+    setAutomatedBackupStatus(body.message || 'Failed to restore backup.', false);
+  }
+}
 
 loadSettings();

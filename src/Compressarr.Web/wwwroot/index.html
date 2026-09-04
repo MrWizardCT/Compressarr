@@ -235,6 +235,15 @@
           <button id="runBackupNowBtn">Backup Now</button>
         </div>
         <div class="preset-status" id="automatedBackupStatus"></div>
+        <div class="field-block" style="margin-top: 6px">
+          <label>Existing backups<span class="help-tag" tabindex="0" title="Backups found in the folder above. Works even before Settings has been saved for the first time - useful when restoring after a crash or a fresh install: point the folder at where your backups live and restore from here.">?<span class="help-tip">Backups found in the folder above. Works even before Settings has been saved for the first time - useful when restoring after a crash or a fresh install: point the folder at where your backups live and restore from here.</span></span></label>
+          <div style="overflow-x: auto">
+            <table id="backupListTable">
+              <thead><tr><th>File</th><th>Size</th><th>Created</th><th></th></tr></thead>
+              <tbody id="backupListBody"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
 
