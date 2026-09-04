@@ -85,7 +85,7 @@ file to finish. Drag a queued file to reorder it within its lane, or use its men
 remove it from the queue, or override its preset for just that one file. The recent-log panel and
 CPU usage update live while a pass runs.
 
-<img src="Assets/Screenshots/monitor-page.png" alt="Compressarr Monitor page, showing a real conversion in progress with live percent/fps/ETA and the In Queue list" width="700">
+<img src="Assets/Screenshots/monitor-page.png" alt="Compressarr Monitor page, showing the In Queue list and recent activity log while monitoring is on" width="700">
 
 *The media shown is representational test data only, not the actual film - your own results
 (speed, file size, savings) will vary based on your source files, hardware, and preset.*
@@ -219,6 +219,111 @@ Two things to know:
   Presets** button on Settings (in the HandBrake card) to re-add Compressarr's presets to it.
 - Use **Backup Now** on Settings at any time to take a fresh backup before decommissioning a
   machine, rather than relying only on the automatic schedule.
+
+### Notifications page
+
+<img src="Assets/Screenshots/notifications-page.png" alt="Compressarr Notifications page, showing the toast toggle and two configured channels" width="700">
+
+Get a message wherever you already look - Discord, Slack, your phone, a self-hosted push server,
+or any automation platform - when a run finishes. Every channel is optional and off by default;
+add as many as you want, of as many different types as you want (two Discord servers, a Slack
+workspace, and a phone push, all at once).
+
+**Desktop toast notifications**: a Windows toast confirming completion and opening the report when
+clicked. Off by default (useful on a desktop machine, not needed for a headless/server install) -
+toggle it on the Notifications page.
+
+**Notification channels**: click **Add Channel**, pick a service from the dropdown, and fill in
+its fields - every field has a **?** bubble next to it explaining what it needs and, where
+relevant, where to find it. Each channel has:
+
+| Field | What it's for |
+|---|---|
+| Trigger | Always, On error or warning, or Never (kept configured but disabled without deleting it) |
+| Name | A friendly label to tell channels of the same type apart, e.g. two different Discord servers |
+| Test | Sends a test message using whatever's currently typed in, even if not yet saved |
+| Save / Remove | Persist or delete this channel |
+
+**What data is sent**: every channel receives the run number, an aggregate summary (e.g. "12
+file(s) processed, 4.2 GB saved"), and the outcome (success/warning/error) - never filenames,
+media titles, folder paths, or anything else from your configuration. The one exception is the
+local path to the HTML report file, which only the **Generic Webhook** and **IFTTT** channels
+include - worth knowing before pointing either at a third-party service, since a path like
+`C:\Users\you\AppData\Roaming\Compressarr\Reports\...` leaves your machine as plain text. Every
+other channel type (Discord, Slack, Telegram, Pushover, ntfy, Gotify, Notifiarr) never sends the
+report path at all.
+
+#### Supported services
+
+| Service | What it needs |
+|---|---|
+| [Generic Webhook](#generic-webhook-zapier-make-n8n-node-red-home-assistant) | A URL, HTTP method, and optional custom headers |
+| [Discord](#discord) | A channel webhook URL |
+| [Slack](#slack) | An incoming webhook URL |
+| [Telegram](#telegram) | A bot token and chat ID |
+| [Pushover](#pushover) | An application token and user key |
+| [ntfy](#ntfy) | A server URL (defaults to the public ntfy.sh) and topic |
+| [Gotify](#gotify) | Your self-hosted server URL and an application token |
+| [Notifiarr](#notifiarr) | Your Notifiarr API key and a Discord channel ID |
+| [IFTTT](#ifttt) | An event name and your Webhooks key |
+
+##### Generic Webhook (Zapier, Make, n8n, Node-RED, Home Assistant)
+
+Posts a JSON body (title, outcome, file count, space saved, duration, report path) to any URL you
+give it, with an HTTP method and custom headers of your choosing. This single channel type also
+fully covers **Zapier** ("Webhooks by Zapier"), **Make** ("Webhooks" module), **n8n** (Webhook
+node), **Node-RED** (`http in` node), and **Home Assistant** (a webhook automation trigger) - all
+of them accept an arbitrary POST with no required shape, so just point this at whichever
+platform's own webhook URL.
+
+##### Discord
+
+In Discord, go to a channel's **Edit Channel > Integrations > Webhooks**, create one, and paste
+its URL into the Webhook URL field. Compressarr posts a color-coded embed (green/yellow/red for
+success/warning/error) with file count, space saved, and duration.
+
+##### Slack
+
+Create an **Incoming Webhook** for your workspace at [api.slack.com/apps](https://api.slack.com/apps)
+and paste its URL in. Messages use Slack's mrkdwn formatting with a status emoji.
+
+##### Telegram
+
+Message **@BotFather** on Telegram to create a bot and get its Bot Token. For the Chat ID, message
+**@userinfobot** to find your own, or check your bot's `getUpdates` response for a group/channel
+ID. Messages are sent as plain text.
+
+##### Pushover
+
+Create an Application at [pushover.net/apps/build](https://pushover.net/apps/build) for the
+Application API Token, and find your User Key on your Pushover dashboard.
+
+##### ntfy
+
+Works with the public [ntfy.sh](https://ntfy.sh) instance out of the box - just pick a Topic (any
+string; make it unique and hard to guess, since anyone who knows it can subscribe to it too). If
+you self-host ntfy, change the Server URL to point at your own instance. An optional Access Token
+supports protected topics.
+
+##### Gotify
+
+Gotify is self-hosted only (no public hosted service) - point Server URL at your own instance, and
+create an Application in Gotify's web UI (Apps tab) for the Application Token.
+
+##### Notifiarr
+
+Built for the *arr ecosystem: relays into whichever Discord channel your Notifiarr integration is
+configured to post to. Find your API Key on your Notifiarr account page under **My Account > API
+Key**. For the Discord Channel ID, enable Developer Mode in Discord (User Settings > Advanced),
+then right-click the target channel and **Copy Channel ID**.
+
+##### IFTTT
+
+Create an applet with a **Receive a web request** trigger and give it an Event Name (used in the
+Event Name field here). Find your Webhooks Key at
+[ifttt.com/maker_webhooks](https://ifttt.com/maker_webhooks) under Documentation - it's the string
+after `/use/` in your personal URL. Compressarr sends title/body/report path as IFTTT's
+`value1`/`value2`/`value3` ingredients for use in your applet's action.
 
 ### Lanes page
 

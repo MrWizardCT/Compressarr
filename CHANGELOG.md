@@ -36,6 +36,11 @@ for that full history.
   card-based layout across Settings, Lanes, History, and About.
 - A Donate page with QR codes and one-click copy for several cryptocurrency addresses.
 - A small indicator appears in the toolbar when a newer version of Compressarr is available.
+- Notification channels (Notifications page): get a message when a run completes via Discord,
+  Slack, Telegram, Pushover, ntfy, Gotify, Notifiarr, IFTTT, or a custom webhook (which also
+  covers Zapier, Make, n8n, Node-RED, and Home Assistant) - configure as many channels as you
+  want, each with its own trigger (always / only on error or warning / never) and a Test button.
+  A separate toggle controls the existing Windows toast notification, now off by default.
 
 ### Changed
 - Start/Stop Monitoring is now a single toggle button instead of two separate ones.
