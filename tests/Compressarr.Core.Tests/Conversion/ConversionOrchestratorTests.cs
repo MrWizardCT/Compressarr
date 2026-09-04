@@ -98,7 +98,7 @@ file sealed class ThrowingFileRouter : IFileRouter
 {
     private readonly Exception _exception;
     public ThrowingFileRouter(Exception exception) => _exception = exception;
-    public string? RouteFile(string fileName, bool isTv, string tvShowBasePath, string movieBasePath, bool moveFiles) => throw _exception;
+    public string? RouteFile(string fileName, bool isTv, string tvShowBasePath, string movieBasePath, bool moveFiles, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite) => throw _exception;
 }
 
 file sealed record TrashCall(string Path, DeleteAfterConvertMode Mode);
@@ -107,6 +107,17 @@ file sealed class RecordingTrashService : ITrashService
 {
     public List<TrashCall> Calls { get; } = new();
     public void DeleteFile(string path, DeleteAfterConvertMode mode) => Calls.Add(new TrashCall(path, mode));
+    public void DeleteFolder(string path, DeleteAfterConvertMode mode) { }
+}
+
+/// <summary>Actually deletes, unlike RecordingTrashService - needed for the move-retry tests, which
+/// need the source file genuinely gone from Input after a DeleteAfterConvert pass so a second
+/// ProcessLaneAsync call's fresh scan doesn't rediscover it and flip the just-completed resume
+/// entry back to Pending (a rescan reusing an existing entry for the same still-present path is a
+/// separate, pre-existing behavior of Maintain-style setups, not something these tests are about).</summary>
+file sealed class DeletingTrashService : ITrashService
+{
+    public void DeleteFile(string path, DeleteAfterConvertMode mode) { try { File.Delete(path); } catch { } }
     public void DeleteFolder(string path, DeleteAfterConvertMode mode) { }
 }
 
@@ -301,6 +312,258 @@ public class ConversionOrchestratorTests : IDisposable
         var outputPath = Path.Combine(outputDir, "Caddyshack (1980).mkv");
         Assert.True(File.Exists(outputPath));
         Assert.Equal(outputPath, result.NewFileName);
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_MoveFails_MarksResumeEntryMoveFailed_NotCompleted()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = @"Z:\Unavailable\Movies"
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Maintain, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry> { new() { LaneId = "lane1", FullName = sourcePath, Status = ResumeStatus.Pending } };
+
+        await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var entry = Assert.Single(resumeState);
+        // Previously this incorrectly ended up Completed even though the file never got filed -
+        // this pins the fix: a real move failure must leave the entry retryable, not lying that
+        // the file is fully done.
+        Assert.Equal(ResumeStatus.MoveFailed, entry.Status);
+        Assert.Equal(Path.Combine(outputDir, "Caddyshack (1980).mkv"), entry.EncodedFilePath);
+        Assert.True(File.Exists(entry.EncodedFilePath));
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_MoveFailedEntry_RetriedAndSucceedsOnNextPass()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = @"Z:\Unavailable\Movies" // first pass: unreachable
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>();
+        await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var entryAfterFirstPass = Assert.Single(resumeState);
+        Assert.Equal(ResumeStatus.MoveFailed, entryAfterFirstPass.Status);
+        Assert.False(File.Exists(sourcePath)); // DeleteAfterConvert already removed it, even though the move failed
+
+        // Second pass: the base path is reachable now - only the move should be retried, no
+        // re-encode (nothing left in Input to encode anyway).
+        lane.MovieBasePath = movieBaseDir;
+        var secondPassResults = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000100", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        Assert.Empty(secondPassResults); // the retry itself doesn't add a new ConversionResult
+        var entryAfterRetry = Assert.Single(resumeState);
+        Assert.Equal(ResumeStatus.Completed, entryAfterRetry.Status);
+        Assert.Null(entryAfterRetry.EncodedFilePath);
+
+        var finalPath = Path.Combine(movieBaseDir, "Caddyshack (1980)", "Caddyshack (1980).mkv");
+        Assert.True(File.Exists(finalPath));
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_MoveFailedEntry_StillFailing_StaysMoveFailed()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = @"Z:\Unavailable\Movies"
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>();
+        await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        var encodedPath = Assert.Single(resumeState).EncodedFilePath!;
+
+        // Second pass: base path is still unreachable.
+        await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000100", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var entry = Assert.Single(resumeState);
+        Assert.Equal(ResumeStatus.MoveFailed, entry.Status);
+        Assert.Equal(encodedPath, entry.EncodedFilePath);
+        Assert.True(File.Exists(encodedPath)); // still sitting right where it was
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_MoveFailedEntry_EncodedFileGone_EntryRemoved()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = Path.Combine(_tempDir, "Movies")
+        };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = true } };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        // Simulates a MoveFailed entry whose encoded file was since deleted/moved by hand.
+        var resumeState = new List<ResumeEntry>
+        {
+            new()
+            {
+                LaneId = "lane1",
+                FullName = Path.Combine(inputDir, "gone-already.mkv"),
+                Status = ResumeStatus.MoveFailed,
+                EncodedFilePath = Path.Combine(outputDir, "gone-already.mkv") // never actually created
+            }
+        };
+
+        await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        Assert.Empty(resumeState);
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_DestinationCollisionModeSkip_SucceedsWithWarning_NotError()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        // Pre-existing file already sitting at the destination this conversion would land at.
+        var existingDestFolder = Path.Combine(movieBaseDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(existingDestFolder);
+        File.WriteAllText(Path.Combine(existingDestFolder, "Caddyshack (1980).mkv"), "already here");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = movieBaseDir
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Maintain, MoveFiles = true, ClearTitleMetadata = false, OnDestinationCollision = DestinationCollisionMode.Skip }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry> { new() { LaneId = "lane1", FullName = sourcePath, Status = ResumeStatus.Pending } };
+
+        var results = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        // A deliberate, configured skip is not a failure - the encode itself worked fine.
+        Assert.True(result.Success);
+        Assert.False(result.DiskFull);
+        Assert.Contains("already exists", result.PostProcessWarning);
+        // The just-converted file stays in Output, untouched - the pre-existing destination file
+        // is also untouched.
+        Assert.True(File.Exists(Path.Combine(outputDir, "Caddyshack (1980).mkv")));
+        Assert.Equal("already here", File.ReadAllText(Path.Combine(existingDestFolder, "Caddyshack (1980).mkv")));
+
+        var entry = Assert.Single(resumeState);
+        Assert.Equal(ResumeStatus.Completed, entry.Status);
     }
 
     [Fact]

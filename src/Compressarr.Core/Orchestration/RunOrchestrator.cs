@@ -121,7 +121,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
             return null;
         }
 
-        var resumeFilePath = Path.Combine(AppPaths.GetAppDataDirectory(), "compressarr.resume.json");
+        var resumeFilePath = AppPaths.GetResumeFilePath();
         var resumeState = _resumeStore.Load(resumeFilePath);
         if (resumeState.Count > 0)
         {

@@ -20,7 +20,7 @@ public static class MaintenanceEndpoints
 
         app.MapPost("/api/maintenance/reset-resume", (IResumeStateStore resumeStore) =>
         {
-            var path = Path.Combine(AppPaths.GetAppDataDirectory(), "compressarr.resume.json");
+            var path = AppPaths.GetResumeFilePath();
             resumeStore.Save(new List<ResumeEntry>(), path);
             return Results.Ok();
         });

@@ -19,6 +19,7 @@ internal static class ConfigMapping
         ClearTitleMetadata: config.Processing.ClearTitleMetadata,
         Limit: config.Processing.Limit,
         MinSizeBytes: config.Processing.MinSizeBytes,
+        OnDestinationCollision: config.Processing.OnDestinationCollision.ToString(),
         LogFilePath: config.Logging.LogFilePath,
         RetentionDays: config.Logging.RetentionDays,
         PostExecCmd: config.PostExec.Cmd,
@@ -49,6 +50,7 @@ internal static class ConfigMapping
         config.Processing.ClearTitleMetadata = dto.ClearTitleMetadata;
         config.Processing.Limit = dto.Limit;
         config.Processing.MinSizeBytes = dto.MinSizeBytes;
+        config.Processing.OnDestinationCollision = Enum.Parse<DestinationCollisionMode>(dto.OnDestinationCollision);
         config.Logging.LogFilePath = dto.LogFilePath;
         config.Logging.RetentionDays = dto.RetentionDays;
         config.PostExec.Cmd = dto.PostExecCmd;

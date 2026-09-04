@@ -1,14 +1,30 @@
 using System.Text.RegularExpressions;
+using Compressarr.Core.Config;
 using Compressarr.Core.Conversion;
 
 namespace Compressarr.Core.Routing;
+
+/// <summary>Thrown by FileRouter when DestinationCollisionMode.Skip is configured and the
+/// destination already exists - deliberately distinct from a real move failure (unreachable path,
+/// disk full, permission error) so ConversionOrchestrator can treat it as a warning, not an error:
+/// the file wasn't moved because that's exactly what was configured, not because something went
+/// wrong.</summary>
+public sealed class DestinationCollisionSkippedException : Exception
+{
+    public DestinationCollisionSkippedException(string destPath)
+        : base($"Destination already exists, move skipped: '{destPath}'")
+    {
+    }
+}
 
 public interface IFileRouter
 {
     /// <summary>Dispatches on the file's auto-detected content type to the matching base path -
     /// a lane's TvShowBasePath for TV episodes, MovieBasePath for everything else. Returns null
-    /// (no-op) if moveFiles is false.</summary>
-    string? RouteFile(string fileName, bool isTv, string tvShowBasePath, string movieBasePath, bool moveFiles);
+    /// (no-op) if moveFiles is false. Throws DestinationCollisionSkippedException if the
+    /// destination already exists and collisionMode is Skip.</summary>
+    string? RouteFile(string fileName, bool isTv, string tvShowBasePath, string movieBasePath, bool moveFiles,
+        DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite);
 }
 
 /// <summary>Ported from Move-CompressarrMovieFile/Move-CompressarrTVFile/Move-CompressarrRoutedFile.</summary>
@@ -20,14 +36,48 @@ public sealed partial class FileRouter : IFileRouter
     [GeneratedRegex(@"(\d{4})( ?- ?)?(\d{4})?")]
     private static partial Regex YearRangePattern();
 
-    public string? RouteFile(string fileName, bool isTv, string tvShowBasePath, string movieBasePath, bool moveFiles)
+    public string? RouteFile(string fileName, bool isTv, string tvShowBasePath, string movieBasePath, bool moveFiles,
+        DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite)
     {
         if (!moveFiles) return null;
 
-        return isTv ? MoveTvFile(fileName, tvShowBasePath) : MoveMovieFile(fileName, movieBasePath);
+        return isTv ? MoveTvFile(fileName, tvShowBasePath, collisionMode) : MoveMovieFile(fileName, movieBasePath, collisionMode);
     }
 
-    public string? MoveTvFile(string fileName, string outputBase)
+    /// <summary>Resolves destPath against an existing file at that path per collisionMode: unchanged
+    /// for Overwrite (the caller's File.Move(overwrite: true) handles it) or when nothing's there
+    /// yet, a uniquified sibling path for Rename, or throws for Skip. A pure static function so
+    /// collision behavior is testable independent of an actual file move.</summary>
+    internal static string ResolveCollision(string destPath, DestinationCollisionMode collisionMode)
+    {
+        if (!File.Exists(destPath)) return destPath;
+
+        return collisionMode switch
+        {
+            DestinationCollisionMode.Skip => throw new DestinationCollisionSkippedException(destPath),
+            DestinationCollisionMode.Rename => MakeUniquePath(destPath),
+            _ => destPath
+        };
+    }
+
+    private static string MakeUniquePath(string destPath)
+    {
+        var dir = Path.GetDirectoryName(destPath) ?? "";
+        var nameWithoutExt = Path.GetFileNameWithoutExtension(destPath);
+        var ext = Path.GetExtension(destPath);
+
+        var n = 2;
+        string candidate;
+        do
+        {
+            candidate = Path.Combine(dir, $"{nameWithoutExt} ({n}){ext}");
+            n++;
+        } while (File.Exists(candidate));
+
+        return candidate;
+    }
+
+    public string? MoveTvFile(string fileName, string outputBase, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite)
     {
         if (string.IsNullOrWhiteSpace(outputBase))
         {
@@ -41,14 +91,14 @@ public sealed partial class FileRouter : IFileRouter
         }
 
         var destFolder = Path.Combine(outputBase, info.ShowName, "Season " + info.Season);
-        var destPath = Path.Combine(destFolder, info.EpisodeFileName);
-
         Directory.CreateDirectory(destFolder);
+        var destPath = ResolveCollision(Path.Combine(destFolder, info.EpisodeFileName), collisionMode);
+
         File.Move(fileName, destPath, overwrite: true);
         return destPath;
     }
 
-    public string? MoveMovieFile(string fileName, string outputBase)
+    public string? MoveMovieFile(string fileName, string outputBase, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite)
     {
         if (string.IsNullOrWhiteSpace(outputBase))
         {
@@ -73,7 +123,7 @@ public sealed partial class FileRouter : IFileRouter
         {
             var movieDestFolder = Path.Combine(bucketFolder, movieFolderName);
             Directory.CreateDirectory(movieDestFolder);
-            var destPath = Path.Combine(movieDestFolder, leaf);
+            var destPath = ResolveCollision(Path.Combine(movieDestFolder, leaf), collisionMode);
             File.Move(fileName, destPath, overwrite: true);
             return destPath;
         }

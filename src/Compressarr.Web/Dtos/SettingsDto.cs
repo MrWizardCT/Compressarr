@@ -11,6 +11,7 @@ public sealed record SettingsDto(
     bool ClearTitleMetadata,
     int Limit,
     long MinSizeBytes,
+    string OnDestinationCollision,
     string LogFilePath,
     int RetentionDays,
     string PostExecCmd,

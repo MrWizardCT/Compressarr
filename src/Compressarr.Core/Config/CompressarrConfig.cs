@@ -14,6 +14,18 @@ public enum OpenReportMode
     Never
 }
 
+/// <summary>What FileRouter does when a converted file's destination path already has a file
+/// there - e.g. the same title converted a second time. Overwrite matches Compressarr's original
+/// behavior (silent overwrite, supports "re-run to get a better encode"); Skip leaves the newly
+/// converted file sitting in the Output folder untouched (a warning is logged, not an error - it's
+/// working as configured); Rename appends " (2)", " (3)", etc. until a free name is found.</summary>
+public enum DestinationCollisionMode
+{
+    Overwrite,
+    Skip,
+    Rename
+}
+
 public sealed class CompressarrConfig
 {
     public HandBrakeSettings HandBrake { get; set; } = new();
@@ -71,6 +83,8 @@ public sealed class ProcessingSettings
     /// ByteSizeParser/ByteSizeFormatter available for UI display and for parsing a hand-edited
     /// unit-suffix string.</summary>
     public long MinSizeBytes { get; set; } = 0;
+
+    public DestinationCollisionMode OnDestinationCollision { get; set; } = DestinationCollisionMode.Overwrite;
 }
 
 public sealed class LoggingSettings

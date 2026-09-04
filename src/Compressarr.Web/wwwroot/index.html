@@ -70,6 +70,14 @@
             <label for="limit">Max files per run (0 = no limit)<span class="help-tag" tabindex="0" title="Stop after converting this many files in a single pass. 0 means no limit.">?<span class="help-tip">Stop after converting this many files in a single pass. 0 means no limit.</span></span></label>
             <input type="number" id="limit" min="0" />
           </div>
+          <div class="field-block">
+            <label for="onDestinationCollision">On destination collision<span class="help-tag" tabindex="0" title="What happens if a converted file's destination already has a file at that exact path - e.g. the same title converted a second time. Overwrite replaces it (supports re-running for a better encode). Skip leaves the new file in the Output folder untouched. Rename appends (2), (3), etc.">?<span class="help-tip">What happens if a converted file's destination already has a file at that exact path - e.g. the same title converted a second time. Overwrite replaces it (supports re-running for a better encode). Skip leaves the new file in the Output folder untouched. Rename appends (2), (3), etc.</span></span></label>
+            <select id="onDestinationCollision">
+              <option value="Overwrite">Overwrite</option>
+              <option value="Skip">Skip</option>
+              <option value="Rename">Rename</option>
+            </select>
+          </div>
         </div>
         <div class="field-block" style="margin-top: 2px">
           <div class="check-row"><input type="checkbox" id="outSameAsIn" /><label for="outSameAsIn">Write output to same folder as input<span class="help-tag" tabindex="0" title="Convert files in place instead of writing to each lane's Output folder.">?<span class="help-tip">Convert files in place instead of writing to each lane's Output folder.</span></span></label></div>

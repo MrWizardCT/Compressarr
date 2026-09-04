@@ -1,3 +1,4 @@
+using Compressarr.Core.Config;
 using Compressarr.Core.Routing;
 
 namespace Compressarr.Core.Tests.Routing;
@@ -164,5 +165,112 @@ public class FileRouterTests : IDisposable
 
         Assert.Null(result);
         Assert.True(File.Exists(source));
+    }
+
+    [Fact]
+    public void MoveMovieFile_CollisionModeSkip_ThrowsAndLeavesBothFilesUntouched()
+    {
+        var router = new FileRouter();
+        var source = CreateSourceFile("Caddyshack (1980).mkv");
+        File.WriteAllText(source, "NEW CONTENT");
+        var outputBase = Path.Combine(_tempDir, "Movies");
+        var existingDestFolder = Path.Combine(outputBase, "Caddyshack (1980)");
+        Directory.CreateDirectory(existingDestFolder);
+        var existingDestPath = Path.Combine(existingDestFolder, "Caddyshack (1980).mkv");
+        File.WriteAllText(existingDestPath, "OLD CONTENT");
+
+        var ex = Assert.Throws<DestinationCollisionSkippedException>(
+            () => router.MoveMovieFile(source, outputBase, DestinationCollisionMode.Skip));
+
+        Assert.Contains(existingDestPath, ex.Message);
+        Assert.True(File.Exists(source));
+        Assert.Equal("NEW CONTENT", File.ReadAllText(source));
+        Assert.Equal("OLD CONTENT", File.ReadAllText(existingDestPath));
+    }
+
+    [Fact]
+    public void MoveTvFile_CollisionModeSkip_ThrowsAndLeavesBothFilesUntouched()
+    {
+        var router = new FileRouter();
+        var source = CreateSourceFile("MASH.S04E09.mkv");
+        var outputBase = Path.Combine(_tempDir, "TV");
+        var existingDestFolder = Path.Combine(outputBase, "MASH", "Season 04");
+        Directory.CreateDirectory(existingDestFolder);
+        var existingDestPath = Path.Combine(existingDestFolder, "MASH.S04E09.mkv");
+        File.WriteAllText(existingDestPath, "OLD CONTENT");
+
+        Assert.Throws<DestinationCollisionSkippedException>(
+            () => router.MoveTvFile(source, outputBase, DestinationCollisionMode.Skip));
+
+        Assert.True(File.Exists(source));
+        Assert.True(File.Exists(existingDestPath));
+        Assert.Equal("OLD CONTENT", File.ReadAllText(existingDestPath));
+    }
+
+    [Fact]
+    public void MoveMovieFile_CollisionModeRename_UsesNextAvailableSuffix()
+    {
+        var router = new FileRouter();
+        var source = CreateSourceFile("Caddyshack (1980).mkv");
+        File.WriteAllText(source, "NEW CONTENT");
+        var outputBase = Path.Combine(_tempDir, "Movies");
+        var existingDestFolder = Path.Combine(outputBase, "Caddyshack (1980)");
+        Directory.CreateDirectory(existingDestFolder);
+        var existingDestPath = Path.Combine(existingDestFolder, "Caddyshack (1980).mkv");
+        File.WriteAllText(existingDestPath, "OLD CONTENT");
+
+        var dest = router.MoveMovieFile(source, outputBase, DestinationCollisionMode.Rename)!;
+
+        Assert.Equal(Path.Combine(existingDestFolder, "Caddyshack (1980) (2).mkv"), dest);
+        Assert.False(File.Exists(source));
+        Assert.Equal("NEW CONTENT", File.ReadAllText(dest));
+        Assert.Equal("OLD CONTENT", File.ReadAllText(existingDestPath)); // original untouched
+    }
+
+    [Fact]
+    public void MoveMovieFile_CollisionModeRename_SkipsAlreadyTakenSuffixes()
+    {
+        var router = new FileRouter();
+        var source = CreateSourceFile("Caddyshack (1980).mkv");
+        var outputBase = Path.Combine(_tempDir, "Movies");
+        var existingDestFolder = Path.Combine(outputBase, "Caddyshack (1980)");
+        Directory.CreateDirectory(existingDestFolder);
+        File.WriteAllText(Path.Combine(existingDestFolder, "Caddyshack (1980).mkv"), "1");
+        File.WriteAllText(Path.Combine(existingDestFolder, "Caddyshack (1980) (2).mkv"), "2");
+        File.WriteAllText(Path.Combine(existingDestFolder, "Caddyshack (1980) (3).mkv"), "3");
+
+        var dest = router.MoveMovieFile(source, outputBase, DestinationCollisionMode.Rename)!;
+
+        Assert.Equal(Path.Combine(existingDestFolder, "Caddyshack (1980) (4).mkv"), dest);
+    }
+
+    [Fact]
+    public void MoveMovieFile_CollisionModeOverwrite_MatchesDefaultBehavior()
+    {
+        var router = new FileRouter();
+        var source = CreateSourceFile("Caddyshack (1980).mkv");
+        File.WriteAllText(source, "NEW CONTENT");
+        var outputBase = Path.Combine(_tempDir, "Movies");
+        var existingDestFolder = Path.Combine(outputBase, "Caddyshack (1980)");
+        Directory.CreateDirectory(existingDestFolder);
+        var existingDestPath = Path.Combine(existingDestFolder, "Caddyshack (1980).mkv");
+        File.WriteAllText(existingDestPath, "OLD CONTENT");
+
+        var dest = router.MoveMovieFile(source, outputBase, DestinationCollisionMode.Overwrite)!;
+
+        Assert.Equal(existingDestPath, dest);
+        Assert.Equal("NEW CONTENT", File.ReadAllText(dest));
+    }
+
+    [Fact]
+    public void MoveMovieFile_NoCollision_RenameModeUsesPlainPath()
+    {
+        var router = new FileRouter();
+        var source = CreateSourceFile("Caddyshack (1980).mkv");
+        var outputBase = Path.Combine(_tempDir, "Movies");
+
+        var dest = router.MoveMovieFile(source, outputBase, DestinationCollisionMode.Rename)!;
+
+        Assert.Equal(Path.Combine(outputBase, "Caddyshack (1980)", "Caddyshack (1980).mkv"), dest);
     }
 }

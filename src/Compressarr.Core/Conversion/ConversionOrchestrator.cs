@@ -126,6 +126,63 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             _resumeStore.Save(resumeState, resumeFilePath);
         }
 
+        // MoveFailed entries from a prior pass: the encode already succeeded, only the move needs
+        // retrying - no re-encode, just RouteFile again against the file HandBrake already wrote.
+        // Runs before the normal pending-or-scan branch below so a file that's ready to be filed
+        // gets filed before this pass starts encoding anything new. A dead entry here (the encoded
+        // file itself is gone - moved/deleted by hand) is dropped the same way deadEntries above
+        // drops a dead Pending/Error entry, checked against EncodedFilePath rather than FullName
+        // since FullName is the original Input path, which delete-after-convert may have already
+        // removed even though the entry is perfectly healthy.
+        var moveFailedEntries = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.MoveFailed).ToList();
+        foreach (var entry in moveFailedEntries)
+        {
+            if (entry.EncodedFilePath is null || !File.Exists(entry.EncodedFilePath))
+            {
+                _logger.Log($"Resume entry for '{entry.FullName}' (awaiting move retry) no longer has its encoded file - removing it.", LogSeverity.Error);
+                resumeState.Remove(entry);
+                _resumeStore.Save(resumeState, resumeFilePath);
+                continue;
+            }
+
+            var retryFileName = Path.GetFileName(entry.EncodedFilePath);
+            var retryIsTv = ContentClassifier.IsTvFile(retryFileName);
+            try
+            {
+                var retryDestPath = _fileRouter.RouteFile(entry.EncodedFilePath, retryIsTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
+                entry.Status = ResumeStatus.Completed;
+                entry.EncodedFilePath = null;
+                _logger.Log($"  Retried move for '{retryFileName}' - succeeded.");
+
+                if (retryDestPath is not null)
+                {
+                    try
+                    {
+                        _companionFiles.MoveCompanionFiles(entry.EncodedFilePath!, Path.GetDirectoryName(entry.EncodedFilePath)!, Path.GetDirectoryName(retryDestPath)!, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Log($"  Companion file handling skipped on move retry: {ex.Message}", LogSeverity.Error);
+                    }
+                }
+            }
+            catch (DestinationCollisionSkippedException ex)
+            {
+                // Configured to skip, not an error - the file just stays put; nothing left to
+                // retry, so this is as resolved as it's going to get.
+                entry.Status = ResumeStatus.Completed;
+                entry.EncodedFilePath = null;
+                _logger.Log($"  {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                // Still failing - leave it as MoveFailed, tried again on the next pass.
+                _logger.Log($"  Retried move for '{retryFileName}' failed again: {ex.Message}", LogSeverity.Error);
+            }
+
+            _resumeStore.Save(resumeState, resumeFilePath);
+        }
+
         var pending = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending).ToList();
         if (pending.Count > 0)
         {
@@ -298,7 +355,15 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 string? routedDestPath = null;
                 try
                 {
-                    routedDestPath = _fileRouter.RouteFile(newFileName, isTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles);
+                    routedDestPath = _fileRouter.RouteFile(newFileName, isTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
+                }
+                catch (DestinationCollisionSkippedException ex)
+                {
+                    // Configured to skip on collision, not an error - the encode succeeded and the
+                    // result is sitting in Output exactly as configured, so this stays a warning
+                    // (postProcessWarning), not moveFailed/overallSuccess=false.
+                    postProcessWarning = AppendWarning(postProcessWarning, ex.Message);
+                    _logger.Log($"  {ex.Message}");
                 }
                 catch (Exception ex)
                 {
@@ -356,7 +421,22 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     }
                 }
 
-                if (resumeEntry is not null) resumeEntry.Status = ResumeStatus.Completed;
+                // moveFailed here means the real-error branch above (not the Skip case, which never
+                // sets moveFailed) - the file is genuinely stuck unrouted in Output. MoveFailed (not
+                // Completed) so the retry loop at the top of this lane's next pass picks it back up
+                // instead of a resume entry silently lying that this file is fully done.
+                if (resumeEntry is not null)
+                {
+                    if (moveFailed)
+                    {
+                        resumeEntry.Status = ResumeStatus.MoveFailed;
+                        resumeEntry.EncodedFilePath = newFileName;
+                    }
+                    else
+                    {
+                        resumeEntry.Status = ResumeStatus.Completed;
+                    }
+                }
             }
             else
             {
