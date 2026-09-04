@@ -1025,24 +1025,22 @@ td { font-variant-numeric: tabular-nums; }
 .queue-handle { cursor: grab; color: var(--text-dim); display: flex; flex-shrink: 0; touch-action: none; }
 .queue-handle:active { cursor: grabbing; }
 
-.queue-preset-wrap, .queue-menu-wrap { position: relative; flex-shrink: 0; }
+.queue-menu-wrap { position: relative; flex-shrink: 0; }
 
-.queue-preset-btn {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  background: none;
-  border: none;
-  padding: 3px 6px;
-  border-radius: 5px;
+/* A plain native <select>, same as the lane card's own TV/Movie preset dropdowns
+   (.field-block select) - overrides the shared input/select { flex: 1 } rule, which would
+   otherwise make this greedily compete with .queue-file for the row's flex space. */
+.queue-preset-select {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 180px;
+  padding: 4px 6px;
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--text-dim);
-  cursor: pointer;
 }
-.queue-preset-btn:hover { background: var(--bg); }
-.queue-preset-btn.custom { color: var(--accent); }
-.queue-preset-static { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); padding: 3px 6px; }
+.queue-preset-select.custom { color: var(--accent); }
+.queue-preset-static { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); padding: 3px 6px; flex-shrink: 0; }
 
 .queue-dots-btn {
   background: none;
@@ -1072,9 +1070,6 @@ td { font-variant-numeric: tabular-nums; }
 .queue-popover-item:hover { background: var(--bg-alt); }
 .queue-popover-item.active { color: var(--accent); font-weight: 600; }
 .queue-popover-item.danger { color: var(--err); }
-.queue-popover-item.disabled { color: var(--text-dim); cursor: default; }
-.queue-popover-item.disabled:hover { background: none; }
-.queue-popover-reset { border-top: 1px solid var(--border); color: var(--text-dim); }
 
 /* Everything about a skipped row dims except its own actions - the 3-dot menu (and whatever
    popover it opens) is how the user un-skips it, so it must stay fully legible and clickable
@@ -1084,7 +1079,7 @@ td { font-variant-numeric: tabular-nums; }
 .queue-item.skipped .queue-lane,
 .queue-item.skipped .queue-file,
 .queue-item.skipped .queue-meta,
-.queue-item.skipped .queue-preset-wrap {
+.queue-item.skipped .queue-preset-select {
   opacity: 0.5;
 }
 

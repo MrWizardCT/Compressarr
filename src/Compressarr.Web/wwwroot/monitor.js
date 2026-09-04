@@ -141,14 +141,12 @@ let latestItems = [];
 let displayItems = [];
 let draggingKey = null;
 let openMenuKey = null;
-let openPresetKey = null;
 let ghostEl = null;
 let grabOffsetY = 0;
 let presetNames = [];
 
 const QUEUE_ICON_GRIP = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.6"></circle><circle cx="16" cy="6" r="1.6"></circle><circle cx="8" cy="12" r="1.6"></circle><circle cx="16" cy="12" r="1.6"></circle><circle cx="8" cy="18" r="1.6"></circle><circle cx="16" cy="18" r="1.6"></circle></svg>';
 const QUEUE_ICON_DOTS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="12" cy="19" r="1.8"></circle></svg>';
-const QUEUE_ICON_CHEVRON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
 
 async function loadQueuePresetNames() {
   try {
@@ -158,6 +156,19 @@ async function loadQueuePresetNames() {
     const presetsRes = await fetch(`/api/presets?path=${encodeURIComponent(settings.presetsPath)}`);
     presetNames = await presetsRes.json();
   } catch { /* best-effort - the preset-override dropdown just stays empty if this fails */ }
+}
+
+// Same pattern lanes.js's fillPresetSelect uses for the lane card's own TV/Movie preset
+// dropdowns - a plain native <select>, not a custom popover list, so a long presets.json reads
+// the same familiar, scrollable way everywhere in the app. "" means "use the lane default" (no
+// per-file override); if the file's current value isn't in presetNames (a stale override from a
+// presets.json that's since changed), it's kept as a selectable option anyway rather than
+// silently dropped.
+function fillQueuePresetSelect(select, item) {
+  const currentValue = item.isCustomPreset ? item.preset : '';
+  const names = (currentValue && !presetNames.includes(currentValue)) ? [currentValue, ...presetNames] : presetNames;
+  select.innerHTML = '<option value="">Lane default</option>' + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  select.value = currentValue;
 }
 
 function queueKey(item) { return `${item.laneId}::${item.fileName}`; }
@@ -181,7 +192,6 @@ function renderQueue(items) {
   // leave a dangling open popover referencing it.
   const keys = new Set(displayItems.map(queueKey));
   if (openMenuKey !== null && !keys.has(openMenuKey)) openMenuKey = null;
-  if (openPresetKey !== null && !keys.has(openPresetKey)) openPresetKey = null;
 
   renderQueueList();
 }
@@ -222,11 +232,9 @@ function renderQueueList() {
       <div class="queue-lane">${escapeHtml(item.laneDisplayName)}</div>
       <div class="queue-file">${escapeHtml(item.fileName)}</div>
       <div class="queue-meta">${item.sizeGb.toFixed(2)} GB</div>
-      <div class="queue-preset-wrap">
-        ${item.isError
-          ? `<span class="queue-preset-static">${escapeHtml(item.preset || '-')}</span>`
-          : `<button type="button" class="queue-preset-btn${item.isCustomPreset ? ' custom' : ''}">${escapeHtml(item.preset || '-')}${QUEUE_ICON_CHEVRON}</button>`}
-      </div>
+      ${item.isError
+        ? `<span class="queue-preset-static">${escapeHtml(item.preset || '-')}</span>`
+        : `<select class="queue-preset-select${item.isCustomPreset ? ' custom' : ''}"></select>`}
       ${item.isError ? '' : `<div class="queue-menu-wrap"><button type="button" class="queue-dots-btn" aria-label="Row actions">${QUEUE_ICON_DOTS}</button></div>`}
     `;
     list.appendChild(row);
@@ -245,39 +253,20 @@ function renderQueueList() {
       row.querySelector('.queue-dots-btn').addEventListener('click', e => {
         e.stopPropagation();
         openMenuKey = openMenuKey === key ? null : key;
-        openPresetKey = null;
         renderQueueList();
       });
-      row.querySelector('.queue-preset-btn').addEventListener('click', e => {
-        e.stopPropagation();
-        openPresetKey = openPresetKey === key ? null : key;
-        openMenuKey = null;
-        renderQueueList();
-      });
-    }
 
-    if (openPresetKey === key) {
-      const pop = document.createElement('div');
-      pop.className = 'queue-popover';
-      const options = presetNames.length > 0 ? presetNames : (item.preset ? [item.preset] : []);
-      pop.innerHTML = options.map(p =>
-        `<div class="queue-popover-item${p === item.preset ? ' active' : ''}" data-preset="${escapeHtml(p)}">${escapeHtml(p)}</div>`
-      ).join('') || '<div class="queue-popover-item disabled">No presets found</div>';
-      if (item.isCustomPreset) {
-        pop.innerHTML += `<div class="queue-popover-item queue-popover-reset" data-preset="">Use lane default</div>`;
-      }
-      row.querySelector('.queue-preset-wrap').appendChild(pop);
-      pop.querySelectorAll('.queue-popover-item:not(.disabled)').forEach(opt => opt.addEventListener('click', async e => {
-        e.stopPropagation();
-        openPresetKey = null;
-        renderQueueList();
+      const select = row.querySelector('.queue-preset-select');
+      fillQueuePresetSelect(select, item);
+      select.addEventListener('click', e => e.stopPropagation());
+      select.addEventListener('change', async e => {
         await fetch('/api/run/queue/preset-override', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName, preset: opt.dataset.preset || null })
+          body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName, preset: e.target.value || null })
         });
         poll();
-      }));
+      });
     }
 
     if (openMenuKey === key) {
@@ -416,9 +405,8 @@ async function removeErrorQueueEntry(laneId, fileName) {
 }
 
 document.addEventListener('click', () => {
-  if (openMenuKey !== null || openPresetKey !== null) {
+  if (openMenuKey !== null) {
     openMenuKey = null;
-    openPresetKey = null;
     renderQueueList();
   }
 });
