@@ -4,6 +4,61 @@ All notable changes to Compressarr are documented in this file. Pre-release/RC b
 to v1.0.0 are omitted here - see [GitHub Releases](https://github.com/MrWizardCT/Compressarr/releases)
 for that full history.
 
+## [2.1.0] - 2026-09-04
+
+### Added
+- Per-queue-item controls on the Monitor page: drag a file to reorder it within its lane, skip it
+  (stays visible, dimmed, excluded from processing until un-skipped), remove it from the queue
+  entirely, or override its preset for that one file only from a dropdown of installed presets - a
+  "Use Lane Preset" option resets an override back to the lane default.
+- Error queue entries are now shown on Monitor (red badge) with a Remove action, instead of being
+  invisible until the next report.
+- Failed file *moves* (encode succeeded, but couldn't be filed into the library - an offline
+  network drive, etc.) are now retried automatically on the lane's next pass, without re-encoding.
+- Configurable behavior when a destination file already exists - Overwrite (previous behavior,
+  still the default), Skip, or Rename - instead of always silently overwriting.
+- Automated backups (Settings > Backups): scheduled zip backups of your full setup (settings,
+  lanes, resume state, run counter, history) to a local or network folder, plus a "Backup Now"
+  button and a list of existing backups you can restore from with one click - including on a
+  brand-new install, before you've configured anything else.
+- Export/import your full configuration as a single file from Settings, for backing up or moving
+  to a new machine.
+- Test Connection button next to the Sonarr/Radarr integration settings, so a bad URL or API key
+  shows up immediately instead of only at unmonitor-time during a real run.
+- A warning before leaving Settings or Lanes with unsaved changes, plus a Clear Changes button to
+  discard edits in place.
+- Pause/Resume for the file currently being converted.
+- KB/MB/GB unit dropdown next to Settings' Minimum size field (previously bytes only).
+- Per-file conversion duration on the HTML report, and a running total time on the History page.
+- The Monitor page's status now shows which preset the current file is using.
+- A completely redesigned web UI: a left sidebar for navigation (in place of the old top tab bar),
+  a persistent toolbar showing monitoring status and CPU usage on every page, and a consistent
+  card-based layout across Settings, Lanes, History, and About.
+- A Donate page with QR codes and one-click copy for several cryptocurrency addresses.
+- A small indicator appears in the toolbar when a newer version of Compressarr is available.
+
+### Changed
+- Start/Stop Monitoring is now a single toggle button instead of two separate ones.
+- Stop Monitoring now stops after the file currently converting finishes, rather than continuing
+  to process every other file still queued behind it.
+- Subtitle and other companion files now move to their destination immediately once their own
+  video finishes converting, instead of waiting for every file in a shared folder to finish first.
+- The queue's preset picker is a plain dropdown showing the preset actually in effect, instead of
+  a custom popover that could show a stale or misleading placeholder.
+
+### Fixed
+- A queue edit (reorder, skip, or preset override) made while a file was actively converting could
+  be silently discarded once that file finished, and the wrong file could be processed next.
+- Removing a file from the queue didn't stick - it could reappear within seconds.
+- The queue's preset dropdown or its right-click-style menu could be yanked shut mid-interaction
+  by the page's own periodic refresh.
+- A queue edit could reorder the whole queue as a side effect, or make untouched files incorrectly
+  show as "Resumed" instead of "New."
+- The In Queue list could freeze while its own lane's pass was actively running.
+- A stale Error entry whose source file was already gone (deleted by hand, or handled elsewhere)
+  never cleared itself the way a stale queued entry already did, and could permanently inflate the
+  "resuming previous run" count on every single pass.
+
 ## [2.0.6] - 2026-08-31
 
 ### Fixed

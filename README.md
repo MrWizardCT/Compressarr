@@ -19,6 +19,13 @@ Both the original PowerShell version and v2 trace back to
 [VidMonHB](https://github.com/mrpaulwasserman/VidMonHB), Paul Wasserman's original take on this
 same idea.
 
+Compressarr is designed to sit between apps like Radarr and Sonarr and your media server. Instead
+of pointing an *arr app straight at your media library, point it at one of Compressarr's watched
+folders - once it grabs a file and drops it there, Compressarr picks it up, compresses it, and
+moves the finished result into your library's destination folder. That way only clean,
+already-processed files ever reach your media server, keeping your library organized and at its
+best quality while using a fraction of the space.
+
 ## The complete workflow
 
 ```
@@ -56,10 +63,10 @@ if "Move converted files" is enabled, which destination it's filed into afterwar
 go to `Show Name\Season NN\` under the lane's TV base path; Movies get their own per-title
 subfolder under the Movie base path.
 
-If a converted file's source folder holds nothing else that still needs converting, whatever
-else is sitting in there - subtitles, `.nfo` files, artwork - comes along too. If other
-not-yet-processed video files still share that folder, none of this happens - only the file that
-was actually converted is touched.
+Whatever else belongs to a converted file - subtitles, `.nfo` files, artwork sharing its name -
+moves along with it immediately, even if other not-yet-processed videos still share that same
+source folder. Once every video in a folder has been converted (or otherwise cleared), the
+now-empty folder itself is removed too.
 
 Processing is **sequential** - one file at a time, no parallel HandBrakeCLI jobs. If a run is
 interrupted, relaunching resumes from the unprocessed files.
@@ -70,11 +77,13 @@ The Monitor page is the control surface for continuous operation: **Start Monito
 watching every enabled lane on a configurable interval, with a live countdown to the next pass.
 **Run Now** skips the rest of that countdown and starts immediately. **Abort** kills whatever
 HandBrakeCLI process is currently running and stops monitoring outright - as opposed to **Stop
-Monitoring**, which finishes the current pass before stopping (both the page and the tray icon
-reflect a stop the moment it's requested, from either surface). The **In Queue** section lists
-every file still waiting across all enabled lanes - lane, size, and preset - so you can see what's
-coming up without waiting for the current file to finish. The recent-log panel and CPU usage
-update live while a pass runs.
+Monitoring**, which lets the file currently converting finish normally and then stops before
+starting the next one (both the page and the tray icon reflect a stop the moment it's requested,
+from either surface). The **In Queue** section lists every file still waiting across all enabled
+lanes - lane, size, and preset - so you can see what's coming up without waiting for the current
+file to finish. Drag a queued file to reorder it within its lane, or use its menu to skip it,
+remove it from the queue, or override its preset for just that one file. The recent-log panel and
+CPU usage update live while a pass runs.
 
 <img src="Assets/Screenshots/monitor-page.png" alt="Compressarr Monitor page, showing a real conversion in progress with live percent/fps/ETA and the In Queue list" width="700">
 
@@ -158,6 +167,7 @@ these pages has a small **?** next to it with a tooltip explaining what it does.
 | Move converted files into show/movie folders | Turns on the TV/Movie filing step described above |
 | Clear title metadata | Strips the embedded title tag (via TagLib-Sharp) so a media server reads the filename instead of stale/incorrect metadata - on by default |
 | Original file after convert | Maintain, Delete, or Recycle the source file once conversion succeeds |
+| On destination collision | Overwrite (default), Skip, or Rename, when a file already exists at the destination |
 | Log folder / Report folder | Where run logs, the history CSV, and HTML reports are written |
 | Log/report retention (days) | Logs and reports older than this are cleaned up automatically |
 | Open report after run | Always, On Error, or Never |
@@ -174,6 +184,41 @@ re-grabbed later. Matching is done entirely through the app's own `/api/v3/parse
 Compressarr hands it the original filename, and the app's own parser reports back which
 series/episode or movie it matches, if any. A miss is always treated as "leave it alone," never
 as a guess.
+
+### Backups
+
+Settings also has a Backups card that periodically zips up your full setup - settings, lanes,
+resume state, run counter, and history - to a local or network folder you choose, with
+configurable interval and retention, plus a **Backup Now** button for an on-demand backup and a
+list of existing backups you can restore from with one click.
+
+#### Restoring from a backup
+
+If your machine crashes or you're moving to a new build, Compressarr can restore your full setup
+from a backup `.zip` created by the Backups feature above.
+
+1. Install and launch Compressarr on the new machine. This creates a fresh default configuration -
+   no lanes, everything empty.
+2. Get the backup `.zip` onto the new machine. Restore lists the contents of a *folder*, not a
+   single file elsewhere, so place it somewhere Compressarr can see it: the default
+   `%CompressarrAppData%\Backups` location, any local/external drive folder, or a UNC network
+   share.
+3. Open the web UI and go to **Settings > Backups**.
+4. In the **Folder** field, point it at wherever you put the file - type the path (a UNC path like
+   `\\server\backupfolder` works too) and click elsewhere, or use **Browse...** to navigate to it.
+   This works even before you've saved any settings on the new machine.
+5. The **Existing backups** table below refreshes automatically and should list your backup file
+   (name, size, date).
+6. Click **Restore** on that row and confirm the warning dialog.
+
+Your settings, lanes, resume state, run counter, and history are restored from the backup.
+
+Two things to know:
+- **HandBrake presets are not included** in the backup (it's HandBrake's own file, stored outside
+  Compressarr's data folder). If HandBrake is also freshly installed, use the **Install/Merge
+  Presets** button on Settings (in the HandBrake card) to re-add Compressarr's presets to it.
+- Use **Backup Now** on Settings at any time to take a fresh backup before decommissioning a
+  machine, rather than relying only on the automatic schedule.
 
 ### Lanes page
 
