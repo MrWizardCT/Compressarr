@@ -1174,3 +1174,142 @@ td { font-variant-numeric: tabular-nums; }
   gap: 8px;
   margin-top: 12px;
 }
+
+/* ================= Donate page ================= */
+
+.crypto-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.crypto-card {
+  display: flex;
+  flex-direction: column;
+  padding: 20px 18px;
+}
+
+.crypto-trigger {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0 0 16px;
+  margin: 0;
+  cursor: pointer;
+  width: 100%;
+  font-family: inherit;
+}
+
+.crypto-trigger:hover .crypto-icon { transform: scale(1.06); }
+.crypto-trigger:hover .crypto-qr-hint { color: var(--accent); }
+.crypto-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 10px; }
+
+.crypto-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 21px;
+  letter-spacing: -0.02em;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.crypto-name { font-size: 14.5px; font-weight: 700; color: var(--text); }
+
+.crypto-qr-hint {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  transition: color 0.15s;
+}
+
+.crypto-address-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.crypto-address {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.crypto-copy-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.crypto-copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+.crypto-copy-btn.copied { border-color: var(--ok); color: var(--ok); }
+.crypto-copy-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+.donate-thanks {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 28px 20px;
+}
+
+.donate-thanks svg { width: 26px; height: 26px; margin-bottom: 10px; }
+.donate-thanks h3 { margin: 0 0 6px; font-size: 16px; color: var(--text); }
+.donate-thanks p { margin: 0; color: var(--text-dim); font-size: 13.5px; max-width: 480px; }
+
+.qr-modal { width: 340px; align-items: center; text-align: center; }
+
+.qr-modal-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.qr-modal-svg {
+  width: 260px;
+  height: 260px;
+  margin: 0 auto 14px;
+  background: #ffffff;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.qr-modal-svg svg { display: block; width: 100%; height: 100%; }
+
+.qr-modal-address {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  word-break: break-all;
+  margin-bottom: 16px;
+}
