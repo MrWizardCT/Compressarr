@@ -25,6 +25,22 @@ public sealed class ResumeEntry
     /// encoded file actually sits (in the lane's Output folder, not FullName's original Input
     /// location) so a later retry can find and route it without re-encoding.</summary>
     public string? EncodedFilePath { get; set; }
+
+    /// <summary>User-set queue position within this lane's Pending entries, lower first - drives
+    /// drag-to-reorder on the Monitor page's In Queue list. Entries without an explicit Order
+    /// (existing/untouched files) sort after any that have one, in their original order.</summary>
+    public int? Order { get; set; }
+
+    /// <summary>User-set "skip this pass" - a Skipped Pending entry stays visible in the queue
+    /// (dimmed) but ConversionOrchestrator excludes it from what actually gets encoded. Persists
+    /// until explicitly un-skipped - not a true one-shot "just this pass," since there's no
+    /// reliable single moment to auto-clear it at (a monitoring pass has no natural end event the
+    /// resume file can hook into) - the user toggles it back on from the same queue row.</summary>
+    public bool Skipped { get; set; }
+
+    /// <summary>User-set preset for this specific file, overriding the lane's TvPreset/MoviePreset
+    /// for this one entry only. Null/empty means "use the lane default" (the normal behavior).</summary>
+    public string? PresetOverride { get; set; }
 }
 
 public interface IResumeStateStore

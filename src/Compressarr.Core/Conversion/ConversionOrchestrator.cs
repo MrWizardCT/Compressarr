@@ -186,7 +186,17 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         var pending = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending).ToList();
         if (pending.Count > 0)
         {
-            videoFiles = pending.Select(p => new FileInfo(p.FullName)).ToList();
+            // User-set Order (drag-to-reorder on the Monitor page) drives processing order within
+            // this lane's Pending entries - lower first; entries without one (untouched by the
+            // user) sort after, in their original relative order (OrderBy is a stable sort, and
+            // int.MaxValue is the same tie-break value for every one of them). A Skipped entry
+            // stays Pending (still shown in the queue, still eligible to be un-skipped later) but
+            // is excluded from this pass's actual encode list.
+            videoFiles = pending
+                .OrderBy(p => p.Order ?? int.MaxValue)
+                .Where(p => !p.Skipped)
+                .Select(p => new FileInfo(p.FullName))
+                .ToList();
         }
         else
         {
@@ -223,15 +233,20 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
             var isTv = ContentClassifier.IsTvFile(file.Name);
             var contentType = isTv ? "TV Show" : "Movie";
-            var presetName = isTv ? lane.TvPreset : lane.MoviePreset;
+            var resumeEntry = resumeState.FirstOrDefault(e => e.LaneId == lane.Id && e.FullName == file.FullName);
+            // A per-file preset override (set from the Monitor page's queue) wins over the lane's
+            // own TvPreset/MoviePreset for this one entry only - looked up before presetName is
+            // used anywhere (logging, the FileStarted progress event, the "no preset" check) so
+            // all of it reflects the actual preset this file will encode with.
+            var presetName = !string.IsNullOrWhiteSpace(resumeEntry?.PresetOverride)
+                ? resumeEntry.PresetOverride
+                : (isTv ? lane.TvPreset : lane.MoviePreset);
 
             var beginSizeGb = Math.Round(file.Length / (double)BytesPerGb, 3);
             var startTime = DateTime.Now;
 
             _logger.FileStart(lane.DisplayName, i, fileCount, file.Name, beginSizeGb, contentType, presetName);
             _progress.FileStarted(lane.Id, i, fileCount, file.Name, presetName);
-
-            var resumeEntry = resumeState.FirstOrDefault(e => e.LaneId == lane.Id && e.FullName == file.FullName);
 
             if (string.IsNullOrWhiteSpace(presetName))
             {

@@ -129,6 +129,39 @@ function renderLog(lines) {
   }
 }
 
+// --- In Queue: drag-to-reorder, skip/remove, per-file preset override -----------------------
+//
+// latestItems is always the most recent server snapshot (refreshed every poll). displayItems is
+// what's actually rendered - normally kept in sync with latestItems, but frozen to a locally
+// reordered copy while a drag is in progress so the periodic poll can't yank the list out from
+// under the user's hand mid-drag. A composite laneId+fileName key stands in for a stable row id,
+// since the server doesn't hand back one.
+
+let latestItems = [];
+let displayItems = [];
+let draggingKey = null;
+let openMenuKey = null;
+let openPresetKey = null;
+let ghostEl = null;
+let grabOffsetY = 0;
+let presetNames = [];
+
+const QUEUE_ICON_GRIP = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.6"></circle><circle cx="16" cy="6" r="1.6"></circle><circle cx="8" cy="12" r="1.6"></circle><circle cx="16" cy="12" r="1.6"></circle><circle cx="8" cy="18" r="1.6"></circle><circle cx="16" cy="18" r="1.6"></circle></svg>';
+const QUEUE_ICON_DOTS = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="12" cy="19" r="1.8"></circle></svg>';
+const QUEUE_ICON_CHEVRON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+
+async function loadQueuePresetNames() {
+  try {
+    const settingsRes = await fetch('/api/settings');
+    const settings = await settingsRes.json();
+    if (!settings.presetsPath) return;
+    const presetsRes = await fetch(`/api/presets?path=${encodeURIComponent(settings.presetsPath)}`);
+    presetNames = await presetsRes.json();
+  } catch { /* best-effort - the preset-override dropdown just stays empty if this fails */ }
+}
+
+function queueKey(item) { return `${item.laneId}::${item.fileName}`; }
+
 function queueBadgeClass(item) {
   if (item.isError) return 'error';
   return item.isResumed ? 'resumed' : 'new';
@@ -140,32 +173,235 @@ function queueBadgeLabel(item) {
 }
 
 function renderQueue(items) {
+  latestItems = items || [];
+  if (draggingKey === null) {
+    displayItems = latestItems.map(i => ({ ...i }));
+  }
+  // A row whose item disappeared from the server snapshot (completed, removed elsewhere) shouldn't
+  // leave a dangling open popover referencing it.
+  const keys = new Set(displayItems.map(queueKey));
+  if (openMenuKey !== null && !keys.has(openMenuKey)) openMenuKey = null;
+  if (openPresetKey !== null && !keys.has(openPresetKey)) openPresetKey = null;
+
+  renderQueueList();
+}
+
+function renderQueueList() {
   const list = document.getElementById('queueList');
-  if (!items || items.length === 0) {
+  if (displayItems.length === 0) {
     list.innerHTML = '<div class="queue-empty">Nothing queued.</div>';
     return;
   }
 
+  const prevRects = {};
+  [...list.children].forEach(el => { if (el.dataset.key) prevRects[el.dataset.key] = el.getBoundingClientRect(); });
+
   list.innerHTML = '';
-  for (const item of items) {
+
+  for (const item of displayItems) {
+    const key = queueKey(item);
+
+    if (key === draggingKey) {
+      const ph = document.createElement('div');
+      ph.dataset.key = key;
+      ph.className = 'queue-item-placeholder';
+      ph.style.height = (ghostEl ? ghostEl.offsetHeight : 46) + 'px';
+      list.appendChild(ph);
+      continue;
+    }
+
     const row = document.createElement('div');
     row.className = 'queue-item';
+    row.dataset.key = key;
+    row.dataset.laneId = item.laneId;
+    if (item.isSkipped) row.classList.add('skipped');
+
     row.innerHTML = `
-      <span class="queue-badge ${queueBadgeClass(item)}">${queueBadgeLabel(item)}</span>
+      ${item.isError ? '' : `<span class="queue-handle">${QUEUE_ICON_GRIP}</span>`}
+      <span class="queue-badge ${queueBadgeClass(item)}">${item.isSkipped ? 'Skipped' : queueBadgeLabel(item)}</span>
       <div class="queue-lane">${escapeHtml(item.laneDisplayName)}</div>
       <div class="queue-file">${escapeHtml(item.fileName)}</div>
-      <div class="queue-meta">${item.sizeGb.toFixed(2)} GB &middot; ${escapeHtml(item.preset || '-')}</div>
+      <div class="queue-meta">${item.sizeGb.toFixed(2)} GB</div>
+      <div class="queue-preset-wrap">
+        ${item.isError
+          ? `<span class="queue-preset-static">${escapeHtml(item.preset || '-')}</span>`
+          : `<button type="button" class="queue-preset-btn${item.isCustomPreset ? ' custom' : ''}">${escapeHtml(item.preset || '-')}${QUEUE_ICON_CHEVRON}</button>`}
+      </div>
+      ${item.isError ? '' : `<div class="queue-menu-wrap"><button type="button" class="queue-dots-btn" aria-label="Row actions">${QUEUE_ICON_DOTS}</button></div>`}
     `;
+    list.appendChild(row);
 
     if (item.isError) {
+      // Error entries don't support skip/reorder/preset-override - they're excluded from
+      // processing entirely until removed, and the backend's preset-override endpoint only
+      // finds-or-creates a Pending entry, so wiring it up here would silently create a duplicate
+      // Pending row alongside the untouched Error one instead of editing it.
       const removeBtn = document.createElement('button');
       removeBtn.textContent = 'Remove';
       removeBtn.addEventListener('click', () => removeErrorQueueEntry(item.laneId, item.fileName));
       row.appendChild(removeBtn);
+    } else {
+      row.querySelector('.queue-handle').addEventListener('pointerdown', e => startQueueDrag(e, item, row));
+      row.querySelector('.queue-dots-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        openMenuKey = openMenuKey === key ? null : key;
+        openPresetKey = null;
+        renderQueueList();
+      });
+      row.querySelector('.queue-preset-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        openPresetKey = openPresetKey === key ? null : key;
+        openMenuKey = null;
+        renderQueueList();
+      });
     }
 
-    list.appendChild(row);
+    if (openPresetKey === key) {
+      const pop = document.createElement('div');
+      pop.className = 'queue-popover';
+      const options = presetNames.length > 0 ? presetNames : (item.preset ? [item.preset] : []);
+      pop.innerHTML = options.map(p =>
+        `<div class="queue-popover-item${p === item.preset ? ' active' : ''}" data-preset="${escapeHtml(p)}">${escapeHtml(p)}</div>`
+      ).join('') || '<div class="queue-popover-item disabled">No presets found</div>';
+      if (item.isCustomPreset) {
+        pop.innerHTML += `<div class="queue-popover-item queue-popover-reset" data-preset="">Use lane default</div>`;
+      }
+      row.querySelector('.queue-preset-wrap').appendChild(pop);
+      pop.querySelectorAll('.queue-popover-item:not(.disabled)').forEach(opt => opt.addEventListener('click', async e => {
+        e.stopPropagation();
+        openPresetKey = null;
+        renderQueueList();
+        await fetch('/api/run/queue/preset-override', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName, preset: opt.dataset.preset || null })
+        });
+        poll();
+      }));
+    }
+
+    if (openMenuKey === key) {
+      const pop = document.createElement('div');
+      pop.className = 'queue-popover';
+      pop.innerHTML = `
+        <div class="queue-popover-item" data-act="skip">${item.isSkipped ? 'Unskip' : 'Skip this pass'}</div>
+        <div class="queue-popover-item danger" data-act="remove">Remove from queue</div>
+      `;
+      row.querySelector('.queue-menu-wrap').appendChild(pop);
+      pop.querySelectorAll('.queue-popover-item').forEach(opt => opt.addEventListener('click', async e => {
+        e.stopPropagation();
+        openMenuKey = null;
+        const act = opt.dataset.act;
+        if (act === 'skip') {
+          await fetch('/api/run/queue/skip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName, skipped: !item.isSkipped })
+          });
+        } else if (act === 'remove') {
+          await fetch('/api/run/queue/remove', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName })
+          });
+        }
+        poll();
+      }));
+    }
   }
+
+  [...list.children].forEach(el => {
+    const prev = prevRects[el.dataset.key];
+    if (!prev) return;
+    const now = el.getBoundingClientRect();
+    const dy = prev.top - now.top;
+    if (Math.abs(dy) > 0.5) {
+      el.style.transition = 'none';
+      el.style.transform = `translateY(${dy}px)`;
+      requestAnimationFrame(() => {
+        el.style.transition = 'transform 180ms cubic-bezier(.2,.8,.2,1)';
+        el.style.transform = '';
+      });
+    }
+  });
+}
+
+function startQueueDrag(e, item, row) {
+  e.preventDefault();
+  row.querySelectorAll('.queue-popover').forEach(p => p.remove());
+  openMenuKey = null; openPresetKey = null;
+
+  const rect = row.getBoundingClientRect();
+  grabOffsetY = e.clientY - rect.top;
+  draggingKey = queueKey(item);
+
+  ghostEl = row.cloneNode(true);
+  ghostEl.classList.add('queue-item-ghost');
+  ghostEl.style.left = rect.left + 'px';
+  ghostEl.style.top = rect.top + 'px';
+  ghostEl.style.width = rect.width + 'px';
+  document.body.appendChild(ghostEl);
+
+  renderQueueList();
+
+  document.addEventListener('pointermove', onQueueDragMove);
+  document.addEventListener('pointerup', onQueueDragEnd);
+}
+
+function onQueueDragMove(e) {
+  if (!ghostEl) return;
+  ghostEl.style.top = (e.clientY - grabOffsetY) + 'px';
+
+  const list = document.getElementById('queueList');
+  const draggedIdx = displayItems.findIndex(i => queueKey(i) === draggingKey);
+  const draggedLaneId = displayItems[draggedIdx].laneId;
+
+  for (const el of [...list.children]) {
+    if (el.dataset.key === draggingKey) continue;
+    // Reordering only makes sense within the same lane - each lane's Order is independent, and
+    // there's no "move this file to a different lane" operation for a drag to imply.
+    if (el.dataset.laneId !== draggedLaneId) continue;
+
+    const r = el.getBoundingClientRect();
+    const mid = r.top + r.height / 2;
+    const targetIdx = displayItems.findIndex(i => queueKey(i) === el.dataset.key);
+    if ((e.clientY < mid && targetIdx < draggedIdx) || (e.clientY > mid && targetIdx > draggedIdx)) {
+      const [moved] = displayItems.splice(draggedIdx, 1);
+      displayItems.splice(targetIdx, 0, moved);
+      renderQueueList();
+      break;
+    }
+  }
+}
+
+async function onQueueDragEnd() {
+  document.removeEventListener('pointermove', onQueueDragMove);
+  document.removeEventListener('pointerup', onQueueDragEnd);
+
+  const list = document.getElementById('queueList');
+  const ph = [...list.children].find(el => el.dataset.key === draggingKey);
+  if (ph && ghostEl) {
+    const target = ph.getBoundingClientRect();
+    ghostEl.style.transition = 'top 140ms cubic-bezier(.2,.8,.2,1)';
+    ghostEl.style.top = target.top + 'px';
+  }
+
+  const draggedItem = displayItems.find(i => queueKey(i) === draggingKey);
+  const laneId = draggedItem.laneId;
+  const orderedFileNames = displayItems.filter(i => i.laneId === laneId).map(i => i.fileName);
+
+  setTimeout(() => {
+    if (ghostEl) { ghostEl.remove(); ghostEl = null; }
+    draggingKey = null;
+    renderQueueList();
+  }, 150);
+
+  await fetch('/api/run/queue/reorder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ laneId, orderedFileNames })
+  });
+  poll();
 }
 
 async function removeErrorQueueEntry(laneId, fileName) {
@@ -178,6 +414,16 @@ async function removeErrorQueueEntry(laneId, fileName) {
   });
   poll();
 }
+
+document.addEventListener('click', () => {
+  if (openMenuKey !== null || openPresetKey !== null) {
+    openMenuKey = null;
+    openPresetKey = null;
+    renderQueueList();
+  }
+});
+
+loadQueuePresetNames();
 
 function escapeHtml(text) {
   const div = document.createElement('div');

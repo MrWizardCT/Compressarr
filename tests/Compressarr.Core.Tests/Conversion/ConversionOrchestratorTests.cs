@@ -251,6 +251,142 @@ public class ConversionOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessLaneAsync_RespectsOrder_NotScanOrder()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        // Alphabetically "a-file" scans before "z-file" - Order should override that.
+        var aPath = Path.Combine(inputDir, "a-file.mkv");
+        var zPath = Path.Combine(inputDir, "z-file.mkv");
+        File.WriteAllText(aPath, "a");
+        File.WriteAllText(zPath, "z");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir, MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "lane1", FullName = zPath, Status = ResumeStatus.Pending, Order = 0 },
+            new() { LaneId = "lane1", FullName = aPath, Status = ResumeStatus.Pending, Order = 1 }
+        };
+
+        var results = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal("z-file.mkv", results[0].FileName);
+        Assert.Equal("a-file.mkv", results[1].FileName);
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_SkippedEntry_IsExcludedButStaysTracked()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var keepPath = Path.Combine(inputDir, "process-me.mkv");
+        var skipPath = Path.Combine(inputDir, "skip-me.mkv");
+        File.WriteAllText(keepPath, "keep");
+        File.WriteAllText(skipPath, "skip");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir, MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "lane1", FullName = keepPath, Status = ResumeStatus.Pending },
+            new() { LaneId = "lane1", FullName = skipPath, Status = ResumeStatus.Pending, Skipped = true }
+        };
+
+        var results = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.Equal("process-me.mkv", result.FileName);
+
+        var skippedEntry = resumeState.Single(e => e.FullName == skipPath);
+        Assert.Equal(ResumeStatus.Pending, skippedEntry.Status);
+        Assert.True(skippedEntry.Skipped);
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_PresetOverride_WinsOverLaneDefault()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir, MoviePreset = "Lane Default Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "lane1", FullName = sourcePath, Status = ResumeStatus.Pending, PresetOverride = "Custom Per-File Preset" }
+        };
+
+        var results = await orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.Equal("Custom Per-File Preset", result.PresetName);
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_NoOverride_UsesLaneDefault()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir, MoviePreset = "Lane Default Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var results = await orchestrator.ProcessLaneAsync(
+            lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.Equal("Lane Default Preset", result.PresetName);
+    }
+
+    [Fact]
     public async Task ProcessLaneAsync_MoveDestinationUnreachable_ReportsErrorButKeepsTheFile()
     {
         var inputDir = Path.Combine(_tempDir, "Input");
