@@ -32,7 +32,7 @@ public static class NotificationEndpoints
             var types = notifiers.Select(n => new NotifierTypeDto(
                 n.Type,
                 n.DisplayName,
-                n.Fields.Select(f => new NotifierFieldDto(f.Key, f.Label, f.InputType, f.Required, f.Secret, f.Options)).ToList()))
+                n.Fields.Select(f => new NotifierFieldDto(f.Key, f.Label, f.InputType, f.Required, f.Secret, f.Options, f.HelpText, f.Placeholder)).ToList()))
                 .ToList();
             return Results.Json(types);
         });
@@ -55,6 +55,13 @@ public static class NotificationEndpoints
                     Type = notifier.Type,
                     DisplayName = notifier.DisplayName
                 };
+                // Seed real shared defaults (e.g. ntfy's public ntfy.sh server) - most fields have
+                // none, since most fields (a Discord webhook URL, a self-hosted server) are
+                // inherently per-user with nothing valid to pre-fill.
+                foreach (var field in notifier.Fields)
+                {
+                    if (field.DefaultValue is not null) channel.Settings[field.Key] = field.DefaultValue;
+                }
                 config.Notifications.Channels.Add(channel);
                 return ConfigMapping.ToChannelDto(channel);
             });

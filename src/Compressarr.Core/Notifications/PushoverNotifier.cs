@@ -20,8 +20,12 @@ public sealed class PushoverNotifier : INotifier
 
     public IReadOnlyList<NotifierField> Fields { get; } = new[]
     {
-        new NotifierField("appToken", "Application API Token", "text", Required: true, Secret: true),
-        new NotifierField("userKey", "User Key", "text", Required: true, Secret: true)
+        new NotifierField("appToken", "Application API Token", "text", Required: true, Secret: true,
+            HelpText: "Create an Application at pushover.net/apps/build to get this token.",
+            Placeholder: "azGDORePK8gMaC0QOYAMyEEuzJnyUi"),
+        new NotifierField("userKey", "User Key", "text", Required: true, Secret: true,
+            HelpText: "Your personal 30-character User Key, shown on your Pushover dashboard.",
+            Placeholder: "uQiRzpo4DXghDmr9QzzfQu27cmVRsG")
     };
 
     public Task<NotifyResult> SendAsync(IReadOnlyDictionary<string, string> settings, NotificationEvent evt, CancellationToken ct)

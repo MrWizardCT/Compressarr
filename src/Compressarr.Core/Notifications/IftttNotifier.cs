@@ -21,8 +21,12 @@ public sealed class IftttNotifier : INotifier
 
     public IReadOnlyList<NotifierField> Fields { get; } = new[]
     {
-        new NotifierField("eventName", "Event Name", "text", Required: true),
-        new NotifierField("webhooksKey", "Webhooks Key", "text", Required: true, Secret: true)
+        new NotifierField("eventName", "Event Name", "text", Required: true,
+            HelpText: "The event name your IFTTT applet's 'Receive a web request' trigger is listening for.",
+            Placeholder: "compressarr_run"),
+        new NotifierField("webhooksKey", "Webhooks Key", "text", Required: true, Secret: true,
+            HelpText: "Find this at ifttt.com/maker_webhooks under Documentation - it's the string after /use/ in your personal URL.",
+            Placeholder: "dV3xxxxxxxxxxxxxxxxx")
     };
 
     public Task<NotifyResult> SendAsync(IReadOnlyDictionary<string, string> settings, NotificationEvent evt, CancellationToken ct)

@@ -20,8 +20,12 @@ public sealed class GotifyNotifier : INotifier
 
     public IReadOnlyList<NotifierField> Fields { get; } = new[]
     {
-        new NotifierField("server", "Server URL", "text", Required: true),
-        new NotifierField("appToken", "Application Token", "text", Required: true, Secret: true)
+        new NotifierField("server", "Server URL", "text", Required: true,
+            HelpText: "The base URL of your self-hosted Gotify instance. Gotify has no public hosted service - this always points at a server you run.",
+            Placeholder: "https://gotify.example.com"),
+        new NotifierField("appToken", "Application Token", "text", Required: true, Secret: true,
+            HelpText: "Create an Application in Gotify's web UI (Apps tab) to get this token.",
+            Placeholder: "Aici-XXXXXXXXXXX")
     };
 
     public Task<NotifyResult> SendAsync(IReadOnlyDictionary<string, string> settings, NotificationEvent evt, CancellationToken ct)

@@ -20,8 +20,12 @@ public sealed class TelegramNotifier : INotifier
 
     public IReadOnlyList<NotifierField> Fields { get; } = new[]
     {
-        new NotifierField("botToken", "Bot Token", "text", Required: true, Secret: true),
-        new NotifierField("chatId", "Chat ID", "text", Required: true)
+        new NotifierField("botToken", "Bot Token", "text", Required: true, Secret: true,
+            HelpText: "Message @BotFather on Telegram to create a bot and get its token.",
+            Placeholder: "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"),
+        new NotifierField("chatId", "Chat ID", "text", Required: true,
+            HelpText: "The numeric chat to send messages to. Message @userinfobot to find your own, or check your bot's getUpdates response for a group/channel.",
+            Placeholder: "123456789")
     };
 
     public Task<NotifyResult> SendAsync(IReadOnlyDictionary<string, string> settings, NotificationEvent evt, CancellationToken ct)

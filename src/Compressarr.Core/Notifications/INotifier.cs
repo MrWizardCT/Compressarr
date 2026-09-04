@@ -4,8 +4,23 @@ namespace Compressarr.Core.Notifications;
 /// chat ID, etc.) - the web UI fetches these via GET /api/notifications/types and renders whatever
 /// each registered INotifier declares, so adding a new channel type never needs new frontend
 /// code. InputType is "text"/"password"/"textarea"/"select" - Options is only meaningful (and
-/// required) for "select".</summary>
-public sealed record NotifierField(string Key, string Label, string InputType, bool Required, bool Secret = false, IReadOnlyList<string>? Options = null);
+/// required) for "select". HelpText drives a hover/focus help bubble next to the field's label.
+/// Placeholder is example-format grey hint text shown inside an empty field - use it for anything
+/// whose exact shape is per-user/per-account (a Discord webhook URL, a self-hosted server address)
+/// where there's no real value to pre-fill. DefaultValue is different: a REAL starting value
+/// applied when a new channel of this type is created, appropriate only for a field with a genuine
+/// shared public default (e.g. ntfy's Server field defaulting to the public ntfy.sh instance) -
+/// never use it for something that merely looks similar across users but isn't actually shared.</summary>
+public sealed record NotifierField(
+    string Key,
+    string Label,
+    string InputType,
+    bool Required,
+    bool Secret = false,
+    IReadOnlyList<string>? Options = null,
+    string? HelpText = null,
+    string? Placeholder = null,
+    string? DefaultValue = null);
 
 public sealed record NotifyResult(bool Success, string Message);
 

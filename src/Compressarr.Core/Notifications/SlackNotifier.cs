@@ -20,7 +20,9 @@ public sealed class SlackNotifier : INotifier
 
     public IReadOnlyList<NotifierField> Fields { get; } = new[]
     {
-        new NotifierField("url", "Webhook URL", "text", Required: true)
+        new NotifierField("url", "Webhook URL", "text", Required: true,
+            HelpText: "Create an Incoming Webhook for your Slack workspace at api.slack.com/apps and paste its URL here.",
+            Placeholder: "https://hooks.slack.com/services/...")
     };
 
     public Task<NotifyResult> SendAsync(IReadOnlyDictionary<string, string> settings, NotificationEvent evt, CancellationToken ct)

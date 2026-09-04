@@ -18,9 +18,15 @@ public sealed class NtfyNotifier : INotifier
 
     public IReadOnlyList<NotifierField> Fields { get; } = new[]
     {
-        new NotifierField("server", "Server URL", "text", Required: true),
-        new NotifierField("topic", "Topic", "text", Required: true),
-        new NotifierField("accessToken", "Access Token (optional, for protected topics)", "text", Required: false, Secret: true)
+        new NotifierField("server", "Server URL", "text", Required: true,
+            HelpText: "The ntfy server to publish to. Defaults to the public ntfy.sh instance - change this if you're self-hosting ntfy.",
+            Placeholder: "https://ntfy.sh", DefaultValue: "https://ntfy.sh"),
+        new NotifierField("topic", "Topic", "text", Required: true,
+            HelpText: "Any string works. Pick something unique and hard to guess - anyone who knows your topic name can subscribe to it too.",
+            Placeholder: "compressarr-a1b2c3"),
+        new NotifierField("accessToken", "Access Token (optional, for protected topics)", "text", Required: false, Secret: true,
+            HelpText: "Only needed if your topic is access-controlled. Leave blank for a public topic on a public server.",
+            Placeholder: "tk_...")
     };
 
     public Task<NotifyResult> SendAsync(IReadOnlyDictionary<string, string> settings, NotificationEvent evt, CancellationToken ct)

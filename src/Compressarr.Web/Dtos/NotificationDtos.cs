@@ -2,7 +2,7 @@ namespace Compressarr.Web.Dtos;
 
 public sealed record NotificationSettingsDto(bool ToastEnabled);
 
-public sealed record NotifierFieldDto(string Key, string Label, string InputType, bool Required, bool Secret, IReadOnlyList<string>? Options);
+public sealed record NotifierFieldDto(string Key, string Label, string InputType, bool Required, bool Secret, IReadOnlyList<string>? Options, string? HelpText, string? Placeholder);
 
 public sealed record NotifierTypeDto(string Type, string DisplayName, IReadOnlyList<NotifierFieldDto> Fields);
 

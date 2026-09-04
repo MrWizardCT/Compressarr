@@ -36,17 +36,24 @@ document.getElementById('toastEnabled').addEventListener('change', async e => {
 // notifierTypes (fetched once from the server) rather than any hardcoded per-type HTML, so a
 // future channel type needs no frontend changes at all.
 
+function helpTagHtml(helpText) {
+  if (!helpText) return '';
+  const esc = escapeHtml(helpText);
+  return `<span class="help-tag" tabindex="0" title="${esc}">?<span class="help-tip">${esc}</span></span>`;
+}
+
 function fieldInputHtml(field, value) {
   const val = value || '';
+  const placeholder = field.placeholder ? ` placeholder="${escapeHtml(field.placeholder)}"` : '';
   if (field.inputType === 'textarea') {
-    return `<textarea class="f-setting" data-key="${field.key}" rows="3">${escapeHtml(val)}</textarea>`;
+    return `<textarea class="f-setting" data-key="${field.key}" rows="3"${placeholder}>${escapeHtml(val)}</textarea>`;
   }
   if (field.inputType === 'select') {
     const options = (field.options || []).map(o => `<option value="${escapeHtml(o)}" ${o === val ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('');
     return `<select class="f-setting" data-key="${field.key}">${options}</select>`;
   }
   const inputType = field.inputType === 'password' || field.secret ? 'password' : 'text';
-  return `<input type="${inputType}" class="f-setting" data-key="${field.key}" value="${escapeHtml(val)}" />`;
+  return `<input type="${inputType}" class="f-setting" data-key="${field.key}" value="${escapeHtml(val)}"${placeholder} />`;
 }
 
 function channelCardFromDto(dto) {
@@ -61,19 +68,25 @@ function channelCardFromDto(dto) {
 
   const fieldBlocks = fields.map(f => `
     <div class="field-block">
-      <label>${escapeHtml(f.label)}</label>
+      <label>${escapeHtml(f.label)}${helpTagHtml(f.helpText)}</label>
       ${fieldInputHtml(f, dto.settings[f.key])}
     </div>
   `).join('');
 
   node.innerHTML = `
     <div class="lane-head">
-      <select class="f-trigger" title="When this channel fires">
-        <option value="Always">Always</option>
-        <option value="OnError">On error or warning</option>
-        <option value="Never">Never (disabled)</option>
-      </select>
-      <input type="text" class="f-displayName lane-name-input" placeholder="Channel name" />
+      <div class="channel-head-field">
+        <label>Trigger${helpTagHtml('When this channel fires: on every run, only when a run has errors or warnings, or never (disabled without deleting it).')}</label>
+        <select class="f-trigger">
+          <option value="Always">Always</option>
+          <option value="OnError">On error or warning</option>
+          <option value="Never">Never (disabled)</option>
+        </select>
+      </div>
+      <div class="channel-head-field">
+        <label>Name${helpTagHtml('A friendly name to tell channels of the same type apart, e.g. two different Discord servers.')}</label>
+        <input type="text" class="f-displayName lane-name-input" placeholder="Channel name" />
+      </div>
       <span style="color: var(--text-dim); font-size: 11.5px; white-space: nowrap;">${escapeHtml(typeLabel)}</span>
       <div class="lane-head-spacer"></div>
       <div class="lane-head-actions">

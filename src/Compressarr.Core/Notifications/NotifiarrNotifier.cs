@@ -27,8 +27,12 @@ public sealed class NotifiarrNotifier : INotifier
 
     public IReadOnlyList<NotifierField> Fields { get; } = new[]
     {
-        new NotifierField("apiKey", "Notifiarr API Key", "text", Required: true, Secret: true),
-        new NotifierField("channelId", "Discord Channel ID", "text", Required: true)
+        new NotifierField("apiKey", "Notifiarr API Key", "text", Required: true, Secret: true,
+            HelpText: "Found on your Notifiarr account page under My Account > API Key.",
+            Placeholder: "01234567-89ab-cdef-0123-456789abcdef"),
+        new NotifierField("channelId", "Discord Channel ID", "text", Required: true,
+            HelpText: "The Discord channel to post to, allowed for your Notifiarr Discord integration. Enable Developer Mode in Discord, then right-click the channel and Copy Channel ID.",
+            Placeholder: "123456789012345678")
     };
 
     public Task<NotifyResult> SendAsync(IReadOnlyDictionary<string, string> settings, NotificationEvent evt, CancellationToken ct)
