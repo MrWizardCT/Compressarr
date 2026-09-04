@@ -86,4 +86,16 @@ internal static class ConfigMapping
         lane.TvShowBasePath = dto.TvShowBasePath;
         lane.MovieBasePath = dto.MovieBasePath;
     }
+
+    public static NotificationChannelDto ToChannelDto(NotificationChannel channel) => new(
+        channel.Id, channel.Type, channel.DisplayName, channel.Trigger.ToString(), new Dictionary<string, string>(channel.Settings));
+
+    public static void ApplyChannelDto(NotificationChannel channel, NotificationChannelDto dto)
+    {
+        channel.DisplayName = dto.DisplayName;
+        channel.Trigger = Enum.Parse<NotificationTrigger>(dto.Trigger);
+        channel.Settings = new Dictionary<string, string>(dto.Settings);
+        // Type is deliberately not settable via update - a channel's type is fixed at creation
+        // (its field schema depends on it); changing type would need a new channel instead.
+    }
 }

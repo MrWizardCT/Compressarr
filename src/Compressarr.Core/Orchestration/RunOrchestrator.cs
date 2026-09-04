@@ -48,6 +48,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
     private readonly IHtmlReportGenerator _reportGenerator;
     private readonly IReportLauncher _reportLauncher;
     private readonly INotificationService _notifications;
+    private readonly INotificationDispatcher _notificationDispatcher;
     private readonly ITrashService _trash;
     private readonly IRunProgressReporter _progress;
     private readonly IActiveRunController _activeRunController;
@@ -64,6 +65,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         IHtmlReportGenerator reportGenerator,
         IReportLauncher reportLauncher,
         INotificationService notifications,
+        INotificationDispatcher notificationDispatcher,
         ITrashService trash,
         IRunProgressReporter progress,
         IActiveRunController activeRunController)
@@ -79,6 +81,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         _reportGenerator = reportGenerator;
         _reportLauncher = reportLauncher;
         _notifications = notifications;
+        _notificationDispatcher = notificationDispatcher;
         _trash = trash;
         _progress = progress;
         _activeRunController = activeRunController;
@@ -291,12 +294,32 @@ public sealed class RunOrchestrator : IRunOrchestrator
         // gets), but skipped entirely for an empty pass so idle polling never spams a notification.
         if (totalFiles > 0)
         {
-            var toastBeg = allResults.Sum(r => r.BeginSizeGb);
-            var toastEnd = allResults.Sum(r => r.EndSizeGb);
+            if (config.Notifications.ToastEnabled)
+            {
+                var toastBeg = allResults.Sum(r => r.BeginSizeGb);
+                var toastEnd = allResults.Sum(r => r.EndSizeGb);
 
-            _notifications.NotifyRunComplete(
-                new RunCompletionSummary(totalFiles, toastBeg, toastEnd, runTime),
+                _notifications.NotifyRunComplete(
+                    new RunCompletionSummary(totalFiles, toastBeg, toastEnd, runTime),
+                    reportFilePath);
+            }
+
+            // Separate from the toast above - toast is a local-OS-only channel, this is the
+            // pluggable list of external destinations (webhook, and later Discord/Slack/etc)
+            // configured on the Notifications page. Outcome/counts come straight off reportModel,
+            // already built above, rather than recomputing anything.
+            var outcome = reportModel.ErrorCount > 0 ? NotificationOutcome.Error
+                : reportModel.WarningCount > 0 ? NotificationOutcome.Warning
+                : NotificationOutcome.Success;
+            var notifyEvent = new NotificationEvent(
+                outcome,
+                Title: $"Compressarr run #{runNumber}",
+                Body: $"{totalFiles} file(s) processed, {reportModel.TotalBeforeGb - reportModel.TotalAfterGb:0.##} GB saved.",
+                totalFiles,
+                SavedGb: reportModel.TotalBeforeGb - reportModel.TotalAfterGb,
+                runTime,
                 reportFilePath);
+            await _notificationDispatcher.DispatchAsync(config.Notifications, notifyEvent);
         }
 
         _progress.RunCompleted(totalFiles);

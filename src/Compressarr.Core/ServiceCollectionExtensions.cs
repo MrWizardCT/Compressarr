@@ -54,6 +54,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotificationService, NoOpNotificationService>();
         services.AddSingleton<IRunProgressReporter, NullRunProgressReporter>();
 
+        services.AddSingleton<IWebhookSender, WebhookSender>();
+        services.AddSingleton<INotifier, WebhookNotifier>();
+        services.AddSingleton<INotificationDispatcher, NotificationDispatcher>();
+
         services.AddSingleton<IActiveRunController, ActiveRunController>();
         services.AddSingleton<IConversionOrchestrator, ConversionOrchestrator>();
         services.AddSingleton<IRunOrchestrator, RunOrchestrator>();

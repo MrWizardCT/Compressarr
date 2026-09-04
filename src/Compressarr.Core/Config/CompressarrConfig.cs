@@ -39,6 +39,7 @@ public sealed class CompressarrConfig
     public ArrSettings Arrs { get; set; } = new();
     public WebSettings Web { get; set; } = new();
     public BackupSettings Backup { get; set; } = new();
+    public NotificationSettings Notifications { get; set; } = new();
 }
 
 public sealed class HandBrakeSettings
@@ -165,4 +166,39 @@ public sealed class BackupSettings
     /// <summary>Set by BackupService after each successful backup (scheduled or manual) - drives
     /// both "is a backup due yet" for IBackupScheduler and the "Last backup" display on Settings.</summary>
     public DateTimeOffset? LastRunUtc { get; set; }
+}
+
+/// <summary>When a configured notification channel actually fires - same Always/OnError/Never
+/// vocabulary as ReportSettings.OpenAfterRun, rather than inventing new terms for the same idea.
+/// OnError means the run had any error OR warning (NotificationOutcome != Success), not strictly
+/// errors-only - a channel set to OnError still fires for a run that succeeded with a warning.</summary>
+public enum NotificationTrigger
+{
+    Always,
+    OnError,
+    Never
+}
+
+public sealed class NotificationSettings
+{
+    /// <summary>Gates the existing local-OS toast (INotificationService/WindowsNotificationService)
+    /// - defaults off, since a headless/server install has no desktop to show one on, unlike the
+    /// pluggable Channels below which are opt-in-by-adding-one anyway. A desktop user who wants
+    /// toasts back turns this on from the first card on the Notifications page.</summary>
+    public bool ToastEnabled { get; set; } = false;
+
+    public List<NotificationChannel> Channels { get; set; } = new();
+}
+
+/// <summary>One configured destination (a Discord webhook, a Pushover account, etc). Settings is
+/// a plain string dictionary rather than one C# type per channel Type, so a new channel type
+/// (INotifier.Type) never needs a config-shape change - only the matching INotifier's own Fields
+/// schema needs to know what keys it expects.</summary>
+public sealed class NotificationChannel
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Type { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public NotificationTrigger Trigger { get; set; } = NotificationTrigger.Always;
+    public Dictionary<string, string> Settings { get; set; } = new();
 }
