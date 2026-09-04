@@ -1179,9 +1179,14 @@ td { font-variant-numeric: tabular-nums; }
 
 .crypto-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  /* Fixed 3-across (not auto-fit) so 6 cards land 3-over-3, not 4-over-2. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   margin-bottom: 16px;
+}
+
+@media (max-width: 760px) {
+  .crypto-grid { grid-template-columns: 1fr; }
 }
 
 .crypto-card {
