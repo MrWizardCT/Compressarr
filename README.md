@@ -85,7 +85,7 @@ file to finish. Drag a queued file to reorder it within its lane, or use its men
 remove it from the queue, or override its preset for just that one file. The recent-log panel and
 CPU usage update live while a pass runs.
 
-<img src="Assets/Screenshots/monitor-page.png" alt="Compressarr Monitor page, showing the In Queue list and recent activity log while monitoring is on" width="700">
+<img src="Assets/Screenshots/monitor-page.png" alt="Compressarr Monitor page, showing a real conversion in progress with live percent/fps/ETA and the In Queue list" width="700">
 
 *The media shown is representational test data only, not the actual film - your own results
 (speed, file size, savings) will vary based on your source files, hardware, and preset.*
