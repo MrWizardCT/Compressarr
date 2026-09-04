@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
+using Compressarr.Core.Backup;
 using Compressarr.Core.Config;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
@@ -61,6 +62,18 @@ public static class BackupEndpoints
             {
                 try { File.Delete(tempPath); } catch { }
             }
+        });
+
+        // Distinct from /api/settings/export above - this is the automated multi-file backup
+        // (settings/lanes, run counter, resume state, history CSV) written to the configured
+        // Backups folder, not a one-shot settings-only download. Same trigger both the scheduled
+        // loop and this manual button call into.
+        app.MapPost("/api/backups/run", async (IBackupService backupService) =>
+        {
+            var result = await backupService.RunBackupAsync();
+            return result.Success
+                ? Results.Ok(new { fileName = result.FileName })
+                : Results.Json(new { message = result.Error }, statusCode: 500);
         });
     }
 }

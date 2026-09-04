@@ -71,6 +71,14 @@ function fillForm(dto) {
   document.getElementById('radarrUrl').value = dto.radarr.url;
   document.getElementById('radarrApiKey').value = dto.radarr.apiKey;
   document.getElementById('webPort').value = dto.webPort;
+  document.getElementById('backupFolderPath').value = dto.backupFolderPath;
+  document.getElementById('backupIntervalDays').value = dto.backupIntervalDays;
+  document.getElementById('backupRetentionDays').value = dto.backupRetentionDays;
+  setAutomatedBackupStatus(formatLastBackup(dto.backupLastRunUtc), false);
+}
+
+function formatLastBackup(lastRunUtc) {
+  return lastRunUtc ? `Last backup: ${new Date(lastRunUtc).toLocaleString()}` : 'No backup yet.';
 }
 
 function readForm() {
@@ -105,7 +113,14 @@ function readForm() {
       apiKey: document.getElementById('radarrApiKey').value
     },
     webPort: parseInt(document.getElementById('webPort').value, 10) || 1212,
-    runAtLogin: document.getElementById('runAtLogin').checked
+    runAtLogin: document.getElementById('runAtLogin').checked,
+    backupFolderPath: document.getElementById('backupFolderPath').value,
+    backupIntervalDays: parseInt(document.getElementById('backupIntervalDays').value, 10) || 7,
+    backupRetentionDays: parseInt(document.getElementById('backupRetentionDays').value, 10) || 28,
+    // Read-only from the client - ConfigMapping.ApplySettingsDto never reads this field back in
+    // (only BackupService itself sets it, after a real backup runs), so what's sent here doesn't
+    // matter; the DTO record just requires a value.
+    backupLastRunUtc: null
   };
 }
 
@@ -332,5 +347,28 @@ document.getElementById('clearConfigBtn').addEventListener('click', () => runMai
   'Reset ALL settings and lanes back to defaults?\n\nThis cannot be undone unless you\'ve exported a backup first.',
   'Configuration reset to defaults.'
 ));
+
+function setAutomatedBackupStatus(text, success) {
+  const el = document.getElementById('automatedBackupStatus');
+  el.textContent = text;
+  el.classList.toggle('success', !!success);
+}
+
+document.querySelector('.browse-btn[data-target="backupFolderPath"]').addEventListener('click', () => {
+  const field = document.getElementById('backupFolderPath');
+  openFolderBrowser(field.value, chosenPath => { field.value = chosenPath; });
+});
+
+document.getElementById('runBackupNowBtn').addEventListener('click', async () => {
+  setAutomatedBackupStatus('Creating backup...', false);
+  const res = await fetch('/api/backups/run', { method: 'POST' });
+  if (res.ok) {
+    const body = await res.json();
+    setAutomatedBackupStatus(`Backup created: ${body.fileName}`, true);
+  } else {
+    const body = await res.json().catch(() => ({}));
+    setAutomatedBackupStatus(body.message || 'Failed to create backup.', false);
+  }
+});
 
 loadSettings();

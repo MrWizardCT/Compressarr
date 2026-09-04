@@ -26,6 +26,7 @@ public sealed class CompressarrConfig
     public StartupSettings Startup { get; set; } = new();
     public ArrSettings Arrs { get; set; } = new();
     public WebSettings Web { get; set; } = new();
+    public BackupSettings Backup { get; set; } = new();
 }
 
 public sealed class HandBrakeSettings
@@ -131,4 +132,23 @@ public sealed class WebSettings
     /// something else already running on the machine. No authentication in v2.0.0 (matches
     /// Radarr/Sonarr's own default posture).</summary>
     public int Port { get; set; } = 1212;
+}
+
+/// <summary>Settings for the automatic backup feature (IBackupScheduler/IBackupService) - same
+/// three fields Sonarr's own Backup settings page uses (folder, interval, retention), Compressarr
+/// always runs this on a background loop once the app starts, no separate enable/disable switch,
+/// matching Sonarr's own always-on posture.</summary>
+public sealed class BackupSettings
+{
+    /// <summary>Local or UNC path. Accepts %CompressarrAppData% and other %VAR% tokens, expanded
+    /// via IPathExpander at point of use - same convention as LoggingSettings.LogFilePath/
+    /// ReportSettings.ReportPath.</summary>
+    public string FolderPath { get; set; } = "%CompressarrAppData%\\Backups";
+
+    public int IntervalDays { get; set; } = 7;
+    public int RetentionDays { get; set; } = 28;
+
+    /// <summary>Set by BackupService after each successful backup (scheduled or manual) - drives
+    /// both "is a backup due yet" for IBackupScheduler and the "Last backup" display on Settings.</summary>
+    public DateTimeOffset? LastRunUtc { get; set; }
 }

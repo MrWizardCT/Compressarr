@@ -1,4 +1,5 @@
 using Compressarr.Core.Arr;
+using Compressarr.Core.Backup;
 using Compressarr.Core.Config;
 using Compressarr.Core.Conversion;
 using Compressarr.Core.Dependencies;
@@ -58,6 +59,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRunOrchestrator, RunOrchestrator>();
         services.AddSingleton<IRunLoopController, RunLoopController>();
         services.AddSingleton<IStartupRegistrationService>(_ => StartupRegistrationServiceFactory.CreateForCurrentPlatform());
+
+        services.AddSingleton<IBackupService, BackupService>();
+        services.AddSingleton<IBackupScheduler, BackupScheduler>();
 
         return services;
     }

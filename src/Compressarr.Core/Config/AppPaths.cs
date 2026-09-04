@@ -37,4 +37,6 @@ public static class AppPaths
     public static string GetConfigFilePath() => Path.Combine(GetAppDataDirectory(), "compressarr.settings.json");
 
     public static string GetRunCountFilePath() => Path.Combine(GetAppDataDirectory(), "compressarr.runcount.json");
+
+    public static string GetResumeFilePath() => Path.Combine(GetAppDataDirectory(), "compressarr.resume.json");
 }

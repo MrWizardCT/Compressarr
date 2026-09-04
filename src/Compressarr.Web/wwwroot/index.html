@@ -209,6 +209,37 @@
 
     <div class="card">
       <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        <h2>Backups</h2>
+      </div>
+      <div class="card-body">
+        <div class="field-block">
+          <label for="backupFolderPath">Folder<span class="help-tag" tabindex="0" title="Where automatic backups are written. Accepts a local path or a UNC path (\\server\backupfolder). Relative paths will be under Compressarr's AppData directory.">?<span class="help-tip">Where automatic backups are written. Accepts a local path or a UNC path (\\server\backupfolder). Relative paths will be under Compressarr's AppData directory.</span></span></label>
+          <div class="field-with-btn">
+            <input type="text" id="backupFolderPath" />
+            <button class="browse-btn" data-target="backupFolderPath">Browse...</button>
+          </div>
+        </div>
+        <div class="two-col">
+          <div class="field-block">
+            <label for="backupIntervalDays">Interval (days)<span class="help-tag" tabindex="0" title="Interval between automatic backups.">?<span class="help-tip">Interval between automatic backups.</span></span></label>
+            <input type="number" id="backupIntervalDays" min="1" />
+          </div>
+          <div class="field-block">
+            <label for="backupRetentionDays">Retention (days)<span class="help-tag" tabindex="0" title="Automatic backups older than the retention period will be cleaned up automatically.">?<span class="help-tip">Automatic backups older than the retention period will be cleaned up automatically.</span></span></label>
+            <input type="number" id="backupRetentionDays" min="1" />
+          </div>
+        </div>
+        <div class="field-block">
+          <label>Backup now<span class="help-tag" tabindex="0" title="Creates a backup immediately, using the folder above, without waiting for the next scheduled run.">?<span class="help-tip">Creates a backup immediately, using the folder above, without waiting for the next scheduled run.</span></span></label>
+          <button id="runBackupNowBtn">Backup Now</button>
+        </div>
+        <div class="preset-status" id="automatedBackupStatus"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
         <h2>Web UI</h2>
       </div>
@@ -257,6 +288,7 @@
   </main>
 
   <script src="/nav.js"></script>
+  <script src="/browse.js"></script>
   <script src="/settings.js"></script>
 </body>
 </html>

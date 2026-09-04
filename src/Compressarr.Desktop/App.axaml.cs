@@ -94,6 +94,10 @@ public partial class App : Application
             loopController.Start(earlyConfig, TimeSpan.FromSeconds(Math.Max(5, earlyConfig.Repeat.PollIntervalSeconds)));
         }
 
+        // Always started, unconditionally - no separate enable/disable setting, matching Sonarr's
+        // own always-on backup posture (only the folder/interval/retention are configurable).
+        Services.GetRequiredService<Compressarr.Core.Backup.IBackupScheduler>().Start();
+
         base.OnFrameworkInitializationCompleted();
     }
 }

@@ -23,6 +23,10 @@ public sealed record SettingsDto(
     ArrServiceDto Sonarr,
     ArrServiceDto Radarr,
     int WebPort,
-    bool RunAtLogin);
+    bool RunAtLogin,
+    string BackupFolderPath,
+    int BackupIntervalDays,
+    int BackupRetentionDays,
+    DateTimeOffset? BackupLastRunUtc);
 
 public sealed record ArrServiceDto(bool Enabled, string Url, string ApiKey);

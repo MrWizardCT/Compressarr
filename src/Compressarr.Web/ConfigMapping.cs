@@ -31,7 +31,11 @@ internal static class ConfigMapping
         Sonarr: new ArrServiceDto(config.Arrs.Sonarr.Enabled, config.Arrs.Sonarr.Url, config.Arrs.Sonarr.ApiKey),
         Radarr: new ArrServiceDto(config.Arrs.Radarr.Enabled, config.Arrs.Radarr.Url, config.Arrs.Radarr.ApiKey),
         WebPort: config.Web.Port,
-        RunAtLogin: config.Startup.RunAtLogin);
+        RunAtLogin: config.Startup.RunAtLogin,
+        BackupFolderPath: config.Backup.FolderPath,
+        BackupIntervalDays: config.Backup.IntervalDays,
+        BackupRetentionDays: config.Backup.RetentionDays,
+        BackupLastRunUtc: config.Backup.LastRunUtc);
 
     public static void ApplySettingsDto(CompressarrConfig config, SettingsDto dto)
     {
@@ -58,6 +62,11 @@ internal static class ConfigMapping
         config.Arrs.Radarr = new ArrServiceSettings { Enabled = dto.Radarr.Enabled, Url = dto.Radarr.Url, ApiKey = dto.Radarr.ApiKey };
         config.Web.Port = dto.WebPort;
         config.Startup.RunAtLogin = dto.RunAtLogin;
+        config.Backup.FolderPath = dto.BackupFolderPath;
+        config.Backup.IntervalDays = dto.BackupIntervalDays;
+        config.Backup.RetentionDays = dto.BackupRetentionDays;
+        // BackupLastRunUtc is read-only from the client's perspective - set only by BackupService
+        // itself after a real backup runs, never round-tripped back in from a settings save.
     }
 
     public static LaneDto ToLaneDto(LaneConfig lane) => new(
