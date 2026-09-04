@@ -479,6 +479,10 @@ h3 {
   margin-left: 5px;
   position: relative;
   vertical-align: middle;
+  /* text-transform inherits by default - reset here so an uppercase ancestor label (e.g.
+     notifications.js's .channel-head-field TRIGGER/NAME micro-labels) can't shout through into
+     the help-tip's own sentence-case text underneath it. */
+  text-transform: none;
 }
 
 .help-tag:hover, .help-tag:focus-visible {
