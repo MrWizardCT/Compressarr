@@ -487,12 +487,18 @@ h3 {
   outline: none;
 }
 
+/* position: fixed (not absolute) so the tip escapes any ancestor's overflow: hidden - .card uses
+   overflow: hidden to clip .card-head's square corners to its own rounded ones, which otherwise
+   silently clips a tip that would render above a field near the top of a tall card. top/left are
+   computed in nav.js's positionHelpTip (viewport-relative, flips below and clamps to the right
+   edge when there isn't room) - the off-screen default below is just a pre-JS/no-JS fallback so
+   the tip never flashes at the fixed top-left corner. */
 .help-tag .help-tip {
   visibility: hidden;
   opacity: 0;
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 6px);
+  position: fixed;
+  top: -9999px;
+  left: -9999px;
   background: var(--bg-alt);
   color: var(--text);
   border: 1px solid var(--border);
@@ -503,7 +509,7 @@ h3 {
   width: 220px;
   white-space: normal;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-  z-index: 50;
+  z-index: 200;
   transition: opacity 0.1s;
   text-align: left;
   line-height: 1.4;

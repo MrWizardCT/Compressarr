@@ -270,3 +270,35 @@ function startGlobalStatusPoll() {
 
 // Applied immediately (before renderNav runs) so the page never flashes the wrong theme.
 applyTheme(getPreferredTheme());
+
+// .help-tip is position: fixed (see styles.css) specifically so it can escape .card's
+// overflow: hidden - a tip near the top of a tall card would otherwise render partly above the
+// card and get silently clipped. Since fixed positioning is viewport-relative, not
+// anchor-relative, its top/left have to be computed here on every hover/focus rather than left to
+// CSS. Delegated on document (not per-.help-tag listeners) so this works for any card added to the
+// DOM after this script runs, e.g. notifications.js's channel cards.
+function positionHelpTip(tag) {
+  const tip = tag.querySelector('.help-tip');
+  if (!tip) return;
+  const tagRect = tag.getBoundingClientRect();
+  const tipRect = tip.getBoundingClientRect(); // visibility: hidden still measures, unlike display: none
+
+  let top = tagRect.top - tipRect.height - 6; // default: above the tag
+  if (top < 4) top = tagRect.bottom + 6; // not enough room above - flip below instead
+
+  let left = tagRect.left;
+  const maxLeft = window.innerWidth - tipRect.width - 8;
+  if (left > maxLeft) left = Math.max(8, maxLeft); // keep it on-screen against the right edge
+
+  tip.style.top = `${top}px`;
+  tip.style.left = `${left}px`;
+}
+
+document.addEventListener('mouseover', e => {
+  const tag = e.target.closest('.help-tag');
+  if (tag) positionHelpTip(tag);
+});
+document.addEventListener('focusin', e => {
+  const tag = e.target.closest('.help-tag');
+  if (tag) positionHelpTip(tag);
+});
