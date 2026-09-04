@@ -52,7 +52,6 @@ public static class RunEndpoints
             if (string.IsNullOrWhiteSpace(inputPath) || !Directory.Exists(inputPath)) continue;
 
             var pending = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending).ToList();
-            var pendingPaths = pending.Select(p => p.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var pendingByPath = pending.ToDictionary(p => p.FullName, StringComparer.OrdinalIgnoreCase);
 
             // Excludes every path already tracked under ANY status for this lane, not just
@@ -61,13 +60,28 @@ public static class RunEndpoints
             // own real entry (the Error bucket below, or invisible-but-real for MoveFailed).
             var trackedPaths = resumeState.Where(e => e.LaneId == lane.Id).Select(e => e.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            // Same Order-based sort ConversionOrchestrator applies when it actually picks files up
-            // - the queue display matches what would actually get processed next, not just an
-            // unordered list.
-            var pendingFiles = pending.Where(p => !p.Removed).OrderBy(p => p.Order ?? int.MaxValue).Select(p => new FileInfo(p.FullName)).Where(f => f.Exists);
-            var freshlyScanned = scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit)
-                .Where(f => !trackedPaths.Contains(f.FullName));
-            var files = pendingFiles.Concat(freshlyScanned).ToList();
+            // One single natural-order scan drives the fallback ordering for every file that has no
+            // EXPLICIT user-set Order (a real drag-reorder on the Monitor page) - both genuinely
+            // untracked ("New") files and Pending entries that only exist because a skip/preset-
+            // override/remove action touched them (FindOrCreatePendingEntry, ResumeEntry.
+            // CreatedByQueueEdit above) but were never actually dragged. Confirmed live: the
+            // previous two-phase "all Pending entries first, then whatever's left over from a fresh
+            // scan" concat put ANY tracked entry ahead of every untracked one regardless of natural
+            // position, so merely changing a preset on one file (which silently creates a Pending
+            // entry as a side effect) made it jump to the top of the queue, and touching more files
+            // kept bumping each one above its still-untouched siblings.
+            var scannedFiles = scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit)
+                .Where(f => !trackedPaths.Contains(f.FullName) || pendingByPath.ContainsKey(f.FullName))
+                .ToList();
+            var naturalIndex = scannedFiles
+                .Select((f, idx) => (f.FullName, idx))
+                .ToDictionary(x => x.FullName, x => x.idx, StringComparer.OrdinalIgnoreCase);
+
+            var files = scannedFiles
+                .Where(f => !(pendingByPath.TryGetValue(f.FullName, out var e) && e.Removed))
+                .OrderBy(f => pendingByPath.TryGetValue(f.FullName, out var e) && e.Order.HasValue ? e.Order.Value : int.MaxValue)
+                .ThenBy(f => naturalIndex[f.FullName])
+                .ToList();
 
             // pending.Count > 0 is the right "new vs. resumed" signal for a lane this pass hasn't
             // reached yet - but once a lane actually starts, a clean start writes its own fresh
