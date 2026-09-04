@@ -712,6 +712,13 @@ a.primary:hover { opacity: 0.9; }
    than the destination path + Browse button row under it. */
 .field-block select { width: 100%; }
 
+/* Same gap as the select rule above, for text/number inputs: a bare input directly in a
+   field-block (not wrapped in .field-with-btn's flex row) has no width rule at all, so it
+   sizes to the browser's intrinsic default (~180px) instead of filling its grid column - visibly
+   inconsistent next to a full-width select in the next row (e.g. Video extensions vs. Original
+   file after convert). */
+.field-block input[type="text"], .field-block input[type="number"] { width: 100%; }
+
 .field-with-btn { display: flex; gap: 8px; }
 
 /* Overrides the shared input[type="number"], select { flex: 1 } rule above - without this the
