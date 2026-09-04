@@ -56,6 +56,8 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IWebhookSender, WebhookSender>();
         services.AddSingleton<INotifier, WebhookNotifier>();
+        services.AddSingleton<INotifier, DiscordNotifier>();
+        services.AddSingleton<INotifier, SlackNotifier>();
         services.AddSingleton<INotificationDispatcher, NotificationDispatcher>();
 
         services.AddSingleton<IActiveRunController, ActiveRunController>();
