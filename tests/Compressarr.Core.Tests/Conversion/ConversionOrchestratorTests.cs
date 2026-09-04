@@ -456,6 +456,55 @@ public class ConversionOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessLaneAsync_StopTokenCancelledMidEncode_FinishesCurrentFile_NeverStartsNext()
+    {
+        // Confirmed live: "Stop Monitoring" was silently letting the ENTIRE remaining queue finish
+        // (every file, potentially across every lane) before honoring the stop at all - the loop's
+        // own cancellation token was never actually passed into RunOnceAsync/ProcessLaneAsync. The
+        // fix threads it through as a distinct stopToken, checked only between files (never handed
+        // to the process runner, unlike the hard-kill Abort token) - this proves the file already
+        // encoding when Stop is pressed finishes completely, and the next one never starts.
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var firstPath = Path.Combine(inputDir, "a-first.mkv");
+        var secondPath = Path.Combine(inputDir, "b-second.mkv");
+        File.WriteAllText(firstPath, "first");
+        File.WriteAllText(secondPath, "second");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir, MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var stopCts = new CancellationTokenSource();
+        // Fires while the FIRST file's encode is still in flight - simulates the user clicking
+        // Stop Monitoring mid-encode.
+        var processRunner = new ConcurrentEditProcessRunner(() => stopCts.Cancel());
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            processRunner, new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "lane1", FullName = firstPath, Status = ResumeStatus.Pending },
+            new() { LaneId = "lane1", FullName = secondPath, Status = ResumeStatus.Pending }
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            orchestrator.ProcessLaneAsync(lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None, stopCts.Token));
+
+        var firstEntry = resumeState.Single(e => e.FullName == firstPath);
+        var secondEntry = resumeState.Single(e => e.FullName == secondPath);
+        Assert.Equal(ResumeStatus.Completed, firstEntry.Status);
+        Assert.Equal(ResumeStatus.Pending, secondEntry.Status);
+    }
+
+    [Fact]
     public async Task ProcessLaneAsync_ConcurrentQueueEditDuringEncode_IsHonoredNotLost()
     {
         var inputDir = Path.Combine(_tempDir, "Input");

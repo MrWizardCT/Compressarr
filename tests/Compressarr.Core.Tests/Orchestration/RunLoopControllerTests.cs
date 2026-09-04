@@ -10,7 +10,7 @@ file sealed class FakeRunOrchestrator : IRunOrchestrator
     public int CallCount;
     public bool ThrowOnNextCall;
 
-    public Task<RunResult?> RunOnceAsync(CompressarrConfig config)
+    public Task<RunResult?> RunOnceAsync(CompressarrConfig config, CancellationToken stopToken = default)
     {
         Interlocked.Increment(ref CallCount);
         if (ThrowOnNextCall)
@@ -34,7 +34,7 @@ file sealed class DiskFullRunOrchestrator : IRunOrchestrator
         DiskFull = true
     };
 
-    public Task<RunResult?> RunOnceAsync(CompressarrConfig config)
+    public Task<RunResult?> RunOnceAsync(CompressarrConfig config, CancellationToken stopToken = default)
     {
         Interlocked.Increment(ref CallCount);
         return Task.FromResult<RunResult?>(DiskFullResult);
@@ -58,8 +58,15 @@ file sealed class SlowRunOrchestrator : IRunOrchestrator
     private readonly TaskCompletionSource _release = new();
     public void ReleasePass() => _release.TrySetResult();
 
-    public async Task<RunResult?> RunOnceAsync(CompressarrConfig config)
+    /// <summary>The stopToken this pass was actually invoked with - captured so a test can assert
+    /// StopAsync's own cancellation reaches RunOnceAsync as its graceful stopToken argument
+    /// (see IRunLoopController's doc comment on why this wiring matters), not just that StopAsync
+    /// eventually returns.</summary>
+    public CancellationToken? ReceivedStopToken { get; private set; }
+
+    public async Task<RunResult?> RunOnceAsync(CompressarrConfig config, CancellationToken stopToken = default)
     {
+        ReceivedStopToken = stopToken;
         await _release.Task;
         return null;
     }
@@ -191,6 +198,29 @@ public class RunLoopControllerTests
         await stopTask;
 
         Assert.False(controller.IsStopping);
+    }
+
+    [Fact]
+    public async Task StopAsync_CancelsTheStopTokenPassedIntoRunOnceAsync()
+    {
+        // Confirmed live: StopAsync used to only cancel its own token, which LoopAsync never
+        // passed into RunOnceAsync at all - so Stop Monitoring silently had no effect on the
+        // in-flight pass and it ran to completion (every remaining file across every lane)
+        // regardless, instead of stopping between files/lanes as expected. This asserts the wiring
+        // that fixes it: RunOnceAsync must actually receive a stopToken that gets cancelled.
+        var orchestrator = new SlowRunOrchestrator();
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
+        controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
+        await WaitUntil(() => orchestrator.ReceivedStopToken is not null, TimeSpan.FromSeconds(2));
+
+        Assert.False(orchestrator.ReceivedStopToken!.Value.IsCancellationRequested);
+
+        var stopTask = controller.StopAsync();
+        await WaitUntil(() => orchestrator.ReceivedStopToken!.Value.IsCancellationRequested, TimeSpan.FromSeconds(2));
+        Assert.True(orchestrator.ReceivedStopToken!.Value.IsCancellationRequested);
+
+        orchestrator.ReleasePass();
+        await stopTask;
     }
 
     [Fact]

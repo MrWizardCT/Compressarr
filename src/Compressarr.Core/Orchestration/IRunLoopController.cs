@@ -9,20 +9,25 @@ namespace Compressarr.Core.Orchestration;
 /// host-agnostic and testable without a web test host - both the tray icon and a web page call
 /// into the same singleton instance, so either surface reflects the other's Start/Stop state.
 ///
-/// Known v2.0.0 limitation: there is no CancellationToken anywhere in the conversion pipeline
-/// (HandBrakeProcessRunner.Run blocks on Process.WaitForExit()), so StopAsync can only mean
-/// "don't start another pass; let the current one finish" - it cannot abort a mid-flight encode.
+/// StopAsync's own CancellationTokenSource is passed all the way down into
+/// IConversionOrchestrator.ProcessLaneAsync as a distinct "graceful stopToken", separate from
+/// IActiveRunController's hard-kill Abort token - checked only between files/lanes, never wired
+/// into HandBrakeProcessRunner's process-kill registration, so it lets the file actively encoding
+/// right now finish completely rather than aborting a mid-flight encode. Was a known v2.0.0/early
+/// v2.1 limitation before this was wired up: StopAsync's own token only ever affected LoopAsync's
+/// own between-passes wait, so it silently let the ENTIRE pass - every remaining file across
+/// every lane - finish before honoring a stop at all, confirmed live as "wants to finish the
+/// queue before stopping instead of stopping after the current encode".
 /// </summary>
 public interface IRunLoopController
 {
     bool IsRunning { get; }
 
     /// <summary>True from the moment StopAsync is called until it actually finishes (the
-    /// in-flight pass has to finish naturally first, since there's no CancellationToken reaching
-    /// HandBrakeCLI itself). This is the single source of truth both the web UI and the tray icon
-    /// read/subscribe to, so a stop requested from either surface is reflected on both -
-    /// StopMenuHeader/RunningChanged alone can't do that, since each surface's own "click"
-    /// handling only knows about itself.</summary>
+    /// in-flight file has to finish naturally first - see the graceful stopToken note above).
+    /// This is the single source of truth both the web UI and the tray icon read/subscribe to, so
+    /// a stop requested from either surface is reflected on both - StopMenuHeader/RunningChanged
+    /// alone can't do that, since each surface's own "click" handling only knows about itself.</summary>
     bool IsStopping { get; }
 
     /// <summary>UTC time the next pass is scheduled to start, while the loop is idle between
@@ -33,8 +38,10 @@ public interface IRunLoopController
     /// <summary>No-op if already running (idempotent - a second Start doesn't spawn a second loop).</summary>
     void Start(CompressarrConfig config, TimeSpan pollInterval);
 
-    /// <summary>Stops the loop from starting another pass and waits for any in-flight pass to
-    /// finish naturally. No-op if not running.</summary>
+    /// <summary>Stops the loop from starting another pass, and stops the current pass (if any)
+    /// from starting another file or lane - but lets whatever is actively encoding right now
+    /// finish naturally first (see the graceful stopToken note above), then waits for that to
+    /// happen. No-op if not running.</summary>
     Task StopAsync();
 
     /// <summary>Immediately kills whatever HandBrakeCLI process is currently running (via
@@ -205,7 +212,12 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
 
             try
             {
-                var result = await _runOrchestrator.RunOnceAsync(config);
+                // Passed as the graceful stopToken (not the hard-kill Abort token) - StopAsync
+                // cancels this same token, so a Stop Monitoring request lets whichever file is
+                // actively encoding right now finish, then stops before the next file/lane starts,
+                // rather than waiting for the ENTIRE pass (every remaining file across every lane)
+                // to finish naturally before StopAsync's own await can ever return.
+                var result = await _runOrchestrator.RunOnceAsync(config, token);
                 if (result?.DiskFull == true)
                 {
                     // Retrying on the next poll interval is actively pointless here - the volume

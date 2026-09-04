@@ -26,8 +26,13 @@ public interface IRunOrchestrator
     /// with configured input, purge old logs/reports by retention, record history + increment
     /// the run counter (only if files were processed), run the optional post-exec command, build
     /// the HTML report, and fire a notification. Ported from Invoke-CompressarrRun. Returns null
-    /// if HandBrakeCLI or presets.json can't be found (the whole run aborts, matching v1).</summary>
-    Task<RunResult?> RunOnceAsync(CompressarrConfig config);
+    /// if HandBrakeCLI or presets.json can't be found (the whole run aborts, matching v1).
+    ///
+    /// stopToken is a graceful "Stop Monitoring" signal, distinct from Abort's hard-kill token -
+    /// checked between lanes and (via IConversionOrchestrator.ProcessLaneAsync) between files
+    /// within a lane, so the file actively encoding right now always finishes before this pass
+    /// unwinds, rather than being killed mid-encode.</summary>
+    Task<RunResult?> RunOnceAsync(CompressarrConfig config, CancellationToken stopToken = default);
 }
 
 public sealed class RunOrchestrator : IRunOrchestrator
@@ -79,7 +84,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         _activeRunController = activeRunController;
     }
 
-    public async Task<RunResult?> RunOnceAsync(CompressarrConfig config)
+    public async Task<RunResult?> RunOnceAsync(CompressarrConfig config, CancellationToken stopToken = default)
     {
         var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
         var beginTime = DateTime.Now;
@@ -95,7 +100,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         var token = _activeRunController.Begin();
         try
         {
-            return await RunOnceCoreAsync(config, timestamp, beginTime, logFilePath, reportPath, token);
+            return await RunOnceCoreAsync(config, timestamp, beginTime, logFilePath, reportPath, token, stopToken);
         }
         finally
         {
@@ -103,7 +108,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         }
     }
 
-    private async Task<RunResult?> RunOnceCoreAsync(CompressarrConfig config, string timestamp, DateTime beginTime, string logFilePath, string reportPath, CancellationToken token)
+    private async Task<RunResult?> RunOnceCoreAsync(CompressarrConfig config, string timestamp, DateTime beginTime, string logFilePath, string reportPath, CancellationToken token, CancellationToken stopToken)
     {
         var hbloc = _pathExpander.Expand(config.HandBrake.CliPath);
         if (!_pathExpander.PathExists(config.HandBrake.CliPath))
@@ -136,6 +141,10 @@ public sealed class RunOrchestrator : IRunOrchestrator
             foreach (var lane in config.Lanes)
             {
                 token.ThrowIfCancellationRequested();
+                // Graceful Stop Monitoring - checked between lanes too, so a stop requested while
+                // one lane still has queued files doesn't go on to start an entirely different
+                // lane's worth of work before honoring it.
+                stopToken.ThrowIfCancellationRequested();
 
                 if (!lane.Enabled)
                 {
@@ -166,13 +175,24 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 // though nothing was ever interrupted.
                 var laneIsResumed = resumeState.Any(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending);
                 _progress.LaneStarted(lane.Id, lane.DisplayName, laneIsResumed);
-                var results = await _conversionOrchestrator.ProcessLaneAsync(lane, config, logFilePath, timestamp, resumeState, resumeFilePath, token);
+                var results = await _conversionOrchestrator.ProcessLaneAsync(lane, config, logFilePath, timestamp, resumeState, resumeFilePath, token, stopToken);
                 laneResults[lane.Id] = results;
             }
         }
         catch (OperationCanceledException)
         {
-            _logger.Log("\nRun aborted by user.", LogSeverity.Error);
+            // token (Abort) kills the in-flight encode; stopToken (Stop Monitoring) only ever
+            // stops this pass between files/lanes, letting whatever was already encoding finish -
+            // worth distinguishing here since "aborted"/Error severity would be actively
+            // misleading for the latter, much more common, entirely-expected case.
+            if (token.IsCancellationRequested)
+            {
+                _logger.Log("\nRun aborted by user.", LogSeverity.Error);
+            }
+            else
+            {
+                _logger.Log("\nMonitoring stopped - remaining queued files will run on the next pass.");
+            }
         }
 
         var stillOutstanding = resumeState.Any(e => e.Status != ResumeStatus.Completed);

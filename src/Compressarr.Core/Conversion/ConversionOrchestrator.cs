@@ -13,7 +13,14 @@ public interface IConversionOrchestrator
     /// fully finished (converted, routed, arr-unmonitored, companions handled) before the next
     /// one starts — no concurrent HandBrakeCLI processes, no job-list polling. This also means
     /// the resume state on disk is always accurate up to the file currently in flight. Ported
-    /// from Invoke-CompressarrLaneConversion.</summary>
+    /// from Invoke-CompressarrLaneConversion.
+    ///
+    /// cancellationToken (Abort) kills the in-flight HandBrakeCLI process immediately -
+    /// IHandBrakeProcessRunner registers a Kill(entireProcessTree) callback directly on it.
+    /// stopToken (Stop Monitoring) is a separate, gentler signal: checked only at the top of this
+    /// method's own per-file loop, before picking up the NEXT file, and never passed to the
+    /// process runner - so a graceful stop lets the file actively encoding right now finish
+    /// completely (encode, route, companions, arr-unmonitor) rather than killing it mid-encode.</summary>
     Task<IReadOnlyList<ConversionResult>> ProcessLaneAsync(
         LaneConfig lane,
         CompressarrConfig config,
@@ -21,7 +28,8 @@ public interface IConversionOrchestrator
         string timestamp,
         List<ResumeEntry> resumeState,
         string resumeFilePath,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        CancellationToken stopToken = default);
 }
 
 public sealed class ConversionOrchestrator : IConversionOrchestrator
@@ -79,7 +87,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         string timestamp,
         List<ResumeEntry> resumeState,
         string resumeFilePath,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        CancellationToken stopToken = default)
     {
         var results = new List<ConversionResult>();
 
@@ -234,6 +243,9 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            // A graceful Stop Monitoring request - checked only here, before starting the NEXT
+            // file, never inside the encode itself, so the file already in flight always finishes.
+            stopToken.ThrowIfCancellationRequested();
 
             // Re-derive the next file to process from the *current* disk state on every
             // iteration, rather than continuing to walk the videoFiles snapshot captured above -
