@@ -117,6 +117,16 @@ function renderNav(activePage) {
   // actions (About) just leave it empty.
   if (actionsEl) toolbar.querySelector('.toolbar-spacer').appendChild(actionsEl);
 
+  // Wraps the page's remaining content in .content-inner (see styles.css) so <main> itself can
+  // span the full column width for scrolling while the actual content still visually caps/centers
+  // at 1080px, same as before.
+  if (existingMain) {
+    const contentInner = document.createElement('div');
+    contentInner.className = 'content-inner';
+    while (existingMain.firstChild) contentInner.appendChild(existingMain.firstChild);
+    existingMain.appendChild(contentInner);
+  }
+
   mainCol.appendChild(toolbar);
   if (existingMain) mainCol.appendChild(existingMain);
 

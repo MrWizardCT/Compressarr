@@ -398,12 +398,22 @@ body {
 .about-github-link a:hover { color: var(--text); }
 .about-github-link svg { width: 20px; height: 20px; display: block; }
 
+/* <main> itself is the scroll container and spans the FULL remaining column width (no
+   max-width/padding of its own) so a mouse-wheel scroll works anywhere in the content pane, not
+   only when hovered directly over a card - previously max-width capped main's own box at 1080px,
+   leaving a dead strip of .main-col background to its right (widest on large monitors) where
+   wheel events had no scrollable element to land on. The visual cap/centering that used to live
+   here moves to .content-inner below, which nav.js wraps the page's real content in. */
 main {
   flex: 1;
   overflow-y: auto;
-  padding: 26px 28px 40px;
-  max-width: 1080px;
   width: 100%;
+}
+
+.content-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 26px 28px 40px;
 }
 
 /* Interior scroll containers (sidebar, main content, the file-browse modal) stay scrollable but
