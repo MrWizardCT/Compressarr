@@ -155,7 +155,9 @@ async function testChannel(node) {
 async function loadNotifierTypes() {
   const res = await fetch('/api/notifications/types');
   notifierTypes = await res.json();
-  addChannelType.innerHTML = notifierTypes.map(t => `<option value="${escapeHtml(t.type)}">${escapeHtml(t.displayName)}</option>`).join('');
+  const sorted = [...notifierTypes].sort((a, b) => a.displayName.localeCompare(b.displayName));
+  const options = sorted.map(t => `<option value="${escapeHtml(t.type)}">${escapeHtml(t.displayName)}</option>`).join('');
+  addChannelType.innerHTML = `<option value="" selected disabled>Select Service</option>${options}`;
 }
 
 async function loadChannels() {

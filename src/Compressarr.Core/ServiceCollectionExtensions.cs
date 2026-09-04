@@ -63,6 +63,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotifier, NtfyNotifier>();
         services.AddSingleton<INotifier, GotifyNotifier>();
         services.AddSingleton<INotifier, NotifiarrNotifier>();
+        services.AddSingleton<INotifier, IftttNotifier>();
         services.AddSingleton<INotificationDispatcher, NotificationDispatcher>();
 
         services.AddSingleton<IActiveRunController, ActiveRunController>();
