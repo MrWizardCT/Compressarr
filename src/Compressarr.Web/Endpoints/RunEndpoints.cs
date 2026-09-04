@@ -75,8 +75,12 @@ public static class RunEndpoints
             // make every file in it look "resumed" a moment later even though nothing was ever
             // interrupted. For whichever lane is currently running, trust the flag captured before
             // that mutation happened (RunOrchestrator, via CurrentRunStateService) instead.
+            // Only counts entries ConversionOrchestrator's own scan-and-track bookkeeping created -
+            // a CreatedByQueueEdit entry (bookkeeping for a skip/reorder/preset-override/remove
+            // action on a file the pass hasn't reached yet) doesn't mean any real prior work is
+            // outstanding, and must never taint this lane-wide flag on its own.
             var isCurrentLane = currentRun.IsRunning && string.Equals(lane.DisplayName, currentRun.LaneDisplayName, StringComparison.Ordinal);
-            var laneIsResumed = isCurrentLane ? currentRun.CurrentLaneIsResumed : pending.Count > 0;
+            var laneIsResumed = isCurrentLane ? currentRun.CurrentLaneIsResumed : pending.Any(p => !p.CreatedByQueueEdit);
 
             foreach (var file in files)
             {
@@ -90,8 +94,10 @@ public static class RunEndpoints
 
                 // A freshly-scanned file with no Pending entry yet is always "New", regardless of
                 // whatever this lane's own overall pass-resumed state is - it was never tracked
-                // before this very poll.
-                var isResumed = entry is not null && laneIsResumed;
+                // before this very poll. Same for a CreatedByQueueEdit entry - it exists purely to
+                // hold queue metadata the user just set, not because this file's own processing was
+                // ever actually interrupted.
+                var isResumed = entry is not null && !entry.CreatedByQueueEdit && laneIsResumed;
                 var isSkipped = entry?.Skipped ?? false;
                 var hasOverride = !string.IsNullOrWhiteSpace(entry?.PresetOverride);
                 var preset = hasOverride ? entry!.PresetOverride : (ContentClassifier.IsTvFile(file.Name) ? lane.TvPreset : lane.MoviePreset);
@@ -135,7 +141,7 @@ public static class RunEndpoints
         var fullPath = Path.Combine(inputPath, fileName);
         if (!File.Exists(fullPath)) return null;
 
-        var created = new ResumeEntry { LaneId = laneId, FullName = fullPath, Status = ResumeStatus.Pending };
+        var created = new ResumeEntry { LaneId = laneId, FullName = fullPath, Status = ResumeStatus.Pending, CreatedByQueueEdit = true };
         resumeState.Add(created);
         return created;
     }

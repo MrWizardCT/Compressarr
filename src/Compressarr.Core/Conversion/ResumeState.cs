@@ -51,6 +51,16 @@ public sealed class ResumeEntry
     /// rescan skips it, same as any other tracked path) while hiding it from the UI, with the same
     /// "stays until explicitly toggled back" reasoning as Skipped.</summary>
     public bool Removed { get; set; }
+
+    /// <summary>Set when this entry was created purely as bookkeeping for a queue-control action
+    /// (reorder/skip/preset-override/remove) on a file the current pass hadn't tracked yet, rather
+    /// than by ConversionOrchestrator's own real resume-from-interrupted-run bookkeeping. Exists
+    /// solely so the Monitor page's New/Resumed badge isn't fooled by it - without this, touching
+    /// even one fresh file's queue metadata makes ComputeUpNext's "does this lane have pending work
+    /// left over from before" heuristic (any Pending entry at all) fire, mislabeling every other
+    /// file in that lane "Resumed" too, and reordering the whole queue (which touches every file at
+    /// once) made literally the entire lane show "Resumed". Confirmed live on the real running app.</summary>
+    public bool CreatedByQueueEdit { get; set; }
 }
 
 public interface IResumeStateStore
