@@ -21,6 +21,7 @@ public static class WebMonitorStartup
         app.MapArrEndpoints();
         app.MapBackupEndpoints();
         app.MapMaintenanceEndpoints();
+        app.MapDonateEndpoints();
     }
 
     /// <summary>Starts Kestrel without throwing - a bind failure (port in use, etc.) is logged

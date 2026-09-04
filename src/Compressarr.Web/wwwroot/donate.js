@@ -1,26 +1,25 @@
 renderNav('donate');
 
-// Ticker glyphs rather than each coin's actual trademarked logo artwork - real, recognizable
-// currency symbols where Unicode has one (Bitcoin's own ₿, Litecoin's Ł, Dogecoin's Ð, Ethereum's
-// Ξ), short ticker text otherwise - each in that coin's real brand color.
-const CRYPTO_CURRENCIES = [
-  { name: 'Bitcoin', glyph: '₿', color: '#F7931A', address: '37TUnyD6GwTngbX7xwdxKMACTrv1Bnv2WF' },
-  { name: 'Litecoin', glyph: 'Ł', color: '#345D9D', address: 'MAJuhqgJzodjnxPvPm7AerdvoYB7796b2R' },
-  { name: 'Dogecoin', glyph: 'Ð', color: '#C2A633', address: 'D8ef6c1jRgTpWJhRqA8ty3bijFKFuqWgVL' },
-  { name: 'Shiba Inu', glyph: 'SHIB', color: '#EE7C21', address: '0x4425aC4F1E459825A5DaE3a46Cc0eb696F9258e8' },
-  { name: 'Bitcoin Cash', glyph: 'BCH', color: '#0AC18E', address: '19N9zygm6bPnLDMDEvxnSery16zdtzQysD' },
-  { name: 'Ethereum', glyph: 'Ξ', color: '#627EEA', address: '0x418eF1149E7eCada8Efb6a2a7DE896Fb5B68eBb4' }
-];
-
 const COPY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
 const CHECK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 const HEART_ICON = '<svg viewBox="0 0 24 24" fill="#ef4444" stroke="none"><path d="M12 21s-6.72-4.35-9.34-8.02C.9 10.49 1.02 7.49 3.42 5.6c1.88-1.5 4.46-1.2 6 .5L12 9l2.58-2.9c1.54-1.7 4.12-2 6-.5 2.4 1.89 2.52 4.89.72 7.38C18.72 16.65 12 21 12 21z"></path></svg>';
 
-function renderCryptoGrid() {
+async function renderCryptoGrid() {
   const grid = document.getElementById('cryptoGrid');
+  grid.innerHTML = '<div class="modal-list-empty">Loading...</div>';
+
+  let currencies;
+  try {
+    const res = await fetch('/api/donate/addresses');
+    currencies = await res.json();
+  } catch {
+    grid.innerHTML = '<div class="modal-list-empty">Could not load donation addresses.</div>';
+    return;
+  }
+
   grid.innerHTML = '';
 
-  CRYPTO_CURRENCIES.forEach((currency, index) => {
+  currencies.forEach((currency, index) => {
     const card = document.createElement('div');
     card.className = 'card crypto-card';
     card.innerHTML = `
