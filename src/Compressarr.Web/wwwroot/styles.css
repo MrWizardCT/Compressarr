@@ -714,6 +714,11 @@ a.primary:hover { opacity: 0.9; }
 
 .field-with-btn { display: flex; gap: 8px; }
 
+/* Overrides the shared input[type="number"], select { flex: 1 } rule above - without this the
+   unit dropdown splits the row 50/50 with the number input instead of sizing to its own content
+   like the buttons in every other .field-with-btn row do. */
+#minSizeUnit { flex: 0 0 auto; width: auto; }
+
 .folders-grid {
   display: grid;
   /* minmax(0, 1fr), not a bare 1fr - a grid track's implicit minimum is auto (its content's

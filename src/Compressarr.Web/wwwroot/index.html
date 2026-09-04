@@ -56,8 +56,15 @@
             </select>
           </div>
           <div class="field-block">
-            <label for="minSizeBytes">Minimum size (bytes)<span class="help-tag" tabindex="0" title="Skip files smaller than this size. 0 means no minimum.">?<span class="help-tip">Skip files smaller than this size. 0 means no minimum.</span></span></label>
-            <input type="number" id="minSizeBytes" min="0" />
+            <label for="minSizeBytes">Minimum size<span class="help-tag" tabindex="0" title="Skip files smaller than this size. 0 means no minimum.">?<span class="help-tip">Skip files smaller than this size. 0 means no minimum.</span></span></label>
+            <div class="field-with-btn">
+              <input type="number" id="minSizeBytes" min="0" step="any" />
+              <select id="minSizeUnit">
+                <option value="KB">KB</option>
+                <option value="MB" selected>MB</option>
+                <option value="GB">GB</option>
+              </select>
+            </div>
           </div>
           <div class="field-block">
             <label for="limit">Max files per run (0 = no limit)<span class="help-tag" tabindex="0" title="Stop after converting this many files in a single pass. 0 means no limit.">?<span class="help-tip">Stop after converting this many files in a single pass. 0 means no limit.</span></span></label>

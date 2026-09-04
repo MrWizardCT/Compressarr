@@ -24,12 +24,32 @@ function setPresetStatus(text, success) {
   }
 }
 
+const MIN_SIZE_UNIT_MULTIPLIERS = { KB: 1024, MB: 1024 * 1024, GB: 1024 * 1024 * 1024 };
+
+// Tracks whatever unit the dropdown last resolved to, so the change handler below can convert
+// the displayed number from that unit to the newly-selected one instead of reinterpreting the
+// same digits in a different unit (which would silently change the underlying byte value).
+let minSizeUnit = 'MB';
+
+function minSizeBytesFromForm() {
+  const raw = parseFloat(document.getElementById('minSizeBytes').value) || 0;
+  return Math.round(raw * MIN_SIZE_UNIT_MULTIPLIERS[minSizeUnit]);
+}
+
+document.getElementById('minSizeUnit').addEventListener('change', e => {
+  const bytes = minSizeBytesFromForm();
+  minSizeUnit = e.target.value;
+  document.getElementById('minSizeBytes').value = bytes / MIN_SIZE_UNIT_MULTIPLIERS[minSizeUnit];
+});
+
 function fillForm(dto) {
   document.getElementById('hbCliPath').value = dto.handBrakeCliPath;
   document.getElementById('presetsPath').value = dto.presetsPath;
   document.getElementById('hbOptions').value = dto.handBrakeOptions;
   document.getElementById('vidTypes').value = dto.vidTypes.join(', ');
-  document.getElementById('minSizeBytes').value = dto.minSizeBytes;
+  minSizeUnit = 'MB';
+  document.getElementById('minSizeUnit').value = minSizeUnit;
+  document.getElementById('minSizeBytes').value = (dto.minSizeBytes || 0) / MIN_SIZE_UNIT_MULTIPLIERS[minSizeUnit];
   document.getElementById('limit').value = dto.limit;
   document.getElementById('outSameAsIn').checked = dto.outSameAsIn;
   document.getElementById('moveFiles').checked = dto.moveFiles;
@@ -64,7 +84,7 @@ function readForm() {
     moveFiles: document.getElementById('moveFiles').checked,
     clearTitleMetadata: document.getElementById('clearTitleMetadata').checked,
     limit: parseInt(document.getElementById('limit').value, 10) || 0,
-    minSizeBytes: parseInt(document.getElementById('minSizeBytes').value, 10) || 0,
+    minSizeBytes: minSizeBytesFromForm(),
     logFilePath: document.getElementById('logFilePath').value,
     retentionDays: parseInt(document.getElementById('retentionDays').value, 10) || 0,
     postExecCmd: document.getElementById('postExecCmd').value,
