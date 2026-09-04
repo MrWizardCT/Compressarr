@@ -284,7 +284,7 @@ function renderQueueList() {
       const pop = document.createElement('div');
       pop.className = 'queue-popover';
       pop.innerHTML = `
-        <div class="queue-popover-item" data-act="skip">${item.isSkipped ? 'Unskip' : 'Skip this pass'}</div>
+        <div class="queue-popover-item" data-act="skip">${item.isSkipped ? 'Unskip' : 'Skip'}</div>
         <div class="queue-popover-item danger" data-act="remove">Remove from queue</div>
       `;
       row.querySelector('.queue-menu-wrap').appendChild(pop);

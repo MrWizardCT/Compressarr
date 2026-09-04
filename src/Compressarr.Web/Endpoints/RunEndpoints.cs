@@ -212,7 +212,7 @@ public static class RunEndpoints
             return Results.Ok();
         });
 
-        // "Skip this pass" from the queue's 3-dot menu - the entry stays visible (dimmed) but
+        // "Skip" from the queue's 3-dot menu - the entry stays visible (dimmed) but
         // ConversionOrchestrator excludes it from what actually gets encoded. Persists until
         // toggled back off from the same menu, not a true one-shot skip (see ResumeEntry.Skipped).
         app.MapPost("/api/run/queue/skip", (SkipQueueEntryRequest request, IConfigStore configStore, IPathExpander pathExpander, IResumeStateStore resumeStore) =>
