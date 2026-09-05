@@ -60,6 +60,17 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[InstallDelete]
+; Wipe the whole install directory before laying down fresh files. Without this, an in-place
+; upgrade only overwrites files the current package ships - it never removes files that belonged
+; to a PREVIOUS install but aren't part of this one. Confirmed real-world impact 2026-09-05:
+; upgrading a self-contained install (which bundles coreclr.dll/hostfxr.dll/hostpolicy.dll
+; directly in {app}) to this framework-dependent build left those runtime files behind, and
+; .NET's host detects a local coreclr.dll as "this is a self-contained app" - it then searches
+; for the runtime INSIDE {app} instead of the real machine-wide install, failing with "You must
+; install or update .NET" even though the correct runtime is genuinely installed system-wide.
+Type: filesandordirs; Name: "{app}"
+
 [Files]
 ; The framework-dependent publish output (exe, wwwroot, Assets - no bundled .NET runtime) -
 ; recursesubdirs/createallsubdirs so wwwroot's own subfolders (assets/) come along too.
@@ -76,6 +87,28 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+function InitializeSetup(): Boolean;
+var
+  UninstallString: String;
+  ResultCode: Integer;
+begin
+  Result := True;
+  // If any previous version is already installed, silently run ITS OWN registered uninstaller
+  // before this version's files ever get laid down. Confirmed necessary 2026-09-05: switching
+  // from a self-contained build to this framework-dependent one left coreclr.dll/hostfxr.dll
+  // behind from the old install - an in-place upgrade only overwrites files the NEW package
+  // ships, it never removes files that belonged only to the OLD one. .NET's host then treated
+  // {app} itself as a self-contained runtime root and failed to find the real machine-wide
+  // runtime, even though it was correctly installed system-wide. Running the old uninstaller
+  // first guarantees a clean slate on every future upgrade, not just this one - the
+  // [InstallDelete] entry below is a defensive backstop in case this ever can't find/run it.
+  if RegQueryStringValue(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6884601A-BC28-4492-BD25-354A350A5114}_is1', 'UninstallString', UninstallString) then
+  begin
+    UninstallString := RemoveQuotes(UninstallString);
+    Exec(UninstallString, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;

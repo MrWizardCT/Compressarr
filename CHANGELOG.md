@@ -95,6 +95,14 @@ for that full history.
   now ships a single, much smaller framework-dependent installer instead of the self-contained
   build - removing the exposure rather than working around it. See Installation below for the
   runtime it now requires.
+- Upgrading from a self-contained install (v2.1.0, or the briefly-shipped self-contained 2.1.1
+  build) left `coreclr.dll`/`hostfxr.dll`/`hostpolicy.dll` behind in the install folder, since an
+  in-place upgrade only overwrites files the new package ships - it never removes files that
+  belonged only to the old one. .NET's host then treated the install folder itself as a
+  self-contained runtime root and failed to find the real machine-wide runtime, showing "You must
+  install or update .NET" even on a machine with the correct runtime properly installed. The
+  installer now runs the previous version's own uninstaller before installing, guaranteeing a
+  clean upgrade every time.
 
 ### Security
 - Donation addresses on the Donate page are no longer stored as single literal strings in the
