@@ -113,9 +113,13 @@ percent saved.
 
 ## Installation
 
-1. Download `Compressarr-Setup-x.x.x.exe` from the
+1. Install the [.NET 10 ASP.NET Core Runtime (x64)](https://dotnet.microsoft.com/en-us/download/dotnet/10.0/runtime)
+   if you don't already have it - that single installer includes the base .NET Runtime it depends
+   on too, so nothing else is needed. (You already have it if you run other ASP.NET Core-based
+   apps or services.)
+2. Download `Compressarr-Setup-x.x.x.exe` from the
    [Releases](https://github.com/MrWizardCT/Compressarr/releases) page.
-2. Run it and follow the installer. It installs to Program Files, adds a Start Menu shortcut
+3. Run it and follow the installer. It installs to Program Files, adds a Start Menu shortcut
    (and an optional desktop icon), and registers a normal Windows uninstaller.
 
    > **A note on Windows SmartScreen / Smart App Control**: Windows may flag the installer or
@@ -133,16 +137,13 @@ percent saved.
    > [VirusTotal](https://www.virustotal.com/) as part of publishing it - the scan link is at the
    > bottom of that release's notes on the [Releases](https://github.com/MrWizardCT/Compressarr/releases)
    > page, if you'd like to check it independently of trusting the publisher signature.
-3. Launch Compressarr from the Start Menu - it runs as a tray icon only, with no window of its
+4. Launch Compressarr from the Start Menu - it runs as a tray icon only, with no window of its
    own. Right-click the tray icon for **Open Web UI**, or just browse to
    `http://localhost:1212` (or whatever port you've configured).
-4. On the Settings page, use **Check/Install** next to HandBrakeCLI path to detect an existing
+5. On the Settings page, use **Check/Install** next to HandBrakeCLI path to detect an existing
    install or download one automatically, and **Install/Merge Presets** to add Compressarr's own
    HandBrake presets to your `presets.json` (merging into an existing file if you already have
    one, installing fresh if you don't).
-
-Compressarr is self-contained: it bundles its own .NET runtime, so nothing else needs to be
-installed first.
 
 ---
 
@@ -480,7 +481,7 @@ src/
   Compressarr.Web/         Minimal-API endpoints + wwwroot (the entire browser UI: vanilla JS/HTML/CSS)
   Compressarr.Desktop/     Tray-only host - Avalonia TrayIcon, Windows toast notifications, composition root
 installer/
-  Compressarr.iss           Inno Setup script that packages the self-contained publish output
+  Compressarr.iss           Inno Setup script that packages the framework-dependent publish output
 tests/
   Compressarr.Core.Tests/   xUnit tests for Core
 CHANGELOG.md               Release history

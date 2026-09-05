@@ -47,10 +47,6 @@ for that full history.
   the order files will be processed in, regardless of which Lane each one belongs to.
 - A [detailed GitHub Wiki](https://github.com/MrWizardCT/Compressarr/wiki) with a full walkthrough
   of every page, written for people new to Compressarr.
-- Two installer variants are now published: `Compressarr-Setup-2.1.1-Full.exe` (self-contained,
-  bundles its own .NET runtime - the same kind of build every prior release shipped) and
-  `Compressarr-Setup-2.1.1-NoFW.exe` (framework-dependent, smaller, requires the matching .NET
-  runtime already installed). Pick whichever fits - Full if you're not sure.
 
 ### Changed
 - Start/Stop Monitoring is now a single toggle button instead of two separate ones.
@@ -90,6 +86,15 @@ for that full history.
   improvement independent of the VirusTotal finding above. Generic Webhook keeps its own
   fully-flexible sender, since it's the one channel that genuinely needs arbitrary
   method/header/URL configurability.
+- Resolved a second, unrelated false positive (`Program:Win32/Contebrew.A!ml`) that Windows
+  Defender's live cloud/SmartScreen reputation classifier flagged on a real download of the
+  self-contained installer, despite VirusTotal - including a same-day re-scan with Microsoft's own
+  engine - showing it completely clean. That classifier weighs signals VirusTotal's static engine
+  never sees: publisher trust (this project's cert is self-signed, so it starts with none) and how
+  new/large/rarely-downloaded a file is. Rather than chase a live reputation heuristic, Compressarr
+  now ships a single, much smaller framework-dependent installer instead of the self-contained
+  build - removing the exposure rather than working around it. See Installation below for the
+  runtime it now requires.
 
 ### Security
 - Donation addresses on the Donate page are no longer stored as single literal strings in the

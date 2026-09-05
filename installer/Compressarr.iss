@@ -1,6 +1,16 @@
 ; Inno Setup script for Compressarr - a tray-only background app with its entire UI in the
-; browser (Radarr/Sonarr-style). Packages the self-contained win-x64 publish output produced by:
-;   dotnet publish src/Compressarr.Desktop -c Release -r win-x64 -f net10.0-windows10.0.19041.0 --self-contained true -o publish/win-x64
+; browser (Radarr/Sonarr-style). Packages the framework-dependent win-x64 publish output produced
+; by (requires the matching .NET Desktop/ASP.NET Core runtime already installed on the target
+; machine - see README for the download link):
+;   dotnet publish src/Compressarr.Desktop -c Release -r win-x64 -f net10.0-windows10.0.19041.0 --self-contained false -o publish/win-x64-fx
+;
+; Framework-dependent only as of 2.1.1 (2026-09-05): the previous self-contained "Full" build
+; (275MB, bundling its own .NET runtime) was flagged by Windows Defender's cloud/SmartScreen
+; reputation classifier (Program:Win32/Contebrew.A!ml) on a real download - a live reputation
+; heuristic VirusTotal's static engine never reproduced (it scanned the identical file 0/68 clean,
+; Microsoft's own engine included). A self-signed cert carries no publisher reputation, and a
+; large, rarely-downloaded bundle is exactly what that classifier flags. Dropping to a single,
+; much smaller framework-dependent build removes that exposure entirely rather than chasing it.
 ;
 ; Build with: ISCC.exe installer\Compressarr.iss
 
@@ -51,9 +61,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; The entire self-contained publish output (exe, .NET/ASP.NET Core runtime, wwwroot, Assets) -
+; The framework-dependent publish output (exe, wwwroot, Assets - no bundled .NET runtime) -
 ; recursesubdirs/createallsubdirs so wwwroot's own subfolders (assets/) come along too.
-Source: "..\publish\win-x64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\publish\win-x64-fx\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

@@ -3,14 +3,16 @@
     <OutputType>WinExe</OutputType>
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
-    <!-- Self-contained deployment (locked in for v2): bundles the .NET runtime so the app runs
-         without a separately-installed SDK/runtime on the target machine. Multi-targeted so the
-         Windows build can carry a real Windows.UI.Notifications toast implementation (needs a
-         windows-flavored TFM to reference the raw .winmd metadata) while macOS/Linux stay on the
-         plain cross-platform TFM. -->
+    <!-- Framework-dependent deployment (switched from self-contained as of 2.1.1, 2026-09-05: the
+         self-contained build's size and lack of publisher reputation triggered a Windows Defender
+         cloud/SmartScreen false positive - see installer/Compressarr.iss). Requires the matching
+         .NET runtime already installed on the target machine. Multi-targeted so the Windows build
+         can carry a real Windows.UI.Notifications toast implementation (needs a windows-flavored
+         TFM to reference the raw .winmd metadata) while macOS/Linux stay on the plain
+         cross-platform TFM. -->
     <TargetFramework></TargetFramework>
     <TargetFrameworks>net10.0-windows10.0.19041.0;net10.0</TargetFrameworks>
-    <SelfContained>true</SelfContained>
+    <SelfContained>false</SelfContained>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)'=='net10.0-windows10.0.19041.0'">
