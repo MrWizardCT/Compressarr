@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace Compressarr.Core.Notifications;
 
 /// <summary>Gotify - a self-hosted push notification server, popular in the same self-hosted
@@ -8,11 +6,11 @@ namespace Compressarr.Core.Notifications;
 /// query parameter Gotify also accepts, so it never ends up in a server access log's URL.</summary>
 public sealed class GotifyNotifier : INotifier
 {
-    private readonly IWebhookSender _sender;
+    private readonly INotificationHttpClient _http;
 
-    public GotifyNotifier(IWebhookSender sender)
+    public GotifyNotifier(INotificationHttpClient http)
     {
-        _sender = sender;
+        _http = http;
     }
 
     public string Type => "gotify";
@@ -45,13 +43,28 @@ public sealed class GotifyNotifier : INotifier
         return Post(settings, "Compressarr test notification", "This is a test notification from Compressarr.", 5, ct);
     }
 
-    private Task<NotifyResult> Post(IReadOnlyDictionary<string, string> settings, string title, string message, int priority, CancellationToken ct)
+    private async Task<NotifyResult> Post(IReadOnlyDictionary<string, string> settings, string title, string message, int priority, CancellationToken ct)
     {
         settings.TryGetValue("server", out var server);
         settings.TryGetValue("appToken", out var appToken);
         var url = $"{(server ?? "").TrimEnd('/')}/message";
-        var body = JsonSerializer.Serialize(new { title, message, priority });
-        var headers = new Dictionary<string, string> { ["X-Gotify-Key"] = appToken ?? "" };
-        return _sender.PostAsync(url, HttpMethod.Post, headers, body, "application/json", ct);
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var destination) || string.IsNullOrWhiteSpace(appToken))
+        {
+            return new NotifyResult(false, "A valid Server URL and Application Token are both required.");
+        }
+
+        var headers = new Dictionary<string, string> { ["X-Gotify-Key"] = appToken };
+
+        try
+        {
+            using var response = await _http.PostJsonAsync(destination, new { title, message, priority }, headers, ct);
+            return response.IsSuccessStatusCode
+                ? new NotifyResult(true, $"Sent ({(int)response.StatusCode}).")
+                : new NotifyResult(false, $"{(int)response.StatusCode} {response.ReasonPhrase}");
+        }
+        catch (Exception ex)
+        {
+            return new NotifyResult(false, $"Failed: {ex.Message}");
+        }
     }
 }

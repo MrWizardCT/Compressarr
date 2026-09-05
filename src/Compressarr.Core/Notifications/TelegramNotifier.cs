@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace Compressarr.Core.Notifications;
 
 /// <summary>Telegram Bot API - a bot token plus the target chat id. Sends plain text with no
@@ -8,11 +6,11 @@ namespace Compressarr.Core.Notifications;
 /// or filename containing any of them would otherwise silently break formatting or fail the send.</summary>
 public sealed class TelegramNotifier : INotifier
 {
-    private readonly IWebhookSender _sender;
+    private readonly INotificationHttpClient _http;
 
-    public TelegramNotifier(IWebhookSender sender)
+    public TelegramNotifier(INotificationHttpClient http)
     {
-        _sender = sender;
+        _http = http;
     }
 
     public string Type => "telegram";
@@ -41,12 +39,27 @@ public sealed class TelegramNotifier : INotifier
         return Post(settings, text, ct);
     }
 
-    private Task<NotifyResult> Post(IReadOnlyDictionary<string, string> settings, string text, CancellationToken ct)
+    private async Task<NotifyResult> Post(IReadOnlyDictionary<string, string> settings, string text, CancellationToken ct)
     {
         settings.TryGetValue("botToken", out var botToken);
         settings.TryGetValue("chatId", out var chatId);
-        var url = $"https://api.telegram.org/bot{botToken}/sendMessage";
-        var body = JsonSerializer.Serialize(new { chat_id = chatId, text });
-        return _sender.PostAsync(url, HttpMethod.Post, new Dictionary<string, string>(), body, "application/json", ct);
+        if (string.IsNullOrWhiteSpace(botToken) || string.IsNullOrWhiteSpace(chatId))
+        {
+            return new NotifyResult(false, "Bot Token and Chat ID are both required.");
+        }
+
+        var destination = new Uri($"https://api.telegram.org/bot{botToken}/sendMessage");
+
+        try
+        {
+            using var response = await _http.PostJsonAsync(destination, new { chat_id = chatId, text }, headers: null, ct);
+            return response.IsSuccessStatusCode
+                ? new NotifyResult(true, $"Sent ({(int)response.StatusCode}).")
+                : new NotifyResult(false, $"{(int)response.StatusCode} {response.ReasonPhrase}");
+        }
+        catch (Exception ex)
+        {
+            return new NotifyResult(false, $"Failed: {ex.Message}");
+        }
     }
 }

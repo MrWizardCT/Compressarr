@@ -26,8 +26,11 @@ OutputDir=..\publish
 OutputBaseFilename=Compressarr-Setup-{#MyAppVersion}
 SetupIconFile=..\src\Compressarr.Desktop\Assets\CompressarrIcon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
-Compression=lzma2
-SolidCompression=yes
+; Uncompressed: LZMA2's compressed/embedded-payload structure is what triggered a Microsoft
+; Defender false positive (Trojan:Win32/Wacatac.B!ml) on the notification feature's otherwise
+; completely benign HttpClient code - confirmed via a controlled A/B (identical payload, only the
+; compression setting changed) before landing this. Installer size grows accordingly.
+Compression=none
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible

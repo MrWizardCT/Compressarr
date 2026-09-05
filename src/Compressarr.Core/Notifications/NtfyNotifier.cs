@@ -6,11 +6,11 @@ namespace Compressarr.Core.Notifications;
 /// public ntfy.sh instance in the UI placeholder only, not hardcoded here.</summary>
 public sealed class NtfyNotifier : INotifier
 {
-    private readonly IWebhookSender _sender;
+    private readonly INotificationHttpClient _http;
 
-    public NtfyNotifier(IWebhookSender sender)
+    public NtfyNotifier(INotificationHttpClient http)
     {
-        _sender = sender;
+        _http = http;
     }
 
     public string Type => "ntfy";
@@ -47,11 +47,15 @@ public sealed class NtfyNotifier : INotifier
         return Post(settings, "Compressarr test notification", "This is a test notification from Compressarr.", "3", "white_check_mark", ct);
     }
 
-    private Task<NotifyResult> Post(IReadOnlyDictionary<string, string> settings, string title, string message, string priority, string tags, CancellationToken ct)
+    private async Task<NotifyResult> Post(IReadOnlyDictionary<string, string> settings, string title, string message, string priority, string tags, CancellationToken ct)
     {
         settings.TryGetValue("server", out var server);
         settings.TryGetValue("topic", out var topic);
         var url = $"{(server ?? "").TrimEnd('/')}/{topic}";
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var destination))
+        {
+            return new NotifyResult(false, "A valid Server URL and Topic are both required.");
+        }
 
         var headers = new Dictionary<string, string>
         {
@@ -64,8 +68,16 @@ public sealed class NtfyNotifier : INotifier
             headers["Authorization"] = $"Bearer {token}";
         }
 
-        // StringContent's mediaType parameter must be the bare type - it appends the charset
-        // itself from the Encoding argument, so "text/plain; charset=utf-8" here throws.
-        return _sender.PostAsync(url, HttpMethod.Post, headers, message, "text/plain", ct);
+        try
+        {
+            using var response = await _http.PostTextAsync(destination, message, headers, ct);
+            return response.IsSuccessStatusCode
+                ? new NotifyResult(true, $"Sent ({(int)response.StatusCode}).")
+                : new NotifyResult(false, $"{(int)response.StatusCode} {response.ReasonPhrase}");
+        }
+        catch (Exception ex)
+        {
+            return new NotifyResult(false, $"Failed: {ex.Message}");
+        }
     }
 }

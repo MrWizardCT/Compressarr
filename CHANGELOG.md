@@ -6,19 +6,31 @@ for that full history.
 
 ## [2.1.1] - 2026-09-05
 
-### Removed
-- The Discord and Slack notification channels have been removed. Both were identified, through
-  systematic isolation testing against VirusTotal, as independent causes of a false-positive
-  `Trojan:Win32/Wacatac.B!ml` flag from one vendor on v2.1.0's installer (a heuristic match against
-  the "build a JSON message, POST it to a fixed incoming-webhook host" pattern common to real
-  exfiltration malware - Compressarr's own payloads never included anything beyond a run summary,
-  but the code shape itself was enough to trigger it on each of these two channels independently).
-  There's no direct in-app replacement for either in this release - a self-hosted option like ntfy
-  or Gotify, or Notifiarr's own Discord relay integration, are the closest built-in alternatives.
+### Fixed
+- Resolved a false-positive `Trojan:Win32/Wacatac.B!ml` flag from one vendor on v2.1.0's
+  installer. Root-caused through systematic isolation testing against VirusTotal to the
+  installer's LZMA2 compression of the embedded application payload, not to any notification
+  code, service, or architecture - confirmed by an A/B test where an identical build scanned
+  clean the moment compression was disabled. The installer now ships uncompressed
+  (`Compression=none`) as a result; every notification channel, including Discord and Slack,
+  remains fully intact.
+- Along the way, the notification providers (Discord, Slack, Telegram, Pushover, ntfy, Gotify,
+  Notifiarr, IFTTT) were also rewritten onto a narrower, intentionally boring HTTP client
+  interface (fixed JSON/form/text POST shapes, never a fully generic method+headers+content-type
+  sender) instead of sharing one universal webhook-sending routine - a deliberate architecture
+  improvement independent of the VirusTotal finding above. Generic Webhook keeps its own
+  fully-flexible sender, since it's the one channel that genuinely needs arbitrary
+  method/header/URL configurability.
+
+### Added
+- Two installer variants are now published: `Compressarr-Setup-2.1.1-Full.exe` (self-contained,
+  bundles its own .NET runtime - the same kind of build every prior release shipped) and
+  `Compressarr-Setup-2.1.1-NoFW.exe` (framework-dependent, smaller, requires the matching .NET
+  runtime already installed). Pick whichever fits - Full if you're not sure.
 
 ### Security
 - Donation addresses on the Donate page are no longer stored as single literal strings in the
-  compiled binary - unrelated to the Discord finding above, but a reasonable hardening measure
+  compiled binary - unrelated to the Wacatac finding above, but a reasonable hardening measure
   found during the same investigation.
 
 ## [2.1.0] - 2026-09-04

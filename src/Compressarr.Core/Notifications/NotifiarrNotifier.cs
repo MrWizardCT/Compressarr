@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace Compressarr.Core.Notifications;
 
 /// <summary>Notifiarr - a Discord-relay service built specifically for the *arr ecosystem
@@ -15,11 +13,11 @@ public sealed class NotifiarrNotifier : INotifier
     private const string ColorWarning = "F1C40F";
     private const string ColorError = "E74C3C";
 
-    private readonly IWebhookSender _sender;
+    private readonly INotificationHttpClient _http;
 
-    public NotifiarrNotifier(IWebhookSender sender)
+    public NotifiarrNotifier(INotificationHttpClient http)
     {
-        _sender = sender;
+        _http = http;
     }
 
     public string Type => "notifiarr";
@@ -57,13 +55,16 @@ public sealed class NotifiarrNotifier : INotifier
         return Post(settings, "Compressarr test notification", "This is a test notification from Compressarr.", ColorSuccess, new List<object>(), ct);
     }
 
-    private Task<NotifyResult> Post(IReadOnlyDictionary<string, string> settings, string title, string description, string color, List<object> fields, CancellationToken ct)
+    private async Task<NotifyResult> Post(IReadOnlyDictionary<string, string> settings, string title, string description, string color, List<object> fields, CancellationToken ct)
     {
         settings.TryGetValue("apiKey", out var apiKey);
         settings.TryGetValue("channelId", out var channelIdText);
-        long.TryParse(channelIdText, out var channelId);
+        if (string.IsNullOrWhiteSpace(apiKey) || !long.TryParse(channelIdText, out var channelId))
+        {
+            return new NotifyResult(false, "Notifiarr API Key and a numeric Discord Channel ID are both required.");
+        }
 
-        var url = $"https://notifiarr.com/api/v1/notification/passthrough/{apiKey}";
+        var destination = new Uri($"https://notifiarr.com/api/v1/notification/passthrough/{apiKey}");
         var payload = new
         {
             notification = new { update = false, name = "Compressarr", @event = "run-complete" },
@@ -76,8 +77,18 @@ public sealed class NotifiarrNotifier : INotifier
                 ids = new { channel = channelId }
             }
         };
-        var body = JsonSerializer.Serialize(payload);
         var headers = new Dictionary<string, string> { ["Accept"] = "text/plain" };
-        return _sender.PostAsync(url, HttpMethod.Post, headers, body, "application/json", ct);
+
+        try
+        {
+            using var response = await _http.PostJsonAsync(destination, payload, headers, ct);
+            return response.IsSuccessStatusCode
+                ? new NotifyResult(true, $"Sent ({(int)response.StatusCode}).")
+                : new NotifyResult(false, $"{(int)response.StatusCode} {response.ReasonPhrase}");
+        }
+        catch (Exception ex)
+        {
+            return new NotifyResult(false, $"Failed: {ex.Message}");
+        }
     }
 }

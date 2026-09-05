@@ -54,8 +54,15 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotificationService, NoOpNotificationService>();
         services.AddSingleton<IRunProgressReporter, NullRunProgressReporter>();
 
+        // Generic Webhook is the one notifier that genuinely needs a configurable method and
+        // arbitrary headers, so it alone keeps the older, fully-generic IWebhookSender. Every
+        // fixed-destination notifier below uses the narrower INotificationHttpClient instead.
         services.AddSingleton<IWebhookSender, WebhookSender>();
         services.AddSingleton<INotifier, WebhookNotifier>();
+
+        services.AddSingleton<INotificationHttpClient, NotificationHttpClient>();
+        services.AddSingleton<INotifier, DiscordNotifier>();
+        services.AddSingleton<INotifier, SlackNotifier>();
         services.AddSingleton<INotifier, TelegramNotifier>();
         services.AddSingleton<INotifier, PushoverNotifier>();
         services.AddSingleton<INotifier, NtfyNotifier>();

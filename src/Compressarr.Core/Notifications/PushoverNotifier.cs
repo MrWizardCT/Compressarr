@@ -1,6 +1,3 @@
-using System.Net;
-using System.Text;
-
 namespace Compressarr.Core.Notifications;
 
 /// <summary>Pushover - form-encoded POST per their long-standing documented API
@@ -8,11 +5,13 @@ namespace Compressarr.Core.Notifications;
 /// guaranteed-stable option every client integration example uses.</summary>
 public sealed class PushoverNotifier : INotifier
 {
-    private readonly IWebhookSender _sender;
+    private static readonly Uri Destination = new("https://api.pushover.net/1/messages.json");
 
-    public PushoverNotifier(IWebhookSender sender)
+    private readonly INotificationHttpClient _http;
+
+    public PushoverNotifier(INotificationHttpClient http)
     {
-        _sender = sender;
+        _http = http;
     }
 
     public string Type => "pushover";
@@ -40,19 +39,34 @@ public sealed class PushoverNotifier : INotifier
         return Post(settings, "Compressarr test notification", "This is a test notification from Compressarr.", "0", ct);
     }
 
-    private Task<NotifyResult> Post(IReadOnlyDictionary<string, string> settings, string title, string message, string priority, CancellationToken ct)
+    private async Task<NotifyResult> Post(IReadOnlyDictionary<string, string> settings, string title, string message, string priority, CancellationToken ct)
     {
         settings.TryGetValue("appToken", out var appToken);
         settings.TryGetValue("userKey", out var userKey);
-        // WebUtility.UrlEncode (space -> '+'), not Uri.EscapeDataString (space -> %20) - the
-        // former matches actual application/x-www-form-urlencoded semantics.
-        var body = new StringBuilder()
-            .Append("token=").Append(WebUtility.UrlEncode(appToken ?? ""))
-            .Append("&user=").Append(WebUtility.UrlEncode(userKey ?? ""))
-            .Append("&title=").Append(WebUtility.UrlEncode(title))
-            .Append("&message=").Append(WebUtility.UrlEncode(message))
-            .Append("&priority=").Append(priority)
-            .ToString();
-        return _sender.PostAsync("https://api.pushover.net/1/messages.json", HttpMethod.Post, new Dictionary<string, string>(), body, "application/x-www-form-urlencoded", ct);
+        if (string.IsNullOrWhiteSpace(appToken) || string.IsNullOrWhiteSpace(userKey))
+        {
+            return new NotifyResult(false, "Application API Token and User Key are both required.");
+        }
+
+        var fields = new Dictionary<string, string>
+        {
+            ["token"] = appToken,
+            ["user"] = userKey,
+            ["title"] = title,
+            ["message"] = message,
+            ["priority"] = priority
+        };
+
+        try
+        {
+            using var response = await _http.PostFormAsync(Destination, fields, ct);
+            return response.IsSuccessStatusCode
+                ? new NotifyResult(true, $"Sent ({(int)response.StatusCode}).")
+                : new NotifyResult(false, $"{(int)response.StatusCode} {response.ReasonPhrase}");
+        }
+        catch (Exception ex)
+        {
+            return new NotifyResult(false, $"Failed: {ex.Message}");
+        }
     }
 }

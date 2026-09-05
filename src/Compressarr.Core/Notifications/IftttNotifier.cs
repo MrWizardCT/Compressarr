@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace Compressarr.Core.Notifications;
 
 /// <summary>IFTTT Maker Webhooks - technically already reachable via the Generic Webhook notifier
@@ -9,11 +7,11 @@ namespace Compressarr.Core.Notifications;
 /// as building dedicated Discord/Slack notifiers instead of leaving those to Generic Webhook too.</summary>
 public sealed class IftttNotifier : INotifier
 {
-    private readonly IWebhookSender _sender;
+    private readonly INotificationHttpClient _http;
 
-    public IftttNotifier(IWebhookSender sender)
+    public IftttNotifier(INotificationHttpClient http)
     {
-        _sender = sender;
+        _http = http;
     }
 
     public string Type => "ifttt";
@@ -39,12 +37,27 @@ public sealed class IftttNotifier : INotifier
         return Post(settings, "Compressarr test notification", "This is a test notification from Compressarr.", null, ct);
     }
 
-    private Task<NotifyResult> Post(IReadOnlyDictionary<string, string> settings, string value1, string value2, string? value3, CancellationToken ct)
+    private async Task<NotifyResult> Post(IReadOnlyDictionary<string, string> settings, string value1, string value2, string? value3, CancellationToken ct)
     {
         settings.TryGetValue("eventName", out var eventName);
         settings.TryGetValue("webhooksKey", out var webhooksKey);
-        var url = $"https://maker.ifttt.com/trigger/{eventName}/with/key/{webhooksKey}";
-        var body = JsonSerializer.Serialize(new { value1, value2, value3 });
-        return _sender.PostAsync(url, HttpMethod.Post, new Dictionary<string, string>(), body, "application/json", ct);
+        if (string.IsNullOrWhiteSpace(eventName) || string.IsNullOrWhiteSpace(webhooksKey))
+        {
+            return new NotifyResult(false, "Event Name and Webhooks Key are both required.");
+        }
+
+        var destination = new Uri($"https://maker.ifttt.com/trigger/{eventName}/with/key/{webhooksKey}");
+
+        try
+        {
+            using var response = await _http.PostJsonAsync(destination, new { value1, value2, value3 }, headers: null, ct);
+            return response.IsSuccessStatusCode
+                ? new NotifyResult(true, $"Sent ({(int)response.StatusCode}).")
+                : new NotifyResult(false, $"{(int)response.StatusCode} {response.ReasonPhrase}");
+        }
+        catch (Exception ex)
+        {
+            return new NotifyResult(false, $"Failed: {ex.Message}");
+        }
     }
 }

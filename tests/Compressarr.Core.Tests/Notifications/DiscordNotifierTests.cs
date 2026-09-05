@@ -22,74 +22,74 @@ file sealed class FakeNotificationHttpClient : INotificationHttpClient
     }
 
     public Task<HttpResponseMessage> PostFormAsync(Uri destination, IReadOnlyDictionary<string, string> fields, CancellationToken ct) =>
-        throw new NotSupportedException("Notifiarr only ever posts JSON.");
+        throw new NotSupportedException("Discord only ever posts JSON.");
 
     public Task<HttpResponseMessage> PostTextAsync(Uri destination, string text, IReadOnlyDictionary<string, string>? headers, CancellationToken ct) =>
-        throw new NotSupportedException("Notifiarr only ever posts JSON.");
+        throw new NotSupportedException("Discord only ever posts JSON.");
 }
 
-public class NotifiarrNotifierTests
+public class DiscordNotifierTests
 {
     [Fact]
-    public async Task SendAsync_PostsToPassthroughUrlWithApiKeyInPath()
+    public async Task SendAsync_PostsToConfiguredWebhookUrl()
     {
         var http = new FakeNotificationHttpClient();
-        var notifier = new NotifiarrNotifier(http);
+        var notifier = new DiscordNotifier(http);
         var evt = new NotificationEvent(NotificationOutcome.Success, "Title", "Body", 3, 1.5, TimeSpan.FromMinutes(2), null);
 
-        await notifier.SendAsync(new Dictionary<string, string> { ["apiKey"] = "key123", ["channelId"] = "987654321" }, evt, CancellationToken.None);
+        await notifier.SendAsync(new Dictionary<string, string> { ["url"] = "https://discord.com/api/webhooks/1/abc" }, evt, CancellationToken.None);
 
-        Assert.Equal("https://notifiarr.com/api/v1/notification/passthrough/key123", http.LastDestination!.ToString());
+        Assert.Equal("https://discord.com/api/webhooks/1/abc", http.LastDestination!.ToString());
     }
 
     [Fact]
-    public async Task SendAsync_BodyIncludesChannelIdAsNumberAndDiscordText()
+    public async Task SendAsync_BodyIsAnEmbedWithTitleAndDescription()
     {
         var http = new FakeNotificationHttpClient();
-        var notifier = new NotifiarrNotifier(http);
+        var notifier = new DiscordNotifier(http);
         var evt = new NotificationEvent(NotificationOutcome.Success, "My Title", "My Body", 3, 1.5, TimeSpan.FromMinutes(2), null);
 
-        await notifier.SendAsync(new Dictionary<string, string> { ["apiKey"] = "key123", ["channelId"] = "987654321" }, evt, CancellationToken.None);
+        await notifier.SendAsync(new Dictionary<string, string> { ["url"] = "https://discord.com/api/webhooks/1/abc" }, evt, CancellationToken.None);
 
         using var doc = JsonDocument.Parse(http.LastBody!);
-        Assert.Equal(987654321, doc.RootElement.GetProperty("discord").GetProperty("ids").GetProperty("channel").GetInt64());
-        Assert.Equal("My Title", doc.RootElement.GetProperty("discord").GetProperty("text").GetProperty("title").GetString());
-        Assert.Equal("My Body", doc.RootElement.GetProperty("discord").GetProperty("text").GetProperty("description").GetString());
-        Assert.Equal("Compressarr", doc.RootElement.GetProperty("notification").GetProperty("name").GetString());
+        var embed = doc.RootElement.GetProperty("embeds")[0];
+        Assert.Equal("My Title", embed.GetProperty("title").GetString());
+        Assert.Equal("My Body", embed.GetProperty("description").GetString());
     }
 
     [Fact]
-    public async Task SendAsync_ColorIsHexStringNotDecimal()
+    public async Task SendAsync_ErrorOutcomeUsesRedColor()
     {
         var http = new FakeNotificationHttpClient();
-        var notifier = new NotifiarrNotifier(http);
+        var notifier = new DiscordNotifier(http);
         var evt = new NotificationEvent(NotificationOutcome.Error, "T", "B", 1, 1, TimeSpan.FromSeconds(1), null);
 
-        await notifier.SendAsync(new Dictionary<string, string> { ["apiKey"] = "k", ["channelId"] = "1" }, evt, CancellationToken.None);
+        await notifier.SendAsync(new Dictionary<string, string> { ["url"] = "https://discord.com/api/webhooks/1/abc" }, evt, CancellationToken.None);
 
         using var doc = JsonDocument.Parse(http.LastBody!);
-        Assert.Equal("E74C3C", doc.RootElement.GetProperty("discord").GetProperty("color").GetString());
+        Assert.Equal(0xE74C3C, doc.RootElement.GetProperty("embeds")[0].GetProperty("color").GetInt32());
     }
 
     [Fact]
-    public async Task SendAsync_SetsAcceptHeader()
+    public async Task SendAsync_InvalidUrlFailsWithoutCallingTheClient()
     {
         var http = new FakeNotificationHttpClient();
-        var notifier = new NotifiarrNotifier(http);
+        var notifier = new DiscordNotifier(http);
         var evt = new NotificationEvent(NotificationOutcome.Success, "T", "B", 1, 1, TimeSpan.FromSeconds(1), null);
 
-        await notifier.SendAsync(new Dictionary<string, string> { ["apiKey"] = "k", ["channelId"] = "1" }, evt, CancellationToken.None);
+        var result = await notifier.SendAsync(new Dictionary<string, string> { ["url"] = "not a url" }, evt, CancellationToken.None);
 
-        Assert.Equal("text/plain", http.LastHeaders!["Accept"]);
+        Assert.False(result.Success);
+        Assert.Equal(0, http.CallCount);
     }
 
     [Fact]
     public async Task TestAsync_SendsWithoutRequiringARealEvent()
     {
         var http = new FakeNotificationHttpClient();
-        var notifier = new NotifiarrNotifier(http);
+        var notifier = new DiscordNotifier(http);
 
-        var result = await notifier.TestAsync(new Dictionary<string, string> { ["apiKey"] = "k", ["channelId"] = "1" }, CancellationToken.None);
+        var result = await notifier.TestAsync(new Dictionary<string, string> { ["url"] = "https://discord.com/api/webhooks/1/abc" }, CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.Equal(1, http.CallCount);
