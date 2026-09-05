@@ -98,8 +98,7 @@ for that full history.
 
 ### Security
 - Donation addresses on the Donate page are no longer stored as single literal strings in the
-  compiled binary - unrelated to the Wacatac finding above, but a reasonable hardening measure
-  found during the same investigation.
+  compiled binary - a reasonable hardening measure.
 
 ## [2.1.0] - 2026-09-04
 
