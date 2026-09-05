@@ -6,11 +6,6 @@ for that full history.
 
 ## [2.1.1] - 2026-09-05
 
-v2.1.0's installer was pulled shortly after release when one antivirus vendor flagged it as a
-false positive - see the Fixed section below for the root cause. This release includes
-everything from v2.1.0 plus that fix, so it's the first installer actually available for
-everything listed here.
-
 ### Added
 - Per-queue-item controls on the Monitor page: drag a file to reorder it within its lane, skip it
   (stays visible, dimmed, excluded from processing until un-skipped), remove it from the queue
