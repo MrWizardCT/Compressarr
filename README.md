@@ -113,17 +113,20 @@ percent saved.
 
 ## Installation
 
-1. Install the [.NET 10 ASP.NET Core Runtime (x64)](https://dotnet.microsoft.com/en-us/download/dotnet/10.0/runtime)
-   if you don't already have it - that single installer includes the base .NET Runtime it depends
-   on too, so nothing else is needed. (You already have it if you run other ASP.NET Core-based
-   apps or services.)
+1. Install the **.NET 10 ASP.NET Core Runtime (x64)** if you don't already have it - that single
+   installer includes the base .NET Runtime it depends on too, so nothing else is needed. (You
+   already have it if you run other ASP.NET Core-based apps or services.) Direct download:
+   [aspnetcore-runtime-10.0.11-win-x64.exe](https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/10.0.11/aspnetcore-runtime-10.0.11-win-x64.exe).
 
-   > That page lists three similarly-named downloads - **.NET Desktop Runtime**, **ASP.NET Core
-   > Runtime**, and **.NET Runtime**. Compressarr needs the **ASP.NET Core Runtime** specifically
-   > (x64), since it hosts its own web UI. The Desktop Runtime looks like the obvious pick for a
-   > desktop app, but it doesn't include what Compressarr actually needs and Compressarr will
-   > refuse to start with a "You must install or update .NET" message if that's the one you grab
-   > instead.
+   > If a newer .NET 10.0.x patch has since been released, the direct link above still works fine
+   > (Compressarr just needs 10.0.x, any patch), but for the latest you can instead go to the
+   > [general runtime page](https://dotnet.microsoft.com/en-us/download/dotnet/10.0/runtime) -
+   > that page lists three similarly-named downloads, though, so pick carefully: **.NET Desktop
+   > Runtime**, **ASP.NET Core Runtime**, and **.NET Runtime**. Compressarr needs the **ASP.NET
+   > Core Runtime** specifically, since it hosts its own web UI. The Desktop Runtime looks like
+   > the obvious pick for a desktop app, but it doesn't include what Compressarr actually needs -
+   > Compressarr will refuse to start with a "You must install or update .NET" message if that's
+   > the one you grab instead.
 2. Download `Compressarr-Setup-x.x.x.exe` from the
    [Releases](https://github.com/MrWizardCT/Compressarr/releases) page.
 3. Run it and follow the installer. It installs to Program Files, adds a Start Menu shortcut
