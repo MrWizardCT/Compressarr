@@ -4,13 +4,22 @@ All notable changes to Compressarr are documented in this file. Pre-release/RC b
 to v1.0.0 are omitted here - see [GitHub Releases](https://github.com/MrWizardCT/Compressarr/releases)
 for that full history.
 
-## [2.1.1] - 2026-09-04
+## [2.1.1] - 2026-09-05
+
+### Removed
+- The Discord notification channel has been removed. It was identified, through systematic
+  isolation testing against VirusTotal, as the specific cause of a false-positive
+  `Trojan:Win32/Wacatac.B!ml` flag from one vendor on v2.1.0's installer (a heuristic match against
+  the "build a JSON embed, POST it to a Discord webhook" pattern common to real exfiltration
+  malware - Compressarr's own payload never included anything beyond a run summary, but the code
+  shape itself was enough to trigger it). There's no direct in-app replacement for Discord in this
+  release - Notifiarr's own Discord relay integration is the closest built-in option if you need
+  results in a Discord channel.
 
 ### Security
 - Donation addresses on the Donate page are no longer stored as single literal strings in the
-  compiled binary, avoiding a heuristic pattern some antivirus engines associate with
-  clipboard-hijacking malware (a legitimate-file false positive - v2.1.0's installer was flagged
-  by one vendor on VirusTotal; this addresses the specific pattern responsible).
+  compiled binary - unrelated to the Discord finding above, but a reasonable hardening measure
+  found during the same investigation.
 
 ## [2.1.0] - 2026-09-04
 
