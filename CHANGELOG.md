@@ -40,7 +40,13 @@ for that full history.
   Slack, Telegram, Pushover, ntfy, Gotify, Notifiarr, IFTTT, or a custom webhook (which also
   covers Zapier, Make, n8n, Node-RED, and Home Assistant) - configure as many channels as you
   want, each with its own trigger (always / only on error or warning / never) and a Test button.
-  A separate toggle controls the existing Windows toast notification, now off by default.
+  A separate toggle controls the existing Windows toast notification, now off by default. Every
+  field has a help bubble explaining what it needs and where to find it.
+- True cross-lane queue priority: dragging a file in the Monitor page's queue can now move it
+  ahead of files in a *different* Lane, not just within its own Lane - the order shown is exactly
+  the order files will be processed in, regardless of which Lane each one belongs to.
+- A [detailed GitHub Wiki](https://github.com/MrWizardCT/Compressarr/wiki) with a full walkthrough
+  of every page, written for people new to Compressarr.
 
 ### Changed
 - Start/Stop Monitoring is now a single toggle button instead of two separate ones.
@@ -63,6 +69,9 @@ for that full history.
 - A stale Error entry whose source file was already gone (deleted by hand, or handled elsewhere)
   never cleared itself the way a stale queued entry already did, and could permanently inflate the
   "resuming previous run" count on every single pass.
+- Reordering, skipping, removing, or overriding the preset for a file that lives in a subfolder
+  under a Lane's Input folder (rather than directly in it - e.g. one folder per movie) silently
+  did nothing, with no error shown.
 
 ## [2.0.6] - 2026-08-31
 
