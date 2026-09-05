@@ -117,6 +117,13 @@ percent saved.
    if you don't already have it - that single installer includes the base .NET Runtime it depends
    on too, so nothing else is needed. (You already have it if you run other ASP.NET Core-based
    apps or services.)
+
+   > That page lists three similarly-named downloads - **.NET Desktop Runtime**, **ASP.NET Core
+   > Runtime**, and **.NET Runtime**. Compressarr needs the **ASP.NET Core Runtime** specifically
+   > (x64), since it hosts its own web UI. The Desktop Runtime looks like the obvious pick for a
+   > desktop app, but it doesn't include what Compressarr actually needs and Compressarr will
+   > refuse to start with a "You must install or update .NET" message if that's the one you grab
+   > instead.
 2. Download `Compressarr-Setup-x.x.x.exe` from the
    [Releases](https://github.com/MrWizardCT/Compressarr/releases) page.
 3. Run it and follow the installer. It installs to Program Files, adds a Start Menu shortcut
