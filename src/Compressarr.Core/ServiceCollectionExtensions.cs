@@ -56,7 +56,6 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IWebhookSender, WebhookSender>();
         services.AddSingleton<INotifier, WebhookNotifier>();
-        services.AddSingleton<INotifier, SlackNotifier>();
         services.AddSingleton<INotifier, TelegramNotifier>();
         services.AddSingleton<INotifier, PushoverNotifier>();
         services.AddSingleton<INotifier, NtfyNotifier>();

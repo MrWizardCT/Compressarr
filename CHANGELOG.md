@@ -7,14 +7,14 @@ for that full history.
 ## [2.1.1] - 2026-09-05
 
 ### Removed
-- The Discord notification channel has been removed. It was identified, through systematic
-  isolation testing against VirusTotal, as the specific cause of a false-positive
+- The Discord and Slack notification channels have been removed. Both were identified, through
+  systematic isolation testing against VirusTotal, as independent causes of a false-positive
   `Trojan:Win32/Wacatac.B!ml` flag from one vendor on v2.1.0's installer (a heuristic match against
-  the "build a JSON embed, POST it to a Discord webhook" pattern common to real exfiltration
-  malware - Compressarr's own payload never included anything beyond a run summary, but the code
-  shape itself was enough to trigger it). There's no direct in-app replacement for Discord in this
-  release - Notifiarr's own Discord relay integration is the closest built-in option if you need
-  results in a Discord channel.
+  the "build a JSON message, POST it to a fixed incoming-webhook host" pattern common to real
+  exfiltration malware - Compressarr's own payloads never included anything beyond a run summary,
+  but the code shape itself was enough to trigger it on each of these two channels independently).
+  There's no direct in-app replacement for either in this release - a self-hosted option like ntfy
+  or Gotify, or Notifiarr's own Discord relay integration, are the closest built-in alternatives.
 
 ### Security
 - Donation addresses on the Donate page are no longer stored as single literal strings in the

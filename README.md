@@ -224,10 +224,10 @@ Two things to know:
 
 <img src="Assets/Screenshots/notifications-page.png" alt="Compressarr Notifications page, showing the toast toggle and two configured channels" width="700">
 
-Get a message wherever you already look - Slack, your phone, a self-hosted push server, or any
-automation platform - when a run finishes. Every channel is optional and off by default; add as
-many as you want, of as many different types as you want (two Slack workspaces and a phone push,
-all at once).
+Get a message wherever you already look - your phone, a self-hosted push server, or any automation
+platform - when a run finishes. Every channel is optional and off by default; add as many as you
+want, of as many different types as you want (two phone push channels and a self-hosted push
+server, all at once).
 
 **Desktop toast notifications**: a Windows toast confirming completion and opening the report when
 clicked. Off by default (useful on a desktop machine, not needed for a headless/server install) -
@@ -240,7 +240,7 @@ relevant, where to find it. Each channel has:
 | Field | What it's for |
 |---|---|
 | Trigger | Always, On error or warning, or Never (kept configured but disabled without deleting it) |
-| Name | A friendly label to tell channels of the same type apart, e.g. two different Slack workspaces |
+| Name | A friendly label to tell channels of the same type apart, e.g. two different ntfy topics |
 | Test | Sends a test message using whatever's currently typed in, even if not yet saved |
 | Save / Remove | Persist or delete this channel |
 
@@ -250,15 +250,14 @@ media titles, folder paths, or anything else from your configuration. The one ex
 local path to the HTML report file, which only the **Generic Webhook** and **IFTTT** channels
 include - worth knowing before pointing either at a third-party service, since a path like
 `C:\Users\you\AppData\Roaming\Compressarr\Reports\...` leaves your machine as plain text. Every
-other channel type (Slack, Telegram, Pushover, ntfy, Gotify, Notifiarr) never sends the report path
-at all.
+other channel type (Telegram, Pushover, ntfy, Gotify, Notifiarr) never sends the report path at
+all.
 
 #### Supported services
 
 | Service | What it needs |
 |---|---|
 | [Generic Webhook](#generic-webhook-zapier-make-n8n-node-red-home-assistant) | A URL, HTTP method, and optional custom headers |
-| [Slack](#slack) | An incoming webhook URL |
 | [Telegram](#telegram) | A bot token and chat ID |
 | [Pushover](#pushover) | An application token and user key |
 | [ntfy](#ntfy) | A server URL (defaults to the public ntfy.sh) and topic |
@@ -274,11 +273,6 @@ fully covers **Zapier** ("Webhooks by Zapier"), **Make** ("Webhooks" module), **
 node), **Node-RED** (`http in` node), and **Home Assistant** (a webhook automation trigger) - all
 of them accept an arbitrary POST with no required shape, so just point this at whichever
 platform's own webhook URL.
-
-##### Slack
-
-Create an **Incoming Webhook** for your workspace at [api.slack.com/apps](https://api.slack.com/apps)
-and paste its URL in. Messages use Slack's mrkdwn formatting with a status emoji.
 
 ##### Telegram
 
