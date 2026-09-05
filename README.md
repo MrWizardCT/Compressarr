@@ -496,27 +496,6 @@ Settings page (on by default).
 - **What it is**: an open-source, cross-platform .NET library for reading and writing media file
   tags.
 
-## Differences from v1.1
-
-- Entire UI moved to the browser (Radarr/Sonarr-style) - no desktop settings window, reachable
-  from any device on your LAN.
-- Open-ended, user-managed lanes (add/remove/rename/enable) instead of two fixed HD/SD and UHD
-  lanes.
-- Continuous monitoring with a live countdown, Run Now, and Abort (kills the in-flight
-  HandBrakeCLI process) - v1.1 only ever ran once per launch or in a simple repeat loop.
-- Live per-file progress (percent, fps, ETA) parsed from HandBrakeCLI's own output and streamed
-  into the Monitor page while a file converts.
-- HandBrakeCLI and presets.json can be detected, installed, and checked for updates from inside
-  the app - no manual download/unblock dance.
-- Ships as a signed Windows installer (self-contained, bundles its own .NET runtime) instead of
-  a PowerShell script requiring `Unblock-File` and an execution-policy change.
-- Settings/lanes stored per-user under `%AppData%\Compressarr`, so upgrades never overwrite
-  configuration.
-- An About page with the installed version, one-click update checks (against this repo and
-  against HandBrake's own releases), and credits.
-- v1.1 (PowerShell) itself remains available on the [`1.x`](https://github.com/MrWizardCT/Compressarr/tree/1.x) branch.
-- The v2.0.x line is pinned for reference on the [`2.0`](https://github.com/MrWizardCT/Compressarr/tree/2.0) branch. Unlike `1.x`, this isn't a separately maintained track - it's a snapshot of where v2.0.6 left off before v2.1.0.
-
 ## Disclaimer
 
 Compressarr is intended for personal use only, with media files you legally own or otherwise have
