@@ -6,7 +6,81 @@ for that full history.
 
 ## [2.1.1] - 2026-09-05
 
+v2.1.0's installer was pulled shortly after release when one antivirus vendor flagged it as a
+false positive - see the Fixed section below for the root cause. This release includes
+everything from v2.1.0 plus that fix, so it's the first installer actually available for
+everything listed here.
+
+### Added
+- Per-queue-item controls on the Monitor page: drag a file to reorder it within its lane, skip it
+  (stays visible, dimmed, excluded from processing until un-skipped), remove it from the queue
+  entirely, or override its preset for that one file only from a dropdown of installed presets - a
+  "Use Lane Preset" option resets an override back to the lane default.
+- Error queue entries are now shown on Monitor (red badge) with a Remove action, instead of being
+  invisible until the next report.
+- Failed file *moves* (encode succeeded, but couldn't be filed into the library - an offline
+  network drive, etc.) are now retried automatically on the lane's next pass, without re-encoding.
+- Configurable behavior when a destination file already exists - Overwrite (previous behavior,
+  still the default), Skip, or Rename - instead of always silently overwriting.
+- Automated backups (Settings > Backups): scheduled zip backups of your full setup (settings,
+  lanes, resume state, run counter, history) to a local or network folder, plus a "Backup Now"
+  button and a list of existing backups you can restore from with one click - including on a
+  brand-new install, before you've configured anything else.
+- Export/import your full configuration as a single file from Settings, for backing up or moving
+  to a new machine.
+- Test Connection button next to the Sonarr/Radarr integration settings, so a bad URL or API key
+  shows up immediately instead of only at unmonitor-time during a real run.
+- A warning before leaving Settings or Lanes with unsaved changes, plus a Clear Changes button to
+  discard edits in place.
+- Pause/Resume for the file currently being converted.
+- KB/MB/GB unit dropdown next to Settings' Minimum size field (previously bytes only).
+- Per-file conversion duration on the HTML report, and a running total time on the History page.
+- The Monitor page's status now shows which preset the current file is using.
+- A completely redesigned web UI: a left sidebar for navigation (in place of the old top tab bar),
+  a persistent toolbar showing monitoring status and CPU usage on every page, and a consistent
+  card-based layout across Settings, Lanes, History, and About.
+- A Donate page with QR codes and one-click copy for several cryptocurrency addresses.
+- A small indicator appears in the toolbar when a newer version of Compressarr is available.
+- Notification channels (Notifications page): get a message when a run completes via Discord,
+  Slack, Telegram, Pushover, ntfy, Gotify, Notifiarr, IFTTT, or a custom webhook (which also
+  covers Zapier, Make, n8n, Node-RED, and Home Assistant) - configure as many channels as you
+  want, each with its own trigger (always / only on error or warning / never) and a Test button.
+  A separate toggle controls the existing Windows toast notification, now off by default. Every
+  field has a help bubble explaining what it needs and where to find it.
+- True cross-lane queue priority: dragging a file in the Monitor page's queue can now move it
+  ahead of files in a *different* Lane, not just within its own Lane - the order shown is exactly
+  the order files will be processed in, regardless of which Lane each one belongs to.
+- A [detailed GitHub Wiki](https://github.com/MrWizardCT/Compressarr/wiki) with a full walkthrough
+  of every page, written for people new to Compressarr.
+- Two installer variants are now published: `Compressarr-Setup-2.1.1-Full.exe` (self-contained,
+  bundles its own .NET runtime - the same kind of build every prior release shipped) and
+  `Compressarr-Setup-2.1.1-NoFW.exe` (framework-dependent, smaller, requires the matching .NET
+  runtime already installed). Pick whichever fits - Full if you're not sure.
+
+### Changed
+- Start/Stop Monitoring is now a single toggle button instead of two separate ones.
+- Stop Monitoring now stops after the file currently converting finishes, rather than continuing
+  to process every other file still queued behind it.
+- Subtitle and other companion files now move to their destination immediately once their own
+  video finishes converting, instead of waiting for every file in a shared folder to finish first.
+- The queue's preset picker is a plain dropdown showing the preset actually in effect, instead of
+  a custom popover that could show a stale or misleading placeholder.
+
 ### Fixed
+- A queue edit (reorder, skip, or preset override) made while a file was actively converting could
+  be silently discarded once that file finished, and the wrong file could be processed next.
+- Removing a file from the queue didn't stick - it could reappear within seconds.
+- The queue's preset dropdown or its right-click-style menu could be yanked shut mid-interaction
+  by the page's own periodic refresh.
+- A queue edit could reorder the whole queue as a side effect, or make untouched files incorrectly
+  show as "Resumed" instead of "New."
+- The In Queue list could freeze while its own lane's pass was actively running.
+- A stale Error entry whose source file was already gone (deleted by hand, or handled elsewhere)
+  never cleared itself the way a stale queued entry already did, and could permanently inflate the
+  "resuming previous run" count on every single pass.
+- Reordering, skipping, removing, or overriding the preset for a file that lives in a subfolder
+  under a Lane's Input folder (rather than directly in it - e.g. one folder per movie) silently
+  did nothing, with no error shown.
 - Resolved a false-positive `Trojan:Win32/Wacatac.B!ml` flag from one vendor on v2.1.0's
   installer. Root-caused through systematic isolation testing against VirusTotal to the
   installer's LZMA2 compression of the embedded application payload, not to any notification
@@ -21,12 +95,6 @@ for that full history.
   improvement independent of the VirusTotal finding above. Generic Webhook keeps its own
   fully-flexible sender, since it's the one channel that genuinely needs arbitrary
   method/header/URL configurability.
-
-### Added
-- Two installer variants are now published: `Compressarr-Setup-2.1.1-Full.exe` (self-contained,
-  bundles its own .NET runtime - the same kind of build every prior release shipped) and
-  `Compressarr-Setup-2.1.1-NoFW.exe` (framework-dependent, smaller, requires the matching .NET
-  runtime already installed). Pick whichever fits - Full if you're not sure.
 
 ### Security
 - Donation addresses on the Donate page are no longer stored as single literal strings in the
