@@ -4,6 +4,14 @@ All notable changes to Compressarr are documented in this file. Pre-release/RC b
 to v1.0.0 are omitted here - see [GitHub Releases](https://github.com/MrWizardCT/Compressarr/releases)
 for that full history.
 
+## [2.1.1] - 2026-09-04
+
+### Security
+- Donation addresses on the Donate page are no longer stored as single literal strings in the
+  compiled binary, avoiding a heuristic pattern some antivirus engines associate with
+  clipboard-hijacking malware (a legitimate-file false positive - v2.1.0's installer was flagged
+  by one vendor on VirusTotal; this addresses the specific pattern responsible).
+
 ## [2.1.0] - 2026-09-04
 
 ### Added
