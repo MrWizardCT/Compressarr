@@ -515,6 +515,7 @@ Settings page (on by default).
 - An About page with the installed version, one-click update checks (against this repo and
   against HandBrake's own releases), and credits.
 - v1.1 (PowerShell) itself remains available on the [`1.x`](https://github.com/MrWizardCT/Compressarr/tree/1.x) branch.
+- The v2.0.x line is pinned for reference on the [`2.0`](https://github.com/MrWizardCT/Compressarr/tree/2.0) branch. Unlike `1.x`, this isn't a separately maintained track - it's a snapshot of where v2.0.6 left off before v2.1.0.
 
 ## Disclaimer
 
