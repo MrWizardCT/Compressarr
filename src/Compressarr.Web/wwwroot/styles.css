@@ -205,6 +205,14 @@ body {
   text-overflow: ellipsis;
 }
 
+/* --ok is a content-theme token (differs between light/dark) - the toolbar itself is a fixed dark
+   chrome regardless of content theme, so this reuses --dot-on (the monitoring status dot's own
+   fixed green) instead, same reasoning as --badge-warning above. */
+.toolbar-page-status.success {
+  color: var(--dot-on);
+  font-weight: 600;
+}
+
 /* A page's own action-button row, relocated here from the content area - stripped of the
    vertical spacing meant for sitting inside a form, and given a chrome that reads correctly
    against the toolbar's fixed dark background regardless of the content theme toggle (a plain
@@ -641,6 +649,11 @@ a.primary:hover { opacity: 0.9; }
   font-size: 13px;
   color: var(--text-dim);
   min-height: 18px;
+}
+
+.status.success {
+  color: var(--ok);
+  font-weight: 600;
 }
 
 .preset-status {

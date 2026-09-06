@@ -128,9 +128,12 @@ function renderNav(activePage) {
   toolbar.querySelector('.toolbar-spacer').appendChild(toolbarStatus);
   const pageStatusEl = existingMain ? existingMain.querySelector('#status') : null;
   if (pageStatusEl) {
-    const mirrorStatus = () => { toolbarStatus.textContent = pageStatusEl.textContent; };
+    const mirrorStatus = () => {
+      toolbarStatus.textContent = pageStatusEl.textContent;
+      toolbarStatus.classList.toggle('success', pageStatusEl.classList.contains('success'));
+    };
     mirrorStatus();
-    new MutationObserver(mirrorStatus).observe(pageStatusEl, { characterData: true, childList: true, subtree: true });
+    new MutationObserver(mirrorStatus).observe(pageStatusEl, { characterData: true, childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
   }
 
   // Wraps the page's remaining content in .content-inner (see styles.css) so <main> itself can

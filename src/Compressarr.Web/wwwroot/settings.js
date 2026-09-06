@@ -3,9 +3,22 @@ renderNav('settings');
 const statusEl = document.getElementById('status');
 const presetStatusEl = document.getElementById('presetStatus');
 let presetStatusClearTimer = null;
+let statusClearTimer = null;
 
-function setStatus(text) {
+function setStatus(text, success) {
+  clearTimeout(statusClearTimer);
   statusEl.textContent = text;
+  statusEl.classList.toggle('success', !!success);
+
+  // Same reasoning as setPresetStatus below - a success message is easy to miss if it just sits
+  // there indefinitely, so it fades out after a few seconds. Everything else (in-progress text,
+  // failures) stays up until the next call overwrites it.
+  if (success) {
+    statusClearTimer = setTimeout(() => {
+      statusEl.textContent = '';
+      statusEl.classList.remove('success');
+    }, 4000);
+  }
 }
 
 function setPresetStatus(text, success) {
@@ -173,7 +186,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     body: JSON.stringify(readForm())
   });
   if (res.ok) {
-    setStatus('Settings saved.');
+    setStatus('Settings saved.', true);
     settingsDirty = false;
   } else {
     setStatus('Failed to save settings.');
