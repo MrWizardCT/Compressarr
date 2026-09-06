@@ -463,17 +463,37 @@ h3 {
   color: var(--text-dim);
 }
 
-/* Maintenance card - a tight list of one-line actions rather than the input-oriented
-   field-block/two-col grid (label-above-control, meant for form fields) used elsewhere - a plain
-   list of buttons read as messy stacked that way, with an odd item left alone on the final row. */
-.maintenance-list .field-row {
-  margin-bottom: 0;
-  padding: 9px 0;
+/* Maintenance card - a compact button toolbar rather than the input-oriented field-block/two-col
+   grid (label-above-control, meant for form fields) used elsewhere, and rather than a one-row-per-
+   action list (a label column plus buttons left at their own natural width read as messy - ragged
+   button widths, lots of vertical whitespace). Every button in a group shares one fixed width so
+   the row reads as a clean, even toolbar regardless of each action's own label length; the button
+   text alone names the action, so no separate label - just a small "?" tooltip beside each one. */
+.maintenance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.maintenance-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.maintenance-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.maintenance-action button {
+  width: 170px;
+  white-space: nowrap;
 }
 
 .maintenance-divider {
   border-top: 1px solid var(--border);
-  margin: 4px 0;
 }
 
 .help-tag {
