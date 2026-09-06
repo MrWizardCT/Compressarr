@@ -396,14 +396,15 @@ public static class RunEndpoints
         });
     }
 
-    /// <summary>Estimated time to process everything still in upNext (skipped/error items
-    /// excluded, same as the engine itself never processes them), summed per-item using that
-    /// item's own preset's throughput rate - a queue can mix presets with very different
+    /// <summary>Projected wall-clock completion time for everything still in upNext (skipped/error
+    /// items excluded, same as the engine itself never processes them), summed per-item using
+    /// that item's own preset's throughput rate - a queue can mix presets with very different
     /// encode speed (e.g. HD/UHD lanes interleaved via cross-lane priority), so one blended rate
     /// for the whole queue would be less accurate than resolving each item separately. Returns
-    /// "Estimating" if any item's rate can't be resolved yet (a genuinely fresh install, or a
-    /// preset that's never appeared in a report or a live sample), and null if the queue is
-    /// empty (nothing to estimate).</summary>
+    /// the literal string "Estimating" if any item's rate can't be resolved yet (a genuinely
+    /// fresh install, or a preset that's never appeared in a report or a live sample); otherwise
+    /// an ISO 8601 timestamp for the client to format into a local date/time. Returns null if the
+    /// queue is empty (nothing to estimate).</summary>
     private static string? ComputeQueueEtaText(IReadOnlyList<UpNextItem> upNext, CurrentRunStateService runState)
     {
         var remaining = upNext.Where(i => !i.IsSkipped && !i.IsError).ToList();
@@ -417,9 +418,6 @@ public static class RunEndpoints
             totalMinutes += item.SizeGb / rate.Value;
         }
 
-        var span = TimeSpan.FromMinutes(totalMinutes);
-        if (span.TotalHours >= 1) return $"{(int)span.TotalHours}h {span.Minutes}m";
-        if (span.TotalMinutes >= 1) return $"{span.Minutes}m";
-        return "< 1m";
+        return DateTime.Now.AddMinutes(totalMinutes).ToString("o");
     }
 }

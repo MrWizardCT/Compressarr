@@ -478,6 +478,24 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// "Sep 06 2026, 1:45PM" - a fixed format rather than toLocaleString, which varies by browser/
+// locale and wouldn't reliably match this shape (extra spacing around AM/PM, different date
+// ordering, etc.).
+function formatCompletionTime(isoString) {
+  const d = new Date(isoString);
+  const month = MONTH_NAMES[d.getMonth()];
+  const day = String(d.getDate()).padStart(2, '0');
+  const year = d.getFullYear();
+  let hours = d.getHours();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  if (hours === 0) hours = 12;
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${month} ${day} ${year}, ${hours}:${minutes}${ampm}`;
+}
+
 async function poll() {
   const res = await fetch('/api/run/status');
   const s = await res.json();
@@ -510,7 +528,19 @@ async function poll() {
   if (s.progressFps) subParts.push(`${s.progressFps.toFixed(1)} fps`);
   if (s.progressEta) subParts.push(`ETA ${s.progressEta}`);
   document.getElementById('progressSub').textContent = subParts.join(' · ');
-  document.getElementById('queueEtaSub').textContent = s.queueEtaText ? `Queue ETA: ${s.queueEtaText}` : '';
+
+  const queueEtaLabelEl = document.getElementById('queueEtaLabel');
+  const queueEtaValueEl = document.getElementById('queueEtaValue');
+  if (!s.queueEtaText) {
+    queueEtaLabelEl.textContent = '';
+    queueEtaValueEl.textContent = '';
+  } else if (s.queueEtaText === 'Estimating') {
+    queueEtaLabelEl.textContent = 'Queue Completion:';
+    queueEtaValueEl.textContent = 'Estimating';
+  } else {
+    queueEtaLabelEl.textContent = 'Queue Completion:';
+    queueEtaValueEl.textContent = formatCompletionTime(s.queueEtaText);
+  }
 
   renderQueue(s.upNext);
   renderLog(s.recentLogLines);
