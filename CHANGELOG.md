@@ -122,6 +122,8 @@ Changes for this release are shown in **bold**.
 
 ## [2.1.1] - 2026-09-05
 
+Changes for this release are shown in **bold**.
+
 ### Added
 - Per-queue-item controls on the Monitor page: drag a file to reorder it within its lane, skip it
   (stays visible, dimmed, excluded from processing until un-skipped), remove it from the queue
@@ -188,21 +190,21 @@ Changes for this release are shown in **bold**.
 - Reordering, skipping, removing, or overriding the preset for a file that lives in a subfolder
   under a Lane's Input folder (rather than directly in it - e.g. one folder per movie) silently
   did nothing, with no error shown.
-- Resolved a false-positive `Trojan:Win32/Wacatac.B!ml` flag from one vendor on v2.1.0's
+- **Resolved a false-positive `Trojan:Win32/Wacatac.B!ml` flag from one vendor on v2.1.0's
   installer. Root-caused through systematic isolation testing against VirusTotal to the
   installer's LZMA2 compression of the embedded application payload, not to any notification
   code, service, or architecture - confirmed by an A/B test where an identical build scanned
   clean the moment compression was disabled. The installer now ships uncompressed
   (`Compression=none`) as a result; every notification channel, including Discord and Slack,
-  remains fully intact.
-- Along the way, the notification providers (Discord, Slack, Telegram, Pushover, ntfy, Gotify,
+  remains fully intact.**
+- **Along the way, the notification providers (Discord, Slack, Telegram, Pushover, ntfy, Gotify,
   Notifiarr, IFTTT) were also rewritten onto a narrower, intentionally boring HTTP client
   interface (fixed JSON/form/text POST shapes, never a fully generic method+headers+content-type
   sender) instead of sharing one universal webhook-sending routine - a deliberate architecture
   improvement independent of the VirusTotal finding above. Generic Webhook keeps its own
   fully-flexible sender, since it's the one channel that genuinely needs arbitrary
-  method/header/URL configurability.
-- Resolved a second, unrelated false positive (`Program:Win32/Contebrew.A!ml`) that Windows
+  method/header/URL configurability.**
+- **Resolved a second, unrelated false positive (`Program:Win32/Contebrew.A!ml`) that Windows
   Defender's live cloud/SmartScreen reputation classifier flagged on a real download of the
   self-contained installer, despite VirusTotal - including a same-day re-scan with Microsoft's own
   engine - showing it completely clean. That classifier weighs signals VirusTotal's static engine
@@ -210,19 +212,19 @@ Changes for this release are shown in **bold**.
   new/large/rarely-downloaded a file is. Rather than chase a live reputation heuristic, Compressarr
   now ships a single, much smaller framework-dependent installer instead of the self-contained
   build - removing the exposure rather than working around it. See Installation below for the
-  runtime it now requires.
-- Upgrading from a self-contained install (v2.1.0, or the briefly-shipped self-contained 2.1.1
+  runtime it now requires.**
+- **Upgrading from a self-contained install (v2.1.0, or the briefly-shipped self-contained 2.1.1
   build) left `coreclr.dll`/`hostfxr.dll`/`hostpolicy.dll` behind in the install folder, since an
   in-place upgrade only overwrites files the new package ships - it never removes files that
   belonged only to the old one. .NET's host then treated the install folder itself as a
   self-contained runtime root and failed to find the real machine-wide runtime, showing "You must
   install or update .NET" even on a machine with the correct runtime properly installed. The
   installer now runs the previous version's own uninstaller before installing, guaranteeing a
-  clean upgrade every time.
+  clean upgrade every time.**
 
 ### Security
-- Donation addresses on the Donate page are no longer stored as single literal strings in the
-  compiled binary - a reasonable hardening measure.
+- **Donation addresses on the Donate page are no longer stored as single literal strings in the
+  compiled binary - a reasonable hardening measure.**
 
 ## [2.1.0] - 2026-09-04
 
