@@ -396,21 +396,33 @@ public static class RunEndpoints
         });
     }
 
-    /// <summary>Projected wall-clock completion time for everything still in upNext (skipped/error
-    /// items excluded, same as the engine itself never processes them), summed per-item using
-    /// that item's own preset's throughput rate - a queue can mix presets with very different
-    /// encode speed (e.g. HD/UHD lanes interleaved via cross-lane priority), so one blended rate
-    /// for the whole queue would be less accurate than resolving each item separately. Returns
-    /// the literal string "Estimating" if any item's rate can't be resolved yet (a genuinely
-    /// fresh install, or a preset that's never appeared in a report or a live sample); otherwise
-    /// an ISO 8601 timestamp for the client to format into a local date/time. Returns null if the
-    /// queue is empty (nothing to estimate).</summary>
+    /// <summary>Projected wall-clock completion time for everything still left to process -
+    /// whatever's actively encoding right now (ComputeUpNext deliberately excludes it, since it's
+    /// not "up next", it's already running - GetCurrentFileRemaining fills that gap) plus
+    /// everything still in upNext (skipped/error items excluded, same as the engine itself never
+    /// processes them). Summed per-item using that item's own preset's throughput rate - a queue
+    /// can mix presets with very different encode speed (e.g. HD/UHD lanes interleaved via
+    /// cross-lane priority), so one blended rate for the whole queue would be less accurate than
+    /// resolving each item separately. Returns the literal string "Estimating" if any item's rate
+    /// can't be resolved yet (a genuinely fresh install, or a preset that's never appeared in a
+    /// report or a live sample); otherwise an ISO 8601 timestamp for the client to format into a
+    /// local date/time. Returns null if there's genuinely nothing left to estimate (idle, empty
+    /// queue).</summary>
     private static string? ComputeQueueEtaText(IReadOnlyList<UpNextItem> upNext, CurrentRunStateService runState)
     {
         var remaining = upNext.Where(i => !i.IsSkipped && !i.IsError).ToList();
-        if (remaining.Count == 0) return null;
+        var current = runState.GetCurrentFileRemaining();
+        if (remaining.Count == 0 && current is null) return null;
 
         var totalMinutes = 0.0;
+
+        if (current is { } c)
+        {
+            var currentRate = runState.GetRateGbPerMinute(c.PresetName);
+            if (currentRate is null || currentRate <= 0) return "Estimating";
+            totalMinutes += c.RemainingGb / currentRate.Value;
+        }
+
         foreach (var item in remaining)
         {
             var rate = runState.GetRateGbPerMinute(item.Preset);

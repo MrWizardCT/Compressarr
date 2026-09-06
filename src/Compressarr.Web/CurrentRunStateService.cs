@@ -234,6 +234,23 @@ public sealed class CurrentRunStateService : IRunProgressReporter
         }
     }
 
+    /// <summary>The currently-encoding file's own remaining GB and preset, for the queue-ETA
+    /// feature - ComputeUpNext deliberately excludes the in-flight file from the queue list (it's
+    /// not "up next", it's already running), so without this the ETA would silently ignore
+    /// whatever's actively encoding and only estimate the not-yet-started backlog. Returns null
+    /// if nothing is currently running, or its size/progress isn't known yet (right at
+    /// FileStarted, before the first FileProgress callback).</summary>
+    public (double RemainingGb, string? PresetName)? GetCurrentFileRemaining()
+    {
+        lock (_lock)
+        {
+            if (!_isRunning || _currentFileSizeGb <= 0) return null;
+
+            var fraction = 1.0 - (_progressPercent ?? 0) / 100.0;
+            return (_currentFileSizeGb * Math.Max(0, fraction), _presetName);
+        }
+    }
+
     // Computed once and cached - re-parsing report files on every ~1.5s status poll would be
     // wasteful, and this is only ever meant to be a rough starting placeholder anyway (live data
     // takes over within a run regardless). A Report Path setting change won't be reflected until
