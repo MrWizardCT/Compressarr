@@ -89,7 +89,7 @@ public sealed class ProcessingSettings
     /// a video when it's routed to its destination - subtitles, artwork, etc, matched against a
     /// stem-matched candidate's own extension. A stem-matched file whose extension ISN'T here is
     /// handled per UnmatchedCompanionAction instead of being assumed to be a companion.</summary>
-    public List<string> CompanionExtensions { get; set; } = new() { "srt", "nfo", "jpg", "png", "ass", "idx", "sub" };
+    public List<string> CompanionExtensions { get; set; } = new() { "srt", "nfo", "jpg", "jpeg", "png", "tbn", "ass", "ssa", "idx", "sub", "vtt" };
 
     /// <summary>What happens to a stem-matched file whose extension isn't in CompanionExtensions,
     /// and to anything still left in a source folder once its last video is gone. Same three
