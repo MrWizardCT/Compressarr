@@ -22,55 +22,24 @@ file sealed class EmptyScanner : IVideoFileScanner
         Array.Empty<FileInfo>();
 }
 
-public class FileBotRunnerTests
+file sealed class RealFolderScanner : IVideoFileScanner
 {
-    [Fact]
-    public void ComputeUnmatched_FileInBothBeforeAndAfter_IsUnmatched()
+    public IReadOnlyList<FileInfo> FindVideoFiles(string inputPath, IReadOnlyList<string> vidTypes, long minSizeBytes, int limit) =>
+        Directory.GetFiles(inputPath).Select(f => new FileInfo(f)).OrderBy(f => f.Name, StringComparer.Ordinal).ToList();
+}
+
+public class FileBotRunnerTests : IDisposable
+{
+    private readonly string _tempDir = Directory.CreateTempSubdirectory("compressarr-filebot-tests-").FullName;
+    private static readonly string CmdExe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+
+    public void Dispose() => Directory.Delete(_tempDir, recursive: true);
+
+    private string CreateFile(string name)
     {
-        var before = new HashSet<string> { @"C:\Input\Show.mkv" };
-        var after = new HashSet<string> { @"C:\Input\Show.mkv" };
-
-        var result = FileBotRunner.ComputeUnmatched(before, after);
-
-        Assert.Contains(@"C:\Input\Show.mkv", result);
-    }
-
-    [Fact]
-    public void ComputeUnmatched_FileOnlyInAfter_IsNotUnmatched()
-    {
-        // Present after but not before doesn't happen for a rename-in-place (the old path
-        // vanishes), but a file dropped into Input mid-run shouldn't be flagged either way -
-        // only paths untouched across the whole before/after window count.
-        var before = new HashSet<string>();
-        var after = new HashSet<string> { @"C:\Input\New.mkv" };
-
-        var result = FileBotRunner.ComputeUnmatched(before, after);
-
-        Assert.Empty(result);
-    }
-
-    [Fact]
-    public void ComputeUnmatched_FileRenamedByFileBot_IsNotUnmatched()
-    {
-        // The old (before-only) path is gone; the new (after-only) path is a fresh name FileBot
-        // produced - neither should show up as "unmatched," since FileBot clearly acted on it.
-        var before = new HashSet<string> { @"C:\Input\Show.S01E01.mkv" };
-        var after = new HashSet<string> { @"C:\Input\Show - S01E01 - Title.mkv" };
-
-        var result = FileBotRunner.ComputeUnmatched(before, after);
-
-        Assert.Empty(result);
-    }
-
-    [Fact]
-    public void ComputeUnmatched_IsCaseInsensitive()
-    {
-        var before = new HashSet<string> { @"C:\Input\Show.mkv" };
-        var after = new HashSet<string> { @"c:\input\SHOW.MKV" };
-
-        var result = FileBotRunner.ComputeUnmatched(before, after);
-
-        Assert.Single(result);
+        var path = Path.Combine(_tempDir, name);
+        File.WriteAllText(path, "x");
+        return path;
     }
 
     [Fact]
@@ -97,5 +66,120 @@ public class FileBotRunnerTests
 
         Assert.Empty(result);
         Assert.Contains(logger.Logs, l => l.Severity == LogSeverity.Error);
+    }
+
+    [Fact]
+    public void Run_TvFilesWithBlankTvArgs_ReturnsThemUnmatchedAndLogsWarningWithoutStartingAProcess()
+    {
+        // Regression: a bare "filebot.exe" launch with no arguments at all only opens FileBot's
+        // own GUI - confirmed live. Blank Args for a group that has files must be treated as "not
+        // configured," never actually invoked.
+        var tvPath = CreateFile("Show.S01E01.mkv");
+        var runner = new FileBotRunner(new RealFolderScanner());
+        var logger = new RecordingRunLogger();
+        var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvArgs = "   " };
+
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+
+        Assert.Contains(tvPath, result);
+        Assert.Contains(logger.Logs, l => l.Severity == LogSeverity.Error && l.Message.Contains("TV"));
+        Assert.True(File.Exists(tvPath));
+    }
+
+    [Fact]
+    public void Run_MovieFilesWithBlankMovieArgs_ReturnsThemUnmatchedAndLogsWarning()
+    {
+        var moviePath = CreateFile("Some Movie (2020).mkv");
+        var runner = new FileBotRunner(new RealFolderScanner());
+        var logger = new RecordingRunLogger();
+        var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, MovieArgs = "" };
+
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+
+        Assert.Contains(moviePath, result);
+        Assert.Contains(logger.Logs, l => l.Severity == LogSeverity.Error && l.Message.Contains("movie"));
+    }
+
+    [Fact]
+    public void Run_ClassifiesTvAndMovieFilesIntoSeparateGroups()
+    {
+        // Both groups left unconfigured (blank Args) so nothing actually invokes a process - the
+        // per-group "N file(s) left as-is" counts are what prove classification routed each file
+        // to the right bucket, not a shared/miscounted one.
+        CreateFile("Show.S01E01.mkv");
+        CreateFile("Some Movie (2020).mkv");
+        var runner = new FileBotRunner(new RealFolderScanner());
+        var logger = new RecordingRunLogger();
+        var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvArgs = "", MovieArgs = "" };
+
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains(logger.Logs, l => l.Message.Contains("1 TV file"));
+        Assert.Contains(logger.Logs, l => l.Message.Contains("1 movie file"));
+    }
+
+    [Fact]
+    public void Run_TvDisabled_SkipsTvFilesSilentlyEvenWithArgsConfigured()
+    {
+        var tvPath = CreateFile("Show.S01E01.mkv");
+        var runner = new FileBotRunner(new RealFolderScanner());
+        var logger = new RecordingRunLogger();
+        var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvEnabled = false, TvArgs = "/c exit 0 {files}" };
+
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+
+        Assert.DoesNotContain(tvPath, result);
+        Assert.Empty(logger.Logs);
+        Assert.True(File.Exists(tvPath));
+    }
+
+    [Fact]
+    public void Run_ExternalToolRemovesFile_IsNotFlaggedUnmatched()
+    {
+        // A real (trivial) external process standing in for FileBot actually renaming/moving a
+        // file - proves the new "still exists at its original path" unmatched check for real,
+        // not just against synthetic path sets.
+        var tvPath = CreateFile("Show.S01E01.mkv");
+        var runner = new FileBotRunner(new RealFolderScanner());
+        var logger = new RecordingRunLogger();
+        var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvArgs = $"/c del \"{tvPath}\"" };
+
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+
+        Assert.DoesNotContain(tvPath, result);
+        Assert.False(File.Exists(tvPath));
+    }
+
+    [Fact]
+    public void Run_ExternalToolLeavesFileAlone_IsFlaggedUnmatched()
+    {
+        var tvPath = CreateFile("Show.S01E01.mkv");
+        var runner = new FileBotRunner(new RealFolderScanner());
+        var logger = new RecordingRunLogger();
+        var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvArgs = "/c exit 0" };
+
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+
+        Assert.Contains(tvPath, result);
+    }
+
+    [Fact]
+    public void Run_TvFormatToken_SubstitutesTvEpisodeFormatIntoLoggedCommand()
+    {
+        var tvPath = CreateFile("Show.S01E01.mkv");
+        var runner = new FileBotRunner(new RealFolderScanner());
+        var logger = new RecordingRunLogger();
+        var settings = new FileBotSettings
+        {
+            Enabled = true,
+            CliPath = CmdExe,
+            TvEpisodeFormat = "{sxe}",
+            TvArgs = "/c exit 0 --format {format}"
+        };
+
+        runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+
+        Assert.Contains(logger.Logs, l => l.Message.Contains("--format {sxe}"));
     }
 }

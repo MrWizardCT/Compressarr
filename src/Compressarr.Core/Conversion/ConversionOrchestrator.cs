@@ -260,7 +260,11 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         {
             Enabled = config.FileBot.Enabled,
             CliPath = _pathExpander.Expand(config.FileBot.CliPath),
-            Args = config.FileBot.Args
+            TvEnabled = config.FileBot.TvEnabled,
+            TvEpisodeFormat = config.FileBot.TvEpisodeFormat,
+            TvArgs = config.FileBot.TvArgs,
+            MovieEnabled = config.FileBot.MovieEnabled,
+            MovieArgs = config.FileBot.MovieArgs
         };
         var fileBotUnmatched = _fileBotRunner.Run(expandedFileBotSettings, inputPath, config.Processing.VidTypes, _logger);
 

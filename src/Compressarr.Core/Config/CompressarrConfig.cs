@@ -60,11 +60,33 @@ public sealed class FileBotSettings
     public bool Enabled { get; set; } = false;
     public string CliPath { get; set; } = "%ProgramFiles%\\FileBot\\filebot.exe";
 
-    /// <summary>Passed to FileBot verbatim, with "{input}" replaced by the lane's expanded Input
-    /// folder at run time. Deliberately no pre-filled default (unlike HandBrake's CliPath) - the
-    /// right FileBot flags/database choice depend on the user's own library conventions, best
-    /// found in FileBot's own docs rather than guessed at here.</summary>
-    public string Args { get; set; } = "";
+    /// <summary>Explicit opt-out for TV/movie handling independently - distinct from leaving the
+    /// matching Args blank (which means "not configured yet," not "deliberately off"). Both
+    /// default true so filling in Args for one type is enough to activate it, no second toggle to
+    /// hunt for.</summary>
+    public bool TvEnabled { get; set; } = true;
+
+    /// <summary>The FileBot binding fragment a "{format}" token in TvArgs substitutes to - lets a
+    /// Settings dropdown pick "S01E01" ("{s00e00}") vs "1x01" ("{sxe}") style numbering without
+    /// anyone needing to know FileBot's own binding syntax. Only meaningful if TvArgs actually uses
+    /// "{format}" somewhere; a user writing a fully custom --format expression can just not
+    /// reference it.</summary>
+    public string TvEpisodeFormat { get; set; } = "{s00e00}";
+
+    /// <summary>Passed to FileBot verbatim for this lane's TV-classified files only (per
+    /// ContentClassifier.IsTvFile), with "{files}" replaced by a quoted, space-separated list of
+    /// just those files' full paths, and "{format}" replaced by TvEpisodeFormat. Deliberately no
+    /// pre-filled default (unlike HandBrake's CliPath) - the right flags/database choice depend on
+    /// the user's own library conventions, best found in FileBot's own docs rather than guessed at
+    /// here.</summary>
+    public string TvArgs { get; set; } = "";
+
+    public bool MovieEnabled { get; set; } = true;
+
+    /// <summary>Same as TvArgs but for this lane's non-TV (movie) files - "{files}" substitutes to
+    /// just the movie files' paths. No "{format}" token here (movie naming has no season/episode
+    /// numbering-style choice to make).</summary>
+    public string MovieArgs { get; set; } = "";
 }
 
 public sealed class LaneConfig

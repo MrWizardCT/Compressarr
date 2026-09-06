@@ -14,7 +14,11 @@ internal static class ConfigMapping
         HandBrakeOptions: config.HandBrake.Options,
         FileBotEnabled: config.FileBot.Enabled,
         FileBotCliPath: config.FileBot.CliPath,
-        FileBotArgs: config.FileBot.Args,
+        FileBotTvEnabled: config.FileBot.TvEnabled,
+        FileBotTvEpisodeFormat: config.FileBot.TvEpisodeFormat,
+        FileBotTvArgs: config.FileBot.TvArgs,
+        FileBotMovieEnabled: config.FileBot.MovieEnabled,
+        FileBotMovieArgs: config.FileBot.MovieArgs,
         VidTypes: config.Processing.VidTypes,
         OutSameAsIn: config.Processing.OutSameAsIn,
         DeleteAfterConvert: config.Processing.DeleteAfterConvert.ToString(),
@@ -50,7 +54,11 @@ internal static class ConfigMapping
         config.HandBrake.Options = dto.HandBrakeOptions;
         config.FileBot.Enabled = dto.FileBotEnabled;
         config.FileBot.CliPath = dto.FileBotCliPath;
-        config.FileBot.Args = dto.FileBotArgs;
+        config.FileBot.TvEnabled = dto.FileBotTvEnabled;
+        config.FileBot.TvEpisodeFormat = dto.FileBotTvEpisodeFormat;
+        config.FileBot.TvArgs = dto.FileBotTvArgs;
+        config.FileBot.MovieEnabled = dto.FileBotMovieEnabled;
+        config.FileBot.MovieArgs = dto.FileBotMovieArgs;
         config.Processing.VidTypes = dto.VidTypes;
         config.Processing.OutSameAsIn = dto.OutSameAsIn;
         config.Processing.DeleteAfterConvert = Enum.Parse<DeleteAfterConvertMode>(dto.DeleteAfterConvert);
