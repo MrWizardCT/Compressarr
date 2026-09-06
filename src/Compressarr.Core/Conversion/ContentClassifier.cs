@@ -31,7 +31,26 @@ public static partial class ContentClassifier
 
         var splitFull = pattern.Split(fileName);
         var season = splitFull.Length > 1 ? splitFull[1] : null;
+        var separator = splitFull.Length > 2 ? splitFull[2] : null;
         var episode = splitFull.Length > 3 ? splitFull[3] : null;
+
+        // A bare "NxNN" marker (no literal "E") is ambiguous with a raw resolution tag like
+        // "720x480" or "1920x1080" - reject it when either side is outside what a real season/
+        // episode number would plausibly be. No real show has 100+ seasons (every real
+        // resolution's width is 3+ digits, so this alone catches ordinary resolution tags), and
+        // even the most prolific daily soap operas/game shows top out well under 1000 episodes
+        // in a single season (observed real-world ceiling ~365), so a 4+ digit "episode" number
+        // is essentially never real either - catches a different collision, e.g. a movie's year
+        // landing right after a stray digit and an "x" ("4x2020"). The unambiguous "E" separator
+        // (never used in a resolution tag) is left completely alone, so legitimate 3+ digit
+        // season numbers - e.g. year-based numbering like "S1944E01" - keep working exactly as
+        // before.
+        if (string.Equals(separator, "x", StringComparison.OrdinalIgnoreCase) &&
+            (season?.Length > 2 || episode?.Length > 3))
+        {
+            season = null;
+            episode = null;
+        }
 
         var epiName = Path.GetFileName(fileName);
         var splitName = pattern.Split(epiName);
