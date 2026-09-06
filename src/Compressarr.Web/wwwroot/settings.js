@@ -46,6 +46,9 @@ function fillForm(dto) {
   document.getElementById('hbCliPath').value = dto.handBrakeCliPath;
   document.getElementById('presetsPath').value = dto.presetsPath;
   document.getElementById('hbOptions').value = dto.handBrakeOptions;
+  document.getElementById('fileBotEnabled').checked = dto.fileBotEnabled;
+  document.getElementById('fileBotCliPath').value = dto.fileBotCliPath;
+  document.getElementById('fileBotArgs').value = dto.fileBotArgs;
   document.getElementById('vidTypes').value = dto.vidTypes.join(', ');
   minSizeUnit = 'MB';
   document.getElementById('minSizeUnit').value = minSizeUnit;
@@ -90,6 +93,9 @@ function readForm() {
     handBrakeCliPath: document.getElementById('hbCliPath').value,
     presetsPath: document.getElementById('presetsPath').value,
     handBrakeOptions: document.getElementById('hbOptions').value,
+    fileBotEnabled: document.getElementById('fileBotEnabled').checked,
+    fileBotCliPath: document.getElementById('fileBotCliPath').value,
+    fileBotArgs: document.getElementById('fileBotArgs').value,
     vidTypes: document.getElementById('vidTypes').value.split(',').map(s => s.trim()).filter(Boolean),
     outSameAsIn: document.getElementById('outSameAsIn').checked,
     deleteAfterConvert: document.getElementById('deleteAfterConvert').value,

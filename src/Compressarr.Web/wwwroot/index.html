@@ -38,6 +38,24 @@
 
     <div class="card">
       <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24L4 3a1 1 0 0 0-1 1l.24 5.59a2 2 0 0 0 .59 1.41l9.58 9.58a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.82z"></path><circle cx="7.5" cy="7.5" r="1.5"></circle></svg>
+        <h2>File Name Processing</h2>
+      </div>
+      <div class="card-body">
+        <div class="check-row"><input type="checkbox" id="fileBotEnabled" /><label for="fileBotEnabled">Enabled<span class="help-tag" tabindex="0" title="Clean up and rename files with FileBot (filebot.net) before Compressarr scans them. Mainly useful if you don't already run Sonarr/Radarr, which handle this themselves.">?<span class="help-tip">Clean up and rename files with FileBot (filebot.net) before Compressarr scans them. Mainly useful if you don't already run Sonarr/Radarr, which handle this themselves.</span></span></label></div>
+        <div class="field-block">
+          <label for="fileBotCliPath">FileBot path<span class="help-tag" tabindex="0" title="Full path to filebot.exe.">?<span class="help-tip">Full path to filebot.exe.</span></span></label>
+          <input type="text" id="fileBotCliPath" />
+        </div>
+        <div class="field-block">
+          <label for="fileBotArgs">Arguments<span class="help-tag" tabindex="0" title="Passed to FileBot as-is. {input} is replaced with the lane's Input folder at run time, e.g. -rename &quot;{input}&quot; -non-strict --action move. See filebot.net for full command syntax. Keep processed files inside the lane's Input folder, or Compressarr will never see them.">?<span class="help-tip">Passed to FileBot as-is. {input} is replaced with the lane's Input folder at run time, e.g. -rename "{input}" -non-strict --action move. See filebot.net for full command syntax. Keep processed files inside the lane's Input folder, or Compressarr will never see them.</span></span></label>
+          <input type="text" id="fileBotArgs" />
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
         <h2>Processing</h2>
       </div>

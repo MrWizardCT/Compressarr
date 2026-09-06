@@ -1,6 +1,7 @@
 using Compressarr.Core.Arr;
 using Compressarr.Core.Config;
 using Compressarr.Core.Conversion;
+using Compressarr.Core.FileBot;
 using Compressarr.Core.Logging;
 using Compressarr.Core.Orchestration;
 using Compressarr.Core.Presets;
@@ -18,6 +19,37 @@ file sealed class RealFolderScanner : IVideoFileScanner
 {
     public IReadOnlyList<FileInfo> FindVideoFiles(string inputPath, IReadOnlyList<string> vidTypes, long minSizeBytes, int limit) =>
         Directory.GetFiles(inputPath).Select(f => new FileInfo(f)).OrderBy(f => f.Name, StringComparer.Ordinal).ToList();
+}
+
+file sealed class NoOpFileBotRunner : IFileBotRunner
+{
+    public HashSet<string> Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger) => new();
+}
+
+file sealed class FixedUnmatchedFileBotRunner : IFileBotRunner
+{
+    private readonly HashSet<string> _unmatched;
+    public FixedUnmatchedFileBotRunner(HashSet<string> unmatched) => _unmatched = unmatched;
+    public HashSet<string> Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger) => _unmatched;
+}
+
+file sealed class RecordingFileBotRunner : IFileBotRunner
+{
+    public string? ReceivedCliPath { get; private set; }
+    public HashSet<string> Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger)
+    {
+        ReceivedCliPath = settings.CliPath;
+        return new HashSet<string>();
+    }
+}
+
+/// <summary>Expands one specific token, unlike PassThroughPathExpander (identity) - needed to
+/// prove a caller actually calls Expand rather than passing a raw, still-tokenized value
+/// through untouched (both look identical under an identity expander).</summary>
+file sealed class TokenPathExpander : IPathExpander
+{
+    public string Expand(string value) => value.Replace("%TestToken%", @"C:\Expanded\FileBot.exe");
+    public bool PathExists(string value) => Directory.Exists(value) || File.Exists(value);
 }
 
 file sealed class FixedExtensionPresetService : IHandBrakePresetService
@@ -293,6 +325,7 @@ public class ConversionOrchestratorTests : IDisposable
         var orchestrator = new ConversionOrchestrator(
             new PassThroughPathExpander(),
             new RealFolderScanner(),
+            new NoOpFileBotRunner(),
             new FixedExtensionPresetService(),
             new MetadataService(),
             new FakeProcessRunner(),
@@ -342,7 +375,7 @@ public class ConversionOrchestratorTests : IDisposable
         var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
 
         var orchestrator = new ConversionOrchestrator(
-            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
@@ -378,7 +411,7 @@ public class ConversionOrchestratorTests : IDisposable
         var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
 
         var orchestrator = new ConversionOrchestrator(
-            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
@@ -417,7 +450,7 @@ public class ConversionOrchestratorTests : IDisposable
         var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
 
         var orchestrator = new ConversionOrchestrator(
-            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
@@ -457,7 +490,7 @@ public class ConversionOrchestratorTests : IDisposable
         var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
 
         var orchestrator = new ConversionOrchestrator(
-            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
@@ -489,7 +522,7 @@ public class ConversionOrchestratorTests : IDisposable
         var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
 
         var orchestrator = new ConversionOrchestrator(
-            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
@@ -530,7 +563,7 @@ public class ConversionOrchestratorTests : IDisposable
         var processRunner = new ConcurrentEditProcessRunner(() => stopCts.Cancel());
 
         var orchestrator = new ConversionOrchestrator(
-            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             processRunner, new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
@@ -597,7 +630,7 @@ public class ConversionOrchestratorTests : IDisposable
         });
 
         var orchestrator = new ConversionOrchestrator(
-            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             processRunner, new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new RecordingTrashService(), new NoOpRunLogger(), realResumeStore, new NoOpProgressReporter(), configStore);
 
@@ -647,6 +680,7 @@ public class ConversionOrchestratorTests : IDisposable
         var orchestrator = new ConversionOrchestrator(
             new PassThroughPathExpander(),
             new RealFolderScanner(),
+            new NoOpFileBotRunner(),
             new FixedExtensionPresetService(),
             new MetadataService(),
             new FakeProcessRunner(),
@@ -708,7 +742,7 @@ public class ConversionOrchestratorTests : IDisposable
         var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
 
         var orchestrator = new ConversionOrchestrator(
-            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
@@ -756,7 +790,7 @@ public class ConversionOrchestratorTests : IDisposable
         var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
 
         var orchestrator = new ConversionOrchestrator(
-            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
@@ -811,7 +845,7 @@ public class ConversionOrchestratorTests : IDisposable
         var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
 
         var orchestrator = new ConversionOrchestrator(
-            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
@@ -851,7 +885,7 @@ public class ConversionOrchestratorTests : IDisposable
         var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
 
         var orchestrator = new ConversionOrchestrator(
-            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
@@ -908,7 +942,7 @@ public class ConversionOrchestratorTests : IDisposable
         var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
 
         var orchestrator = new ConversionOrchestrator(
-            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
 
@@ -961,6 +995,7 @@ public class ConversionOrchestratorTests : IDisposable
         var orchestrator = new ConversionOrchestrator(
             new PassThroughPathExpander(),
             new RealFolderScanner(),
+            new NoOpFileBotRunner(),
             new FixedExtensionPresetService(),
             new MetadataService(),
             new DiskFullProcessRunner(),
@@ -1021,6 +1056,7 @@ public class ConversionOrchestratorTests : IDisposable
         var orchestrator = new ConversionOrchestrator(
             new PassThroughPathExpander(),
             new RealFolderScanner(),
+            new NoOpFileBotRunner(),
             new FixedExtensionPresetService(),
             new MetadataService(),
             new FakeProcessRunner(),
@@ -1080,6 +1116,7 @@ public class ConversionOrchestratorTests : IDisposable
         var orchestrator = new ConversionOrchestrator(
             new PassThroughPathExpander(),
             new RealFolderScanner(),
+            new NoOpFileBotRunner(),
             new FixedExtensionPresetService(),
             new MetadataService(),
             new FakeProcessRunner(),
@@ -1142,6 +1179,7 @@ public class ConversionOrchestratorTests : IDisposable
         var orchestrator = new ConversionOrchestrator(
             new PassThroughPathExpander(),
             new RealFolderScanner(),
+            new NoOpFileBotRunner(),
             new FixedExtensionPresetService(),
             new MetadataService(),
             new FakeProcessRunner(),
@@ -1201,6 +1239,7 @@ public class ConversionOrchestratorTests : IDisposable
         var orchestrator = new ConversionOrchestrator(
             new PassThroughPathExpander(),
             new RealFolderScanner(),
+            new NoOpFileBotRunner(),
             new FixedExtensionPresetService(),
             new MetadataService(),
             new FakeProcessRunner(),
@@ -1251,6 +1290,7 @@ public class ConversionOrchestratorTests : IDisposable
         var orchestrator = new ConversionOrchestrator(
             new PassThroughPathExpander(),
             new RealFolderScanner(),
+            new NoOpFileBotRunner(),
             new FixedExtensionPresetService(),
             new MetadataService(),
             new FakeProcessRunner(),
@@ -1301,6 +1341,7 @@ public class ConversionOrchestratorTests : IDisposable
         var orchestrator = new ConversionOrchestrator(
             new PassThroughPathExpander(),
             new RealFolderScanner(),
+            new NoOpFileBotRunner(),
             new FixedExtensionPresetService(),
             new MetadataService(),
             new FakeProcessRunner(),
@@ -1350,6 +1391,7 @@ public class ConversionOrchestratorTests : IDisposable
         var orchestrator = new ConversionOrchestrator(
             new PassThroughPathExpander(),
             new RealFolderScanner(),
+            new NoOpFileBotRunner(),
             new FixedExtensionPresetService(),
             new MetadataService(),
             new FakeProcessRunner(),
@@ -1402,6 +1444,7 @@ public class ConversionOrchestratorTests : IDisposable
         var orchestrator = new ConversionOrchestrator(
             new PassThroughPathExpander(),
             new RealFolderScanner(),
+            new NoOpFileBotRunner(),
             new FixedExtensionPresetService(),
             new MetadataService(),
             new FakeProcessRunner(),
@@ -1426,5 +1469,68 @@ public class ConversionOrchestratorTests : IDisposable
         // The file is not lost - it's exactly where HandBrake wrote it, since routing threw before
         // it could move it anywhere.
         Assert.True(File.Exists(Path.Combine(outputDir, "Caddyshack (1980).mkv")));
+    }
+
+    [Fact]
+    public void PrepareLane_FileBotFlagsOneFileUnmatched_OnlyThatEntryIsStamped()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        Directory.CreateDirectory(inputDir);
+
+        var matchedPath = Path.Combine(inputDir, "matched.mkv");
+        var unmatchedPath = Path.Combine(inputDir, "unmatched.mkv");
+        File.WriteAllText(matchedPath, "a");
+        File.WriteAllText(unmatchedPath, "b");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = Path.Combine(_tempDir, "Output"), MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new FixedUnmatchedFileBotRunner(new HashSet<string> { unmatchedPath }),
+            new FixedExtensionPresetService(), new MetadataService(), new FakeProcessRunner(), new FileRouter(),
+            new NoOpCompanionFileService(), new NoOpArrUnmonitorService(), new RecordingTrashService(), new NoOpRunLogger(),
+            new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>();
+        orchestrator.PrepareLane(lane, config, resumeState, Path.Combine(_tempDir, "resume.json"));
+
+        var matchedEntry = Assert.Single(resumeState, e => e.FullName == matchedPath);
+        var unmatchedEntry = Assert.Single(resumeState, e => e.FullName == unmatchedPath);
+        Assert.False(matchedEntry.FileBotUnmatched);
+        Assert.True(unmatchedEntry.FileBotUnmatched);
+    }
+
+    [Fact]
+    public void PrepareLane_FileBotCliPathHasToken_IsExpandedBeforeBeingPassedToRunner()
+    {
+        // Regression: PrepareLane originally passed config.FileBot straight through to
+        // IFileBotRunner.Run without expanding CliPath first (unlike HandBrake's own CliPath,
+        // expanded a few lines above this in real PrepareLane) - found live when a real
+        // %ProgramFiles%-style token in Settings made FileBotRunner's own File.Exists check fail
+        // and silently skip FileBot entirely.
+        var inputDir = Path.Combine(_tempDir, "Input");
+        Directory.CreateDirectory(inputDir);
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = Path.Combine(_tempDir, "Output"), MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false },
+            FileBot = new FileBotSettings { Enabled = true, CliPath = "%TestToken%" }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+        var fileBotRunner = new RecordingFileBotRunner();
+
+        var orchestrator = new ConversionOrchestrator(
+            new TokenPathExpander(), new RealFolderScanner(), fileBotRunner,
+            new FixedExtensionPresetService(), new MetadataService(), new FakeProcessRunner(), new FileRouter(),
+            new NoOpCompanionFileService(), new NoOpArrUnmonitorService(), new RecordingTrashService(), new NoOpRunLogger(),
+            new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        orchestrator.PrepareLane(lane, config, new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"));
+
+        Assert.Equal(@"C:\Expanded\FileBot.exe", fileBotRunner.ReceivedCliPath);
     }
 }

@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Compressarr.Web.Endpoints;
 
-public sealed record UpNextItem(string LaneId, string LaneDisplayName, string FileName, double SizeGb, string? Preset, bool IsResumed, bool IsError, bool IsSkipped, bool IsCustomPreset);
+public sealed record UpNextItem(string LaneId, string LaneDisplayName, string FileName, double SizeGb, string? Preset, bool IsResumed, bool IsError, bool IsSkipped, bool IsCustomPreset, bool IsFileBotUnmatched);
 
 public sealed record RemoveErrorQueueEntryRequest(string LaneId, string FileName);
 public sealed record RemoveQueueEntryRequest(string LaneId, string FileName);
@@ -121,7 +121,8 @@ public static class RunEndpoints
                 var hasOverride = !string.IsNullOrWhiteSpace(entry?.PresetOverride);
                 var preset = hasOverride ? entry!.PresetOverride : (ContentClassifier.IsTvFile(file.Name) ? lane.TvPreset : lane.MoviePreset);
                 var sizeGb = Math.Round(file.Length / (double)BytesPerGb, 3);
-                var item = new UpNextItem(lane.Id, lane.DisplayName, file.Name, sizeGb, preset, isResumed, IsError: false, isSkipped, hasOverride);
+                var isFileBotUnmatched = entry?.FileBotUnmatched ?? false;
+                var item = new UpNextItem(lane.Id, lane.DisplayName, file.Name, sizeGb, preset, isResumed, IsError: false, isSkipped, hasOverride, isFileBotUnmatched);
                 candidates.Add((item, laneOrderIndex, entry?.Order, naturalIndex[file.FullName]));
             }
 
@@ -137,7 +138,7 @@ public static class RunEndpoints
 
                 var preset = ContentClassifier.IsTvFile(fileInfo.Name) ? lane.TvPreset : lane.MoviePreset;
                 var sizeGb = Math.Round(fileInfo.Length / (double)BytesPerGb, 3);
-                errorItems.Add(new UpNextItem(lane.Id, lane.DisplayName, fileInfo.Name, sizeGb, preset, IsResumed: false, IsError: true, IsSkipped: false, IsCustomPreset: false));
+                errorItems.Add(new UpNextItem(lane.Id, lane.DisplayName, fileInfo.Name, sizeGb, preset, IsResumed: false, IsError: true, IsSkipped: false, IsCustomPreset: false, IsFileBotUnmatched: false));
             }
 
             laneOrderIndex++;

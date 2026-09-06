@@ -61,6 +61,12 @@ public sealed class ResumeEntry
     /// file in that lane "Resumed" too, and reordering the whole queue (which touches every file at
     /// once) made literally the entire lane show "Resumed". Confirmed live on the real running app.</summary>
     public bool CreatedByQueueEdit { get; set; }
+
+    /// <summary>Set once, at entry-creation time, when the optional FileBot pre-processing pass
+    /// (IFileBotRunner) ran for this lane but left this specific file's name/location untouched -
+    /// treated as "FileBot didn't/couldn't confidently match this one." Drives the Monitor page's
+    /// "Unmatched" queue badge. Never recomputed for an already-tracked entry.</summary>
+    public bool FileBotUnmatched { get; set; }
 }
 
 public interface IResumeStateStore

@@ -1,5 +1,6 @@
 using Compressarr.Core.Arr;
 using Compressarr.Core.Config;
+using Compressarr.Core.FileBot;
 using Compressarr.Core.Logging;
 using Compressarr.Core.Orchestration;
 using Compressarr.Core.Presets;
@@ -97,6 +98,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
     private readonly IPathExpander _pathExpander;
     private readonly IVideoFileScanner _scanner;
+    private readonly IFileBotRunner _fileBotRunner;
     private readonly IHandBrakePresetService _presets;
     private readonly IMetadataService _metadata;
     private readonly IHandBrakeProcessRunner _processRunner;
@@ -112,6 +114,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
     public ConversionOrchestrator(
         IPathExpander pathExpander,
         IVideoFileScanner scanner,
+        IFileBotRunner fileBotRunner,
         IHandBrakePresetService presets,
         IMetadataService metadata,
         IHandBrakeProcessRunner processRunner,
@@ -126,6 +129,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
     {
         _pathExpander = pathExpander;
         _scanner = scanner;
+        _fileBotRunner = fileBotRunner;
         _presets = presets;
         _metadata = metadata;
         _processRunner = processRunner;
@@ -245,6 +249,21 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             _resumeStore.Save(resumeState, resumeFilePath);
         }
 
+        // Optional pre-processing pass (FileBot) - no-ops instantly if disabled. Runs before the
+        // real scan below so anything it renamed/organized is what Compressarr's own classifier
+        // and scan actually see; whatever it left completely untouched is flagged on the fresh
+        // ResumeEntry created below, driving the Monitor page's "Unmatched" badge. CliPath needs
+        // expanding the same way HandBrake's own CliPath is above (config.FileBot.CliPath can
+        // carry a %ProgramFiles%-style token) - IFileBotRunner itself never expands anything, same
+        // division of responsibility as the HandBrakeCLI path.
+        var expandedFileBotSettings = new FileBotSettings
+        {
+            Enabled = config.FileBot.Enabled,
+            CliPath = _pathExpander.Expand(config.FileBot.CliPath),
+            Args = config.FileBot.Args
+        };
+        var fileBotUnmatched = _fileBotRunner.Run(expandedFileBotSettings, inputPath, config.Processing.VidTypes, _logger);
+
         // Always scan (recursively - a lane's files can be nested in subfolders, e.g. one per
         // movie) so the natural fallback order for entries with no explicit user-set Order matches
         // exactly what RunEndpoints.ComputeUpNext independently computes the same way for the
@@ -285,7 +304,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 }
                 else
                 {
-                    resumeState.Add(new ResumeEntry { LaneId = lane.Id, FullName = f.FullName, Status = ResumeStatus.Pending });
+                    resumeState.Add(new ResumeEntry { LaneId = lane.Id, FullName = f.FullName, Status = ResumeStatus.Pending, FileBotUnmatched = fileBotUnmatched.Contains(f.FullName) });
                 }
             }
             _resumeStore.Save(resumeState, resumeFilePath);

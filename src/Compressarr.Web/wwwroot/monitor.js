@@ -247,6 +247,7 @@ function renderQueueList() {
     row.innerHTML = `
       ${item.isError ? '' : `<span class="queue-handle">${QUEUE_ICON_GRIP}</span>`}
       <span class="queue-badge ${queueBadgeClass(item)}">${item.isSkipped ? 'Skipped' : queueBadgeLabel(item)}</span>
+      ${item.isFileBotUnmatched ? '<span class="queue-badge unmatched">Unmatched</span>' : ''}
       <div class="queue-lane">${escapeHtml(item.laneDisplayName)}</div>
       <div class="queue-file">${escapeHtml(item.fileName)}</div>
       <div class="queue-meta">${item.sizeGb.toFixed(2)} GB</div>

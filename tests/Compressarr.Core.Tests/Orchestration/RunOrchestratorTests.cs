@@ -1,6 +1,7 @@
 using Compressarr.Core.Arr;
 using Compressarr.Core.Config;
 using Compressarr.Core.Conversion;
+using Compressarr.Core.FileBot;
 using Compressarr.Core.Logging;
 using Compressarr.Core.Notifications;
 using Compressarr.Core.Orchestration;
@@ -20,6 +21,11 @@ file sealed class RealFolderScanner : IVideoFileScanner
 {
     public IReadOnlyList<FileInfo> FindVideoFiles(string inputPath, IReadOnlyList<string> vidTypes, long minSizeBytes, int limit) =>
         Directory.GetFiles(inputPath).Select(f => new FileInfo(f)).OrderBy(f => f.Name, StringComparer.Ordinal).ToList();
+}
+
+file sealed class NoOpFileBotRunner : IFileBotRunner
+{
+    public HashSet<string> Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger) => new();
 }
 
 file sealed class FixedExtensionPresetService : IHandBrakePresetService
@@ -181,7 +187,7 @@ public class RunOrchestratorTests : IDisposable
         var effectiveResumeStore = resumeStore ?? new JsonResumeStateStore();
 
         var conversionOrchestrator = new ConversionOrchestrator(
-            new PassThroughPathExpander(), new RealFolderScanner(), new FixedExtensionPresetService(), new MetadataService(),
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             processRunner, new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new NoOpTrashService(), new NoOpRunLogger(), effectiveResumeStore, new NoOpProgressReporter(),
             new StaticConfigStore(config));

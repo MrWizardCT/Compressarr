@@ -12,6 +12,9 @@ internal static class ConfigMapping
         HandBrakeCliPath: config.HandBrake.CliPath,
         PresetsPath: config.HandBrake.PresetsPath,
         HandBrakeOptions: config.HandBrake.Options,
+        FileBotEnabled: config.FileBot.Enabled,
+        FileBotCliPath: config.FileBot.CliPath,
+        FileBotArgs: config.FileBot.Args,
         VidTypes: config.Processing.VidTypes,
         OutSameAsIn: config.Processing.OutSameAsIn,
         DeleteAfterConvert: config.Processing.DeleteAfterConvert.ToString(),
@@ -45,6 +48,9 @@ internal static class ConfigMapping
         config.HandBrake.CliPath = dto.HandBrakeCliPath;
         config.HandBrake.PresetsPath = dto.PresetsPath;
         config.HandBrake.Options = dto.HandBrakeOptions;
+        config.FileBot.Enabled = dto.FileBotEnabled;
+        config.FileBot.CliPath = dto.FileBotCliPath;
+        config.FileBot.Args = dto.FileBotArgs;
         config.Processing.VidTypes = dto.VidTypes;
         config.Processing.OutSameAsIn = dto.OutSameAsIn;
         config.Processing.DeleteAfterConvert = Enum.Parse<DeleteAfterConvertMode>(dto.DeleteAfterConvert);

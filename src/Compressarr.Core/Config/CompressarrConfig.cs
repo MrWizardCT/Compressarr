@@ -40,6 +40,7 @@ public sealed class CompressarrConfig
     public WebSettings Web { get; set; } = new();
     public BackupSettings Backup { get; set; } = new();
     public NotificationSettings Notifications { get; set; } = new();
+    public FileBotSettings FileBot { get; set; } = new();
 }
 
 public sealed class HandBrakeSettings
@@ -47,6 +48,23 @@ public sealed class HandBrakeSettings
     public string CliPath { get; set; } = "%ProgramFiles%\\HandBrake\\HandBrakeCLI.exe";
     public string PresetsPath { get; set; } = "%appdata%\\HandBrake\\presets.json";
     public string Options { get; set; } = "";
+}
+
+/// <summary>Optional pre-processing step that shells out to the third-party FileBot tool
+/// (filebot.net) to clean up/rename files against TheTVDB/TMDB before Compressarr scans a lane's
+/// Input folder - mainly useful for users who don't run Sonarr/Radarr, which already do this kind
+/// of rename/organize themselves. Off by default; a real product decision, not a small addition -
+/// see IFileBotRunner for the invocation itself.</summary>
+public sealed class FileBotSettings
+{
+    public bool Enabled { get; set; } = false;
+    public string CliPath { get; set; } = "%ProgramFiles%\\FileBot\\filebot.exe";
+
+    /// <summary>Passed to FileBot verbatim, with "{input}" replaced by the lane's expanded Input
+    /// folder at run time. Deliberately no pre-filled default (unlike HandBrake's CliPath) - the
+    /// right FileBot flags/database choice depend on the user's own library conventions, best
+    /// found in FileBot's own docs rather than guessed at here.</summary>
+    public string Args { get; set; } = "";
 }
 
 public sealed class LaneConfig

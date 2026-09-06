@@ -4,6 +4,7 @@ using Compressarr.Core.Config;
 using Compressarr.Core.Conversion;
 using Compressarr.Core.Dependencies;
 using Compressarr.Core.Diagnostics;
+using Compressarr.Core.FileBot;
 using Compressarr.Core.Logging;
 using Compressarr.Core.Notifications;
 using Compressarr.Core.Orchestration;
@@ -31,6 +32,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IHandBrakeInstaller, HandBrakeInstaller>();
 
         services.AddSingleton<IVideoFileScanner, VideoFileScanner>();
+        services.AddSingleton<IFileBotRunner, FileBotRunner>();
         services.AddSingleton<IActiveHandBrakeProcess, ActiveHandBrakeProcess>();
         services.AddSingleton<IHandBrakeProcessRunner, HandBrakeProcessRunner>();
         services.AddSingleton<IMetadataService, MetadataService>();
