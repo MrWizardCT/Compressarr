@@ -18,7 +18,13 @@ public interface IRunProgressReporter
     /// mutates that lane's entries, or it degrades into the same false positive it's meant to
     /// avoid.</summary>
     void LaneStarted(string laneId, string laneDisplayName, bool isResumed);
-    void FileStarted(string laneId, int index, int total, string fileName, string? presetName);
+
+    /// <summary>sizeGb is the source file's size - carried here (not just at FileCompleted) so a
+    /// live throughput estimate can be derived from an in-progress encode's own elapsed time and
+    /// percent-complete, well before it actually finishes. Long individual encodes would otherwise
+    /// leave the queue-ETA feature stuck on a stale/seeded rate for however long that one file
+    /// takes.</summary>
+    void FileStarted(string laneId, int index, int total, string fileName, string? presetName, double sizeGb);
 
     /// <summary>Live progress within the file currently being encoded, parsed from HandBrakeCLI's
     /// own stdout ("Encoding: task 1 of 1, 42.10 % ..."). Fired frequently (roughly once a
@@ -27,5 +33,15 @@ public interface IRunProgressReporter
     void FileProgress(string laneId, double percent, double? fps, string? eta);
 
     void FileCompleted(string laneId, string fileName, bool success);
+
+    /// <summary>A real throughput data point for the queue-ETA feature - fired alongside
+    /// FileCompleted for every file that actually finished encoding (success or not; a failed
+    /// conversion's partial encode time still reflects real machine throughput up to the point it
+    /// failed, which is close enough for an estimate - callers may choose to skip failures if they
+    /// want stricter samples). gb is the source file size (BeginSizeGb), matching what
+    /// IHistoryThroughputEstimator measures from past reports, so live and historical samples are
+    /// directly comparable.</summary>
+    void FileThroughputSample(string? presetName, double gb, TimeSpan duration);
+
     void RunCompleted(int totalFiles);
 }

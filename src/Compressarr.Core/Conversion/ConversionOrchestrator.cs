@@ -349,7 +349,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         var startTime = DateTime.Now;
 
         _logger.FileStart(lane.DisplayName, i, fileCount, file.Name, beginSizeGb, contentType, presetName);
-        _progress.FileStarted(lane.Id, i, fileCount, file.Name, presetName);
+        _progress.FileStarted(lane.Id, i, fileCount, file.Name, presetName, beginSizeGb);
 
         if (string.IsNullOrWhiteSpace(presetName))
         {
@@ -592,6 +592,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
         _logger.FileComplete(finalFileName ?? newFileName, beginSizeGb, endSizeGb, duration, overallSuccess, detailLogFile);
         _progress.FileCompleted(lane.Id, finalFileName ?? newFileName, overallSuccess);
+        _progress.FileThroughputSample(presetName, beginSizeGb, duration);
 
         _resumeStore.Save(resumeState, resumeFilePath);
 

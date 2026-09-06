@@ -371,6 +371,7 @@ public static class RunEndpoints
 
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             var upNext = ComputeUpNext(config, pathExpander, scanner, resumeStore, snapshot);
+            var queueEtaText = ComputeQueueEtaText(upNext, runState);
 
             return Results.Json(new
             {
@@ -389,8 +390,36 @@ public static class RunEndpoints
                 recentLogLines = snapshot.RecentLogLines,
                 cpuUsagePercent = cpu,
                 secondsUntilNextRun,
-                upNext
+                upNext,
+                queueEtaText
             });
         });
+    }
+
+    /// <summary>Estimated time to process everything still in upNext (skipped/error items
+    /// excluded, same as the engine itself never processes them), summed per-item using that
+    /// item's own preset's throughput rate - a queue can mix presets with very different
+    /// encode speed (e.g. HD/UHD lanes interleaved via cross-lane priority), so one blended rate
+    /// for the whole queue would be less accurate than resolving each item separately. Returns
+    /// "Estimating" if any item's rate can't be resolved yet (a genuinely fresh install, or a
+    /// preset that's never appeared in a report or a live sample), and null if the queue is
+    /// empty (nothing to estimate).</summary>
+    private static string? ComputeQueueEtaText(IReadOnlyList<UpNextItem> upNext, CurrentRunStateService runState)
+    {
+        var remaining = upNext.Where(i => !i.IsSkipped && !i.IsError).ToList();
+        if (remaining.Count == 0) return null;
+
+        var totalMinutes = 0.0;
+        foreach (var item in remaining)
+        {
+            var rate = runState.GetRateGbPerMinute(item.Preset);
+            if (rate is null || rate <= 0) return "Estimating";
+            totalMinutes += item.SizeGb / rate.Value;
+        }
+
+        var span = TimeSpan.FromMinutes(totalMinutes);
+        if (span.TotalHours >= 1) return $"{(int)span.TotalHours}h {span.Minutes}m";
+        if (span.TotalMinutes >= 1) return $"{span.Minutes}m";
+        return "< 1m";
     }
 }

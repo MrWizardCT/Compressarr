@@ -300,6 +300,8 @@ function renderQueueList() {
       pop.innerHTML = `
         <div class="queue-popover-item" data-act="skip">${item.isSkipped ? 'Unskip' : 'Skip'}</div>
         ${item.isCustomPreset ? `<div class="queue-popover-item" data-act="use-lane-preset">Use Lane Preset</div>` : ''}
+        <div class="queue-popover-item" data-act="move-top">Move to top</div>
+        <div class="queue-popover-item" data-act="move-bottom">Move to bottom</div>
         <div class="queue-popover-item danger" data-act="remove">Remove from queue</div>
       `;
       row.querySelector('.queue-menu-wrap').appendChild(pop);
@@ -319,6 +321,8 @@ function renderQueueList() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName, preset: null })
           });
+        } else if (act === 'move-top' || act === 'move-bottom') {
+          await moveQueueItem(item, act === 'move-top');
         } else if (act === 'remove') {
           await fetch('/api/run/queue/remove', {
             method: 'POST',
@@ -424,6 +428,30 @@ async function onQueueDragEnd() {
   poll();
 }
 
+// One-click alternative to dragging a row a long distance in a big queue - splices it to the
+// front or back of the same displayItems list drag-to-reorder already maintains, then submits
+// the exact same payload shape onQueueDragEnd does.
+async function moveQueueItem(item, toTop) {
+  const key = queueKey(item);
+  const idx = displayItems.findIndex(i => queueKey(i) === key);
+  if (idx === -1) return;
+
+  const [moved] = displayItems.splice(idx, 1);
+  if (toTop) {
+    displayItems.unshift(moved);
+  } else {
+    displayItems.push(moved);
+  }
+  renderQueueList();
+
+  const items = displayItems.filter(i => !i.isError).map(i => ({ laneId: i.laneId, fileName: i.fileName }));
+  await fetch('/api/run/queue/reorder', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items })
+  });
+}
+
 async function removeErrorQueueEntry(laneId, fileName) {
   if (!confirm(`Remove '${fileName}' from the queue?\n\nThis only clears its tracked error status - the file itself is left untouched on disk, and a future scan can pick it back up as new.`)) return;
 
@@ -482,6 +510,7 @@ async function poll() {
   if (s.progressFps) subParts.push(`${s.progressFps.toFixed(1)} fps`);
   if (s.progressEta) subParts.push(`ETA ${s.progressEta}`);
   document.getElementById('progressSub').textContent = subParts.join(' · ');
+  document.getElementById('queueEtaSub').textContent = s.queueEtaText ? `Queue ETA: ${s.queueEtaText}` : '';
 
   renderQueue(s.upNext);
   renderLog(s.recentLogLines);

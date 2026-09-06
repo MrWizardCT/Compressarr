@@ -45,6 +45,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IRunLogger, FileRunLogger>();
         services.AddSingleton<IRunHistoryStore, CsvRunHistoryStore>();
         services.AddSingleton<IHistoryRollupCalculator, HistoryRollupCalculator>();
+        services.AddSingleton<IHistoryThroughputEstimator, HistoryThroughputEstimator>();
         services.AddSingleton<IWebHistoryRollupCalculator, WebHistoryRollupCalculator>();
         services.AddSingleton<ICpuUsageSampler>(_ => CpuUsageSamplerFactory.CreateForCurrentPlatform());
         services.AddSingleton<IFileSystemBrowser, FileSystemBrowser>();
