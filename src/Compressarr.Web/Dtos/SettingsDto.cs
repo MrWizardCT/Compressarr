@@ -7,7 +7,6 @@ public sealed record SettingsDto(
     bool FileBotEnabled,
     string FileBotCliPath,
     bool FileBotTvEnabled,
-    string FileBotTvEpisodeFormat,
     string FileBotTvArgs,
     bool FileBotMovieEnabled,
     string FileBotMovieArgs,

@@ -66,19 +66,14 @@ public sealed class FileBotSettings
     /// hunt for.</summary>
     public bool TvEnabled { get; set; } = true;
 
-    /// <summary>The FileBot binding fragment a "{format}" token in TvArgs substitutes to - lets a
-    /// Settings dropdown pick "S01E01" ("{s00e00}") vs "1x01" ("{sxe}") style numbering without
-    /// anyone needing to know FileBot's own binding syntax. Only meaningful if TvArgs actually uses
-    /// "{format}" somewhere; a user writing a fully custom --format expression can just not
-    /// reference it.</summary>
-    public string TvEpisodeFormat { get; set; } = "{s00e00}";
-
     /// <summary>Passed to FileBot verbatim for this lane's TV-classified files only (per
     /// ContentClassifier.IsTvFile), with "{files}" replaced by a quoted, space-separated list of
-    /// just those files' full paths, and "{format}" replaced by TvEpisodeFormat. Deliberately no
-    /// pre-filled default (unlike HandBrake's CliPath) - the right flags/database choice depend on
-    /// the user's own library conventions, best found in FileBot's own docs rather than guessed at
-    /// here.</summary>
+    /// just those files' full paths. Deliberately no pre-filled default (unlike HandBrake's
+    /// CliPath) - the right flags/database/format choice depend on the user's own library
+    /// conventions, best found in FileBot's own docs rather than guessed at here. The Settings
+    /// page's "TV episode numbering" dropdown is a pure client-side convenience that edits this
+    /// text directly (swapping "{s00e00}"/"{sxe}") rather than a separate stored value - this
+    /// string is always the real, complete command.</summary>
     public string TvArgs { get; set; } = "";
 
     public bool MovieEnabled { get; set; } = true;

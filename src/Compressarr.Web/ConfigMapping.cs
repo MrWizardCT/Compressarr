@@ -15,7 +15,6 @@ internal static class ConfigMapping
         FileBotEnabled: config.FileBot.Enabled,
         FileBotCliPath: config.FileBot.CliPath,
         FileBotTvEnabled: config.FileBot.TvEnabled,
-        FileBotTvEpisodeFormat: config.FileBot.TvEpisodeFormat,
         FileBotTvArgs: config.FileBot.TvArgs,
         FileBotMovieEnabled: config.FileBot.MovieEnabled,
         FileBotMovieArgs: config.FileBot.MovieArgs,
@@ -55,7 +54,6 @@ internal static class ConfigMapping
         config.FileBot.Enabled = dto.FileBotEnabled;
         config.FileBot.CliPath = dto.FileBotCliPath;
         config.FileBot.TvEnabled = dto.FileBotTvEnabled;
-        config.FileBot.TvEpisodeFormat = dto.FileBotTvEpisodeFormat;
         config.FileBot.TvArgs = dto.FileBotTvArgs;
         config.FileBot.MovieEnabled = dto.FileBotMovieEnabled;
         config.FileBot.MovieArgs = dto.FileBotMovieArgs;

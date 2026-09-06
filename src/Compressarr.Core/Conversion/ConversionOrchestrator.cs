@@ -261,7 +261,6 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             Enabled = config.FileBot.Enabled,
             CliPath = _pathExpander.Expand(config.FileBot.CliPath),
             TvEnabled = config.FileBot.TvEnabled,
-            TvEpisodeFormat = config.FileBot.TvEpisodeFormat,
             TvArgs = config.FileBot.TvArgs,
             MovieEnabled = config.FileBot.MovieEnabled,
             MovieArgs = config.FileBot.MovieArgs

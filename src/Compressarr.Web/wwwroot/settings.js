@@ -42,6 +42,18 @@ document.getElementById('minSizeUnit').addEventListener('change', e => {
   document.getElementById('minSizeBytes').value = bytes / MIN_SIZE_UNIT_MULTIPLIERS[minSizeUnit];
 });
 
+// A convenience shortcut, not a stored setting of its own - swaps whichever numbering binding is
+// currently sitting in the TV Arguments text for the newly-picked one, so the Arguments field
+// stays the single source of truth for the real command at all times.
+document.getElementById('fileBotTvEpisodeFormat').addEventListener('change', e => {
+  const argsEl = document.getElementById('fileBotTvArgs');
+  const newFormat = e.target.value;
+  const otherFormat = newFormat === '{s00e00}' ? '{sxe}' : '{s00e00}';
+  if (argsEl.value.includes(otherFormat)) {
+    argsEl.value = argsEl.value.split(otherFormat).join(newFormat);
+  }
+});
+
 function fillForm(dto) {
   document.getElementById('hbCliPath').value = dto.handBrakeCliPath;
   document.getElementById('presetsPath').value = dto.presetsPath;
@@ -49,8 +61,10 @@ function fillForm(dto) {
   document.getElementById('fileBotEnabled').checked = dto.fileBotEnabled;
   document.getElementById('fileBotCliPath').value = dto.fileBotCliPath;
   document.getElementById('fileBotTvEnabled').checked = dto.fileBotTvEnabled;
-  document.getElementById('fileBotTvEpisodeFormat').value = dto.fileBotTvEpisodeFormat;
   document.getElementById('fileBotTvArgs').value = dto.fileBotTvArgs;
+  // The dropdown has no state of its own to persist - it just reflects whichever binding is
+  // currently sitting in the Arguments text, so it stays in sync with hand-edits too.
+  document.getElementById('fileBotTvEpisodeFormat').value = dto.fileBotTvArgs.includes('{sxe}') ? '{sxe}' : '{s00e00}';
   document.getElementById('fileBotMovieEnabled').checked = dto.fileBotMovieEnabled;
   document.getElementById('fileBotMovieArgs').value = dto.fileBotMovieArgs;
   document.getElementById('vidTypes').value = dto.vidTypes.join(', ');
@@ -100,7 +114,6 @@ function readForm() {
     fileBotEnabled: document.getElementById('fileBotEnabled').checked,
     fileBotCliPath: document.getElementById('fileBotCliPath').value,
     fileBotTvEnabled: document.getElementById('fileBotTvEnabled').checked,
-    fileBotTvEpisodeFormat: document.getElementById('fileBotTvEpisodeFormat').value,
     fileBotTvArgs: document.getElementById('fileBotTvArgs').value,
     fileBotMovieEnabled: document.getElementById('fileBotMovieEnabled').checked,
     fileBotMovieArgs: document.getElementById('fileBotMovieArgs').value,

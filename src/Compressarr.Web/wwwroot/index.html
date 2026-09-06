@@ -48,23 +48,36 @@
           <input type="text" id="fileBotCliPath" />
         </div>
 
-        <div class="check-row"><input type="checkbox" id="fileBotTvEnabled" /><label for="fileBotTvEnabled">Process TV shows</label></div>
-        <div class="field-block">
-          <label for="fileBotTvEpisodeFormat">TV episode numbering<span class="help-tag" tabindex="0" title="Style used wherever your TV Arguments below reference the {format} token.">?<span class="help-tip">Style used wherever your TV Arguments below reference the {format} token.</span></span></label>
-          <select id="fileBotTvEpisodeFormat">
-            <option value="{s00e00}">S01E01</option>
-            <option value="{sxe}">1x01</option>
-          </select>
-        </div>
-        <div class="field-block">
-          <label for="fileBotTvArgs">TV Arguments<span class="help-tag" tabindex="0" title="Passed to FileBot for this lane's TV episodes only. {files} is replaced with just those files' paths; {format} is replaced with the episode numbering style above. e.g. -rename {files} --db TheTVDB --format &quot;{n} - {format} - {t}&quot; -non-strict --action move --conflict auto. See filebot.net/cli.html for full command syntax. Keep processed files inside the lane's Input folder, or Compressarr will never see them.">?<span class="help-tip">Passed to FileBot for this lane's TV episodes only. {files} is replaced with just those files' paths; {format} is replaced with the episode numbering style above. e.g. -rename {files} --db TheTVDB --format "{n} - {format} - {t}" -non-strict --action move --conflict auto. See filebot.net/cli.html for full command syntax. Keep processed files inside the lane's Input folder, or Compressarr will never see them.</span></span></label>
-          <input type="text" id="fileBotTvArgs" />
-        </div>
-
-        <div class="check-row"><input type="checkbox" id="fileBotMovieEnabled" /><label for="fileBotMovieEnabled">Process movies</label></div>
-        <div class="field-block">
-          <label for="fileBotMovieArgs">Movie Arguments<span class="help-tag" tabindex="0" title="Passed to FileBot for this lane's movies only. {files} is replaced with just those files' paths. e.g. -rename {files} --db TheMovieDB --format &quot;{n} ({y})&quot; -non-strict --action move --conflict auto. See filebot.net/cli.html for full command syntax. Keep processed files inside the lane's Input folder, or Compressarr will never see them.">?<span class="help-tip">Passed to FileBot for this lane's movies only. {files} is replaced with just those files' paths. e.g. -rename {files} --db TheMovieDB --format "{n} ({y})" -non-strict --action move --conflict auto. See filebot.net/cli.html for full command syntax. Keep processed files inside the lane's Input folder, or Compressarr will never see them.</span></span></label>
-          <input type="text" id="fileBotMovieArgs" />
+        <div class="routing-grid">
+          <div class="routing-col">
+            <div class="routing-col-head">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+              Movies
+            </div>
+            <div class="check-row"><input type="checkbox" id="fileBotMovieEnabled" /><label for="fileBotMovieEnabled">Process movies</label></div>
+            <div class="field-block">
+              <label for="fileBotMovieArgs">Movie Arguments<span class="help-tag" tabindex="0" title="Passed to FileBot for this lane's movies only. {files} is replaced with just those files' paths. e.g. -rename {files} --db TheMovieDB --format &quot;{n} ({y})&quot; -non-strict --action move --conflict auto. See filebot.net/cli.html for full command syntax. Keep processed files inside the lane's Input folder, or Compressarr will never see them.">?<span class="help-tip">Passed to FileBot for this lane's movies only. {files} is replaced with just those files' paths. e.g. -rename {files} --db TheMovieDB --format "{n} ({y})" -non-strict --action move --conflict auto. See filebot.net/cli.html for full command syntax. Keep processed files inside the lane's Input folder, or Compressarr will never see them.</span></span></label>
+              <input type="text" id="fileBotMovieArgs" />
+            </div>
+          </div>
+          <div class="routing-col">
+            <div class="routing-col-head">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+              TV Shows
+            </div>
+            <div class="check-row"><input type="checkbox" id="fileBotTvEnabled" /><label for="fileBotTvEnabled">Process TV shows</label></div>
+            <div class="field-block">
+              <label for="fileBotTvEpisodeFormat">TV episode numbering<span class="help-tag" tabindex="0" title="Swaps the matching binding directly in the TV Arguments text below whenever you change this - it's just a shortcut, the Arguments field underneath is always the real command.">?<span class="help-tip">Swaps the matching binding directly in the TV Arguments text below whenever you change this - it's just a shortcut, the Arguments field underneath is always the real command.</span></span></label>
+              <select id="fileBotTvEpisodeFormat">
+                <option value="{s00e00}">S01E01</option>
+                <option value="{sxe}">1x01</option>
+              </select>
+            </div>
+            <div class="field-block">
+              <label for="fileBotTvArgs">TV Arguments<span class="help-tag" tabindex="0" title="Passed to FileBot for this lane's TV episodes only. {files} is replaced with just those files' paths. e.g. -rename {files} --db TheTVDB --format &quot;{n} - {s00e00} - {t}&quot; -non-strict --action move --conflict auto. See filebot.net/cli.html for full command syntax. Keep processed files inside the lane's Input folder, or Compressarr will never see them.">?<span class="help-tip">Passed to FileBot for this lane's TV episodes only. {files} is replaced with just those files' paths. e.g. -rename {files} --db TheTVDB --format "{n} - {s00e00} - {t}" -non-strict --action move --conflict auto. See filebot.net/cli.html for full command syntax. Keep processed files inside the lane's Input folder, or Compressarr will never see them.</span></span></label>
+              <input type="text" id="fileBotTvArgs" />
+            </div>
+          </div>
         </div>
       </div>
     </div>

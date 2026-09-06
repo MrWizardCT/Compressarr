@@ -65,12 +65,12 @@ public sealed class FileBotRunner : IFileBotRunner
         var movieFiles = allFiles.Except(tvFiles).ToList();
 
         var unmatched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        unmatched.UnionWith(RunGroup(settings.CliPath, settings.TvArgs, settings.TvEpisodeFormat, tvFiles, settings.TvEnabled, "TV", logger));
-        unmatched.UnionWith(RunGroup(settings.CliPath, settings.MovieArgs, format: null, movieFiles, settings.MovieEnabled, "movie", logger));
+        unmatched.UnionWith(RunGroup(settings.CliPath, settings.TvArgs, tvFiles, settings.TvEnabled, "TV", logger));
+        unmatched.UnionWith(RunGroup(settings.CliPath, settings.MovieArgs, movieFiles, settings.MovieEnabled, "movie", logger));
         return unmatched;
     }
 
-    private HashSet<string> RunGroup(string cliPath, string? argsTemplate, string? format, List<FileInfo> files, bool typeEnabled, string label, IRunLogger logger)
+    private HashSet<string> RunGroup(string cliPath, string? argsTemplate, List<FileInfo> files, bool typeEnabled, string label, IRunLogger logger)
     {
         if (files.Count == 0) return new HashSet<string>();
 
@@ -86,7 +86,6 @@ public sealed class FileBotRunner : IFileBotRunner
 
         var fileList = string.Join(" ", files.Select(f => $"\"{f.FullName}\""));
         args = args.Replace("{files}", fileList);
-        if (format is not null) args = args.Replace("{format}", format);
 
         logger.Log($"[FileBot] Running ({label}): \"{cliPath}\" {args}");
         InvokeProcess(cliPath, args, logger);

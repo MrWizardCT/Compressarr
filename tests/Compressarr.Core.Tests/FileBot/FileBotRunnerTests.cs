@@ -163,23 +163,4 @@ public class FileBotRunnerTests : IDisposable
 
         Assert.Contains(tvPath, result);
     }
-
-    [Fact]
-    public void Run_TvFormatToken_SubstitutesTvEpisodeFormatIntoLoggedCommand()
-    {
-        var tvPath = CreateFile("Show.S01E01.mkv");
-        var runner = new FileBotRunner(new RealFolderScanner());
-        var logger = new RecordingRunLogger();
-        var settings = new FileBotSettings
-        {
-            Enabled = true,
-            CliPath = CmdExe,
-            TvEpisodeFormat = "{sxe}",
-            TvArgs = "/c exit 0 --format {format}"
-        };
-
-        runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
-
-        Assert.Contains(logger.Logs, l => l.Message.Contains("--format {sxe}"));
-    }
 }
