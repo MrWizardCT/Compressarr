@@ -84,33 +84,22 @@ public class FileRouterTests : IDisposable
     }
 
     [Fact]
-    public void MoveMovieFile_SingleMovieFolder_UsesItUnconditionally()
+    public void MoveMovieFile_ExistingUnrelatedMovieFolderPresent_StillUsesOutputBaseDirectly()
     {
+        // Regression test: MoveMovieFile used to auto-detect a single folder anywhere under
+        // outputBase whose name merely contained "movie" and treat it as a bucket, nesting
+        // every subsequent movie inside it. "Scary Movie (2026)" matched that filter purely by
+        // having "Movie" in its own title, silently misrouting real files in production. Movies
+        // must always land directly under outputBase in their own folder, regardless of what
+        // other movie folders already exist there.
         var router = new FileRouter();
-        var source = CreateSourceFile("Caddyshack (1980).mkv");
+        var source = CreateSourceFile("The Runner (2026).mkv");
         var outputBase = Path.Combine(_tempDir, "Movies");
-        var movieFolder = Path.Combine(outputBase, "01. Movies");
-        Directory.CreateDirectory(movieFolder);
+        Directory.CreateDirectory(Path.Combine(outputBase, "Scary Movie (2026)"));
 
         var dest = router.MoveMovieFile(source, outputBase)!;
 
-        Assert.StartsWith(movieFolder, dest);
-    }
-
-    [Fact]
-    public void MoveMovieFile_MultipleYearRangeFolders_PicksMatchingRange()
-    {
-        var router = new FileRouter();
-        var source = CreateSourceFile("Caddyshack (1980).mkv");
-        var outputBase = Path.Combine(_tempDir, "Movies");
-        var oldRange = Path.Combine(outputBase, "01. Movies 1920-1979");
-        var matchingRange = Path.Combine(outputBase, "02. Movies 1980-1999");
-        Directory.CreateDirectory(oldRange);
-        Directory.CreateDirectory(matchingRange);
-
-        var dest = router.MoveMovieFile(source, outputBase)!;
-
-        Assert.StartsWith(matchingRange, dest);
+        Assert.Equal(Path.Combine(outputBase, "The Runner (2026)", "The Runner (2026).mkv"), dest);
     }
 
     [Fact]

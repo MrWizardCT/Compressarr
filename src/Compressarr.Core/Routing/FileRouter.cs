@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Compressarr.Core.Config;
 using Compressarr.Core.Conversion;
 
@@ -28,14 +27,8 @@ public interface IFileRouter
 }
 
 /// <summary>Ported from Move-CompressarrMovieFile/Move-CompressarrTVFile/Move-CompressarrRoutedFile.</summary>
-public sealed partial class FileRouter : IFileRouter
+public sealed class FileRouter : IFileRouter
 {
-    [GeneratedRegex(@"\(([^)]+)\)")]
-    private static partial Regex ParenContentPattern();
-
-    [GeneratedRegex(@"(\d{4})( ?- ?)?(\d{4})?")]
-    private static partial Regex YearRangePattern();
-
     public string? RouteFile(string fileName, bool isTv, string tvShowBasePath, string movieBasePath, bool moveFiles,
         DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite)
     {
@@ -105,56 +98,20 @@ public sealed partial class FileRouter : IFileRouter
             throw new InvalidOperationException($"Compressarr: cannot move '{fileName}' - Movie base path is not configured for this lane.");
         }
 
-        Directory.CreateDirectory(outputBase);
-
         var leaf = Path.GetFileName(fileName);
         var movieFolderName = ContentClassifier.GetMovieFolderName(leaf);
-        var yearMatch = ParenContentPattern().Match(fileName);
-        var movieYear = yearMatch.Success ? yearMatch.Groups[1].Value : null;
 
-        var movieFolders = Directory.Exists(outputBase)
-            ? Directory.EnumerateDirectories(outputBase, "*", SearchOption.AllDirectories)
-                .Where(d => Path.GetFileName(d).Contains("movie", StringComparison.OrdinalIgnoreCase))
-                .OrderBy(d => d, StringComparer.OrdinalIgnoreCase)
-                .ToList()
-            : new List<string>();
-
-        string MoveIntoBucket(string bucketFolder)
-        {
-            var movieDestFolder = Path.Combine(bucketFolder, movieFolderName);
-            Directory.CreateDirectory(movieDestFolder);
-            var destPath = ResolveCollision(Path.Combine(movieDestFolder, leaf), collisionMode);
-            File.Move(fileName, destPath, overwrite: true);
-            return destPath;
-        }
-
-        if (movieFolders.Count == 1)
-        {
-            return MoveIntoBucket(movieFolders[0]);
-        }
-
-        if (movieYear is not null)
-        {
-            foreach (var movieFolder in movieFolders)
-            {
-                var folderName = Path.GetFileName(movieFolder);
-                var yearParts = YearRangePattern().Split(folderName);
-                var minYear = yearParts.Length > 1 ? yearParts[1] : null;
-                var maxYear = yearParts.Length > 3 ? yearParts[3] : null;
-
-                var isMatch = string.Equals(folderName, movieYear, StringComparison.OrdinalIgnoreCase)
-                    || movieYear == minYear
-                    || (!string.IsNullOrEmpty(minYear) && !string.IsNullOrEmpty(maxYear)
-                        && string.CompareOrdinal(movieYear, minYear) >= 0
-                        && string.CompareOrdinal(movieYear, maxYear) <= 0);
-
-                if (isMatch)
-                {
-                    return MoveIntoBucket(movieFolder);
-                }
-            }
-        }
-
-        return MoveIntoBucket(outputBase);
+        // Every movie gets its own folder directly under outputBase - no bucket/range-folder
+        // auto-detection. An earlier version tried to auto-detect year-bucket folders (e.g.
+        // "01. Movies 1920-1979") by scanning outputBase for any folder whose name merely
+        // contained "movie", but that matched ordinary movie folders too (a title like "Scary
+        // Movie (2026)" contains "Movie") and silently nested every subsequent movie inside
+        // whichever one happened to be the sole match - confirmed misrouting real files in
+        // production. Bucket folders aren't used, so removed rather than made safer.
+        var movieDestFolder = Path.Combine(outputBase, movieFolderName);
+        Directory.CreateDirectory(movieDestFolder);
+        var destPath = ResolveCollision(Path.Combine(movieDestFolder, leaf), collisionMode);
+        File.Move(fileName, destPath, overwrite: true);
+        return destPath;
     }
 }
