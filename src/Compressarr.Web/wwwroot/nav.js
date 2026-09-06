@@ -117,6 +117,22 @@ function renderNav(activePage) {
   // actions (About) just leave it empty.
   if (actionsEl) toolbar.querySelector('.toolbar-spacer').appendChild(actionsEl);
 
+  // Settings/Lanes/About each set a plain-text confirmation (e.g. "Settings saved.") into their
+  // own #status element, historically only visible at the bottom of the page - easy to miss since
+  // the Save button that triggered it now lives up here after the move above. Mirror it into the
+  // toolbar too, right next to the actions, via a MutationObserver rather than per-page changes -
+  // works automatically for every current and future page that already uses this same #status
+  // convention, no settings.js/lanes.js/about.js edits needed.
+  const toolbarStatus = document.createElement('span');
+  toolbarStatus.className = 'toolbar-page-status';
+  toolbar.querySelector('.toolbar-spacer').appendChild(toolbarStatus);
+  const pageStatusEl = existingMain ? existingMain.querySelector('#status') : null;
+  if (pageStatusEl) {
+    const mirrorStatus = () => { toolbarStatus.textContent = pageStatusEl.textContent; };
+    mirrorStatus();
+    new MutationObserver(mirrorStatus).observe(pageStatusEl, { characterData: true, childList: true, subtree: true });
+  }
+
   // Wraps the page's remaining content in .content-inner (see styles.css) so <main> itself can
   // span the full column width for scrolling while the actual content still visually caps/centers
   // at 1080px, same as before.
