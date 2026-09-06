@@ -45,7 +45,12 @@
         <div class="check-row"><input type="checkbox" id="fileBotEnabled" /><label for="fileBotEnabled">FileBot Enabled<span class="help-tag" tabindex="0" title="Clean up and rename files with FileBot (filebot.net) before Compressarr scans them. Mainly useful if you don't already run Sonarr/Radarr, which handle this themselves.">?<span class="help-tip">Clean up and rename files with FileBot (filebot.net) before Compressarr scans them. Mainly useful if you don't already run Sonarr/Radarr, which handle this themselves.</span></span></label></div>
         <div class="field-block">
           <label for="fileBotCliPath">FileBot path<span class="help-tag" tabindex="0" title="Full path to filebot.exe.">?<span class="help-tip">Full path to filebot.exe.</span></span></label>
-          <input type="text" id="fileBotCliPath" />
+          <div class="field-with-btn">
+            <input type="text" id="fileBotCliPath" />
+            <button id="fileBotFixNetworkBtn">Fix Network</button>
+            <span class="help-tag" tabindex="0" title="If a run's log shows &quot;Unable to establish loopback connection&quot; under FileBot, click Fix Network to apply FileBot's own fix (forces IPv4 and switches to its older, more compatible HTTP client) and try your run again.">?<span class="help-tip">If a run's log shows "Unable to establish loopback connection" under FileBot, click Fix Network to apply FileBot's own fix (forces IPv4 and switches to its older, more compatible HTTP client) and try your run again.</span></span>
+          </div>
+          <div class="preset-status" id="fileBotFixStatus"></div>
         </div>
 
         <div class="routing-grid">

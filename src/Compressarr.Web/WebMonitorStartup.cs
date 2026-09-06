@@ -23,6 +23,7 @@ public static class WebMonitorStartup
         app.MapMaintenanceEndpoints();
         app.MapDonateEndpoints();
         app.MapNotificationEndpoints();
+        app.MapFileBotEndpoints();
     }
 
     /// <summary>Starts Kestrel without throwing - a bind failure (port in use, etc.) is logged

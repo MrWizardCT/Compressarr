@@ -2,7 +2,9 @@ renderNav('settings');
 
 const statusEl = document.getElementById('status');
 const presetStatusEl = document.getElementById('presetStatus');
+const fileBotFixStatusEl = document.getElementById('fileBotFixStatus');
 let presetStatusClearTimer = null;
+let fileBotFixStatusClearTimer = null;
 let statusClearTimer = null;
 
 function setStatus(text, success) {
@@ -36,6 +38,26 @@ function setPresetStatus(text, success) {
     }, 4000);
   }
 }
+
+function setFileBotFixStatus(text, success) {
+  clearTimeout(fileBotFixStatusClearTimer);
+  fileBotFixStatusEl.textContent = text;
+  fileBotFixStatusEl.classList.toggle('success', !!success);
+
+  if (success) {
+    fileBotFixStatusClearTimer = setTimeout(() => {
+      fileBotFixStatusEl.textContent = '';
+      fileBotFixStatusEl.classList.remove('success');
+    }, 4000);
+  }
+}
+
+document.getElementById('fileBotFixNetworkBtn').addEventListener('click', async () => {
+  setFileBotFixStatus('Applying FileBot network fix...', false);
+  const res = await fetch('/api/filebot/fix-network', { method: 'POST' });
+  const body = await res.json().catch(() => ({}));
+  setFileBotFixStatus(body.message || 'Fix failed - see the recent log for details.', !!body.success);
+});
 
 const MIN_SIZE_UNIT_MULTIPLIERS = { KB: 1024, MB: 1024 * 1024, GB: 1024 * 1024 * 1024 };
 
