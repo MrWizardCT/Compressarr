@@ -130,7 +130,21 @@ public sealed class FileBotRunner : IFileBotRunner
             if (stderrText.Length > 0) logger.Log($"[FileBot] {stderrText}", LogSeverity.Error);
             if (process.ExitCode != 0)
             {
-                logger.Log($"[FileBot] Exited with code {process.ExitCode} - continuing with whatever it left behind.", LogSeverity.Error);
+                // FileBot exits non-zero even for a completely benign "nothing to do" outcome -
+                // e.g. every file already has its correct name, so it reports "already exists" and
+                // "Processed 0 files" with no real problem. Confirmed live: that case's own output
+                // never includes FileBot's own "Error (o_O)" failure marker (genuine failures -
+                // network errors, exceptions - always do), so that marker, not the exit code alone,
+                // decides whether this is worth flagging as an actual error.
+                var isRealFailure = stdoutText.Contains("Error (o_O)") || stderrText.Contains("Error (o_O)");
+                if (isRealFailure)
+                {
+                    logger.Log($"[FileBot] Exited with code {process.ExitCode} - continuing with whatever it left behind.", LogSeverity.Error);
+                }
+                else
+                {
+                    logger.Log($"[FileBot] Exited with code {process.ExitCode} (nothing left to rename) - continuing.");
+                }
             }
         }
         catch (Exception ex)

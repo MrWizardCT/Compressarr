@@ -163,4 +163,34 @@ public class FileBotRunnerTests : IDisposable
 
         Assert.Contains(tvPath, result);
     }
+
+    [Fact]
+    public void Run_NonZeroExitWithoutErrorMarker_DoesNotLogAsError()
+    {
+        // Regression: FileBot exits non-zero even for a completely benign "nothing to do" outcome
+        // (every file already correctly named) - confirmed live that case's own output never
+        // includes FileBot's own "Error (o_O)" failure marker, unlike a genuine failure. Logging
+        // every non-zero exit as an Error made a totally fine outcome look like something broke.
+        CreateFile("Show.S01E01.mkv");
+        var runner = new FileBotRunner(new RealFolderScanner());
+        var logger = new RecordingRunLogger();
+        var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvArgs = "/c \"echo Processed 0 files & exit /b 1\"" };
+
+        runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+
+        Assert.DoesNotContain(logger.Logs, l => l.Severity == LogSeverity.Error && l.Message.Contains("Exited with code"));
+    }
+
+    [Fact]
+    public void Run_NonZeroExitWithErrorMarker_LogsAsError()
+    {
+        CreateFile("Show.S01E01.mkv");
+        var runner = new FileBotRunner(new RealFolderScanner());
+        var logger = new RecordingRunLogger();
+        var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvArgs = "/c \"echo Error (o_O) & exit /b 1\"" };
+
+        runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+
+        Assert.Contains(logger.Logs, l => l.Severity == LogSeverity.Error && l.Message.Contains("Exited with code"));
+    }
 }
