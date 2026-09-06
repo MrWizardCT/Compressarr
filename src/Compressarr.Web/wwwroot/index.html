@@ -342,6 +342,18 @@
             <button id="cleanupNowBtn">Clean Up Now</button>
           </div>
           <div class="field-block">
+            <label>Clear logs<span class="help-tag" tabindex="0" title="Deletes every log file (Summary/HBdetails .log and .txt files) right now, regardless of age - unlike Clean Up Now above, which only removes files past the retention setting. Removed files go to the Recycle Bin, not a permanent delete.">?<span class="help-tip">Deletes every log file (Summary/HBdetails .log and .txt files) right now, regardless of age - unlike Clean Up Now above, which only removes files past the retention setting. Removed files go to the Recycle Bin, not a permanent delete.</span></span></label>
+            <button id="clearLogsBtn" class="danger">Clear Logs</button>
+          </div>
+          <div class="field-block">
+            <label>Clear history<span class="help-tag" tabindex="0" title="Deletes every HTML report and the run-history CSV - everything the History page shows. Leaves the run counter untouched. Removed files go to the Recycle Bin, not a permanent delete.">?<span class="help-tip">Deletes every HTML report and the run-history CSV - everything the History page shows. Leaves the run counter untouched. Removed files go to the Recycle Bin, not a permanent delete.</span></span></label>
+            <button id="clearHistoryBtn" class="danger">Clear History</button>
+          </div>
+          <div class="field-block">
+            <label>Clear all<span class="help-tag" tabindex="0" title="Deletes everything except Settings and Lanes: every report, every log, the run counter, and all tracked resume state - a full reset for starting genuinely fresh. Removed files go to the Recycle Bin, not a permanent delete.">?<span class="help-tip">Deletes everything except Settings and Lanes: every report, every log, the run counter, and all tracked resume state - a full reset for starting genuinely fresh. Removed files go to the Recycle Bin, not a permanent delete.</span></span></label>
+            <button id="clearAllBtn" class="danger">Clear All</button>
+          </div>
+          <div class="field-block">
             <label>Reset lanes<span class="help-tag" tabindex="0" title="Deletes every configured lane and replaces them with a single new, blank lane block. Every other setting (HandBrake path, Sonarr/Radarr, processing options, etc.) is left untouched. Cannot be undone unless you've exported a backup first.">?<span class="help-tip">Deletes every configured lane and replaces them with a single new, blank lane block. Every other setting (HandBrake path, Sonarr/Radarr, processing options, etc.) is left untouched. Cannot be undone unless you've exported a backup first.</span></span></label>
             <button id="resetLanesBtn" class="danger">Reset Lanes</button>
           </div>

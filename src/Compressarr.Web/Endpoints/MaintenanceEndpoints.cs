@@ -63,5 +63,90 @@ public static class MaintenanceEndpoints
 
             return Results.Ok();
         });
+
+        // Unconditional versions of the two pieces Clean Up Now only removes once they're past the
+        // retention setting - for a "start completely fresh" reset regardless of age. Recycle Bin,
+        // not a permanent delete, same convention as everywhere else in this file.
+        app.MapPost("/api/maintenance/clear-logs", (IConfigStore configStore, IPathExpander pathExpander, ITrashService trash) =>
+        {
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+            var logPath = pathExpander.Expand(config.Logging.LogFilePath);
+            if (!Directory.Exists(logPath)) return Results.Ok();
+
+            var extensions = new HashSet<string>(new[] { ".log", ".txt" }, StringComparer.OrdinalIgnoreCase);
+            foreach (var file in Directory.EnumerateFiles(logPath).Where(f => extensions.Contains(Path.GetExtension(f))))
+            {
+                trash.DeleteFile(file, DeleteAfterConvertMode.Recycle);
+            }
+
+            return Results.Ok();
+        });
+
+        // Everything the History page shows: every HTML report, plus the run-history CSV rollup
+        // (lives in the Logs folder, not Reports - CsvRunHistoryStore's own "Compressarr_History.csv").
+        // Deliberately leaves the run counter alone - a separate lifetime stat, not "history."
+        app.MapPost("/api/maintenance/clear-history", (IConfigStore configStore, IPathExpander pathExpander, ITrashService trash) =>
+        {
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+            var reportPath = pathExpander.Expand(config.Report.ReportPath);
+            if (Directory.Exists(reportPath))
+            {
+                foreach (var file in Directory.EnumerateFiles(reportPath, "*.html"))
+                {
+                    trash.DeleteFile(file, DeleteAfterConvertMode.Recycle);
+                }
+            }
+
+            var logPath = pathExpander.Expand(config.Logging.LogFilePath);
+            var historyFile = Path.Combine(logPath, "Compressarr_History.csv");
+            if (File.Exists(historyFile))
+            {
+                trash.DeleteFile(historyFile, DeleteAfterConvertMode.Recycle);
+            }
+
+            return Results.Ok();
+        });
+
+        // Everything except settings and lanes (both live in compressarr.settings.json, untouched
+        // here): every file in Reports and Logs (any extension - not just clear-logs'/clear-history's
+        // own narrower .log/.txt/.html/.csv scopes), the run counter, and tracked resume state - a
+        // full reset for starting genuinely fresh testing, matching what a real production install
+        // would look like on day one.
+        app.MapPost("/api/maintenance/clear-all", (IConfigStore configStore, IPathExpander pathExpander, ITrashService trash, IResumeStateStore resumeStore) =>
+        {
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+
+            var reportPath = pathExpander.Expand(config.Report.ReportPath);
+            if (Directory.Exists(reportPath))
+            {
+                foreach (var file in Directory.EnumerateFiles(reportPath))
+                {
+                    trash.DeleteFile(file, DeleteAfterConvertMode.Recycle);
+                }
+            }
+
+            var logPath = pathExpander.Expand(config.Logging.LogFilePath);
+            if (Directory.Exists(logPath))
+            {
+                foreach (var file in Directory.EnumerateFiles(logPath))
+                {
+                    trash.DeleteFile(file, DeleteAfterConvertMode.Recycle);
+                }
+            }
+
+            var runCountPath = AppPaths.GetRunCountFilePath();
+            if (File.Exists(runCountPath))
+            {
+                trash.DeleteFile(runCountPath, DeleteAfterConvertMode.Recycle);
+            }
+
+            resumeStore.Update(AppPaths.GetResumeFilePath(), state =>
+            {
+                state.Clear();
+                return true;
+            });
+
+            return Results.Ok();
+        });
     }
 }

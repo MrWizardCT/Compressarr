@@ -370,6 +370,24 @@ document.getElementById('cleanupNowBtn').addEventListener('click', () => runMain
   'Old logs and reports cleaned up.'
 ));
 
+document.getElementById('clearLogsBtn').addEventListener('click', () => runMaintenanceAction(
+  '/api/maintenance/clear-logs',
+  'Delete every log file right now, regardless of age?\n\nRemoved files go to the Recycle Bin.',
+  'Logs cleared.'
+));
+
+document.getElementById('clearHistoryBtn').addEventListener('click', () => runMaintenanceAction(
+  '/api/maintenance/clear-history',
+  'Delete every HTML report and the run-history CSV - everything the History page shows?\n\nRemoved files go to the Recycle Bin.',
+  'History cleared.'
+));
+
+document.getElementById('clearAllBtn').addEventListener('click', () => runMaintenanceAction(
+  '/api/maintenance/clear-all',
+  'Delete everything except Settings and Lanes - every report, every log, the run counter, and all tracked resume state?\n\nRemoved files go to the Recycle Bin.',
+  'Everything except Settings and Lanes cleared.'
+));
+
 document.getElementById('resetLanesBtn').addEventListener('click', () => runMaintenanceAction(
   '/api/maintenance/reset-lanes',
   'Delete ALL configured lanes and replace them with a single new, blank lane?\n\nThis cannot be undone unless you\'ve exported a backup first.',
