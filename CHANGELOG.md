@@ -4,6 +4,20 @@ All notable changes to Compressarr are documented in this file. Pre-release/RC b
 to v1.0.0 are omitted here - see [GitHub Releases](https://github.com/MrWizardCT/Compressarr/releases)
 for that full history.
 
+## [2.1.2] - 2026-09-06
+
+### Fixed
+- Movies could get silently misrouted into an unrelated movie's own destination folder instead
+  of landing directly under the lane's Movie base path. `MoveMovieFile` tried to auto-detect a
+  "bucket" folder (e.g. `01. Movies 1920-1979`, for libraries organized into year-range
+  folders) by scanning the destination for any folder whose name merely contained the word
+  "movie" - but an ordinary movie's own folder can just as easily match that (a title like
+  `Scary Movie (2026)` contains "Movie"), and once that was the only such folder present, every
+  subsequent movie got nested inside it instead of getting its own folder. Confirmed happening
+  in production. Bucket/range folders were never actually used, so the auto-detection was
+  removed entirely rather than made stricter - movies now always land directly under the
+  configured Movie base path, each in its own folder, with no exceptions.
+
 ## [2.1.1] - 2026-09-05
 
 ### Added
