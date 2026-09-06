@@ -6,7 +6,10 @@ for that full history.
 
 ## [2.1.2] - 2026-09-06
 
-Changes for this release are shown in **bold**.
+> [!TIP]
+> **What's new in 2.1.2:** movies no longer get silently misrouted into an unrelated movie's own
+> folder. Everything else below carries forward from 2.1.1 for context - new changes are in
+> **bold**.
 
 ### Added
 - Per-queue-item controls on the Monitor page: drag a file to reorder it within its lane, skip it
@@ -122,7 +125,11 @@ Changes for this release are shown in **bold**.
 
 ## [2.1.1] - 2026-09-05
 
-Changes for this release are shown in **bold**.
+> [!TIP]
+> **What's new in 2.1.1:** two Windows Defender false positives resolved
+> (`Trojan:Win32/Wacatac.B!ml`, `Program:Win32/Contebrew.A!ml`), a cleaner installer upgrade
+> path, and hardened donation-address storage. Everything else below carries forward from 2.1.0
+> for context - new changes are in **bold**.
 
 ### Added
 - Per-queue-item controls on the Monitor page: drag a file to reorder it within its lane, skip it
