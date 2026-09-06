@@ -10,6 +10,10 @@ public static class RetentionCleaner
 {
     public static void CleanUp(ITrashService trash, string path, IReadOnlyList<string> extensions, int retentionDays, string label)
     {
+        // 0 (or a stray negative value) means "keep forever," not "delete everything right now" -
+        // a plain DateTime.Now.AddDays(0) cutoff would otherwise catch every existing file, since
+        // virtually all of them have CreationTime < now.
+        if (retentionDays <= 0) return;
         if (!Directory.Exists(path)) return;
 
         var cutoff = DateTime.Now.AddDays(-retentionDays);

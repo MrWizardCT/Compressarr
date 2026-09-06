@@ -51,6 +51,8 @@ function fillForm(dto) {
   document.getElementById('minSizeUnit').value = minSizeUnit;
   document.getElementById('minSizeBytes').value = (dto.minSizeBytes || 0) / MIN_SIZE_UNIT_MULTIPLIERS[minSizeUnit];
   document.getElementById('limit').value = dto.limit;
+  document.getElementById('companionExtensions').value = dto.companionExtensions.join(', ');
+  document.getElementById('unmatchedCompanionAction').value = dto.unmatchedCompanionAction;
   document.getElementById('onDestinationCollision').value = dto.onDestinationCollision;
   document.getElementById('outSameAsIn').checked = dto.outSameAsIn;
   document.getElementById('moveFiles').checked = dto.moveFiles;
@@ -95,6 +97,8 @@ function readForm() {
     clearTitleMetadata: document.getElementById('clearTitleMetadata').checked,
     limit: parseInt(document.getElementById('limit').value, 10) || 0,
     minSizeBytes: minSizeBytesFromForm(),
+    companionExtensions: document.getElementById('companionExtensions').value.split(',').map(s => s.trim()).filter(Boolean),
+    unmatchedCompanionAction: document.getElementById('unmatchedCompanionAction').value,
     onDestinationCollision: document.getElementById('onDestinationCollision').value,
     logFilePath: document.getElementById('logFilePath').value,
     retentionDays: parseInt(document.getElementById('retentionDays').value, 10) || 0,

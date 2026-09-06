@@ -220,7 +220,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 {
                     try
                     {
-                        _companionFiles.MoveCompanionFiles(entry.EncodedFilePath!, Path.GetDirectoryName(entry.EncodedFilePath)!, Path.GetDirectoryName(retryDestPath)!, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath);
+                        _companionFiles.MoveCompanionFiles(entry.EncodedFilePath!, Path.GetDirectoryName(entry.EncodedFilePath)!, Path.GetDirectoryName(retryDestPath)!, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath, config.Processing.CompanionExtensions, config.Processing.UnmatchedCompanionAction);
                     }
                     catch (Exception ex)
                     {
@@ -542,7 +542,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 try
                 {
                     var routedDestFolder = Path.GetDirectoryName(routedDestPath)!;
-                    _companionFiles.MoveCompanionFiles(file.FullName, file.DirectoryName!, routedDestFolder, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath);
+                    _companionFiles.MoveCompanionFiles(file.FullName, file.DirectoryName!, routedDestFolder, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath, config.Processing.CompanionExtensions, config.Processing.UnmatchedCompanionAction);
                 }
                 catch (Exception ex)
                 {

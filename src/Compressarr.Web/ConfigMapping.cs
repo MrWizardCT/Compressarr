@@ -19,6 +19,8 @@ internal static class ConfigMapping
         ClearTitleMetadata: config.Processing.ClearTitleMetadata,
         Limit: config.Processing.Limit,
         MinSizeBytes: config.Processing.MinSizeBytes,
+        CompanionExtensions: config.Processing.CompanionExtensions,
+        UnmatchedCompanionAction: config.Processing.UnmatchedCompanionAction.ToString(),
         OnDestinationCollision: config.Processing.OnDestinationCollision.ToString(),
         LogFilePath: config.Logging.LogFilePath,
         RetentionDays: config.Logging.RetentionDays,
@@ -50,6 +52,8 @@ internal static class ConfigMapping
         config.Processing.ClearTitleMetadata = dto.ClearTitleMetadata;
         config.Processing.Limit = dto.Limit;
         config.Processing.MinSizeBytes = dto.MinSizeBytes;
+        config.Processing.CompanionExtensions = dto.CompanionExtensions;
+        config.Processing.UnmatchedCompanionAction = Enum.Parse<DeleteAfterConvertMode>(dto.UnmatchedCompanionAction);
         config.Processing.OnDestinationCollision = Enum.Parse<DestinationCollisionMode>(dto.OnDestinationCollision);
         config.Logging.LogFilePath = dto.LogFilePath;
         config.Logging.RetentionDays = dto.RetentionDays;

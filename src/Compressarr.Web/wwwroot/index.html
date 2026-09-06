@@ -71,6 +71,18 @@
             <input type="number" id="limit" min="0" />
           </div>
           <div class="field-block">
+            <label for="companionExtensions">Companion files to move with file (comma-separated)<span class="help-tag" tabindex="0" title="File extensions considered part of a video and moved alongside it - subtitles, artwork, etc - without dots, comma-separated (e.g. srt, nfo, jpg).">?<span class="help-tip">File extensions considered part of a video and moved alongside it - subtitles, artwork, etc - without dots, comma-separated (e.g. srt, nfo, jpg).</span></span></label>
+            <input type="text" id="companionExtensions" />
+          </div>
+          <div class="field-block">
+            <label for="unmatchedCompanionAction">Files not on that list<span class="help-tag" tabindex="0" title="What happens to a file that shares a video's name but isn't on the companion list above, and to anything left over once a folder's last video is gone: leave it in place, delete it, or send it to the Recycle Bin.">?<span class="help-tip">What happens to a file that shares a video's name but isn't on the companion list above, and to anything left over once a folder's last video is gone: leave it in place, delete it, or send it to the Recycle Bin.</span></span></label>
+            <select id="unmatchedCompanionAction">
+              <option value="Maintain">Maintain</option>
+              <option value="Delete">Delete</option>
+              <option value="Recycle">Recycle</option>
+            </select>
+          </div>
+          <div class="field-block">
             <label for="onDestinationCollision">On destination collision<span class="help-tag" tabindex="0" title="What happens if a converted file's destination already has a file at that exact path - e.g. the same title converted a second time. Overwrite replaces it (supports re-running for a better encode). Skip leaves the new file in the Output folder untouched. Rename appends (2), (3), etc.">?<span class="help-tip">What happens if a converted file's destination already has a file at that exact path - e.g. the same title converted a second time. Overwrite replaces it (supports re-running for a better encode). Skip leaves the new file in the Output folder untouched. Rename appends (2), (3), etc.</span></span></label>
             <select id="onDestinationCollision">
               <option value="Overwrite">Overwrite</option>
@@ -103,7 +115,7 @@
             <input type="text" id="reportPath" />
           </div>
           <div class="field-block">
-            <label for="retentionDays">Log/report retention (days)<span class="help-tag" tabindex="0" title="Logs and reports older than this many days are automatically deleted.">?<span class="help-tip">Logs and reports older than this many days are automatically deleted.</span></span></label>
+            <label for="retentionDays">Log/report retention (days)<span class="help-tag" tabindex="0" title="Logs and reports older than this many days are automatically deleted. 0 = keep forever.">?<span class="help-tip">Logs and reports older than this many days are automatically deleted. 0 = keep forever.</span></span></label>
             <input type="number" id="retentionDays" min="0" />
           </div>
           <div class="field-block">

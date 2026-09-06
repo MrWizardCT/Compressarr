@@ -11,6 +11,8 @@ public sealed record SettingsDto(
     bool ClearTitleMetadata,
     int Limit,
     long MinSizeBytes,
+    List<string> CompanionExtensions,
+    string UnmatchedCompanionAction,
     string OnDestinationCollision,
     string LogFilePath,
     int RetentionDays,

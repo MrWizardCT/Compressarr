@@ -85,6 +85,17 @@ public sealed class ProcessingSettings
     /// unit-suffix string.</summary>
     public long MinSizeBytes { get; set; } = 0;
 
+    /// <summary>Extensions (no leading dot, same convention as VidTypes) that get moved alongside
+    /// a video when it's routed to its destination - subtitles, artwork, etc, matched against a
+    /// stem-matched candidate's own extension. A stem-matched file whose extension ISN'T here is
+    /// handled per UnmatchedCompanionAction instead of being assumed to be a companion.</summary>
+    public List<string> CompanionExtensions { get; set; } = new() { "srt", "nfo", "jpg", "png", "ass", "idx", "sub" };
+
+    /// <summary>What happens to a stem-matched file whose extension isn't in CompanionExtensions,
+    /// and to anything still left in a source folder once its last video is gone. Same three
+    /// options and default (Recycle) as DeleteAfterConvert above, for consistency.</summary>
+    public DeleteAfterConvertMode UnmatchedCompanionAction { get; set; } = DeleteAfterConvertMode.Recycle;
+
     public DestinationCollisionMode OnDestinationCollision { get; set; } = DestinationCollisionMode.Overwrite;
 }
 

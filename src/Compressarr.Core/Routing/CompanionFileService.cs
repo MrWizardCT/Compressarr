@@ -8,24 +8,40 @@ public interface ICompanionFileService
     /// its source folder belongs to it - subtitles, .nfo, artwork, etc - matched by shared base
     /// name (e.g. "Show.eng.srt" alongside "Show.mp4"). Runs immediately, every time, regardless
     /// of whether other videos are still sitting in the same shared/flat folder - a sibling
-    /// episode's own companions are never touched, only this file's own. In Delete/Recycle mode
-    /// they're moved into the destination; in Maintain mode they're copied and the source is left
-    /// untouched. Once no video files remain in the source folder at all, it (and now-empty
-    /// ancestors, up to but not including inputRoot) is removed too.
+    /// episode's own companions are never touched, only this file's own.
+    ///
+    /// Of the stem-matched candidates, only ones whose extension is in companionExtensions are
+    /// treated as wanted and actually moved/copied alongside the video. A stem-matched file whose
+    /// extension ISN'T in that list, and anything left over once a folder's last video is gone
+    /// (an orphaned companion, or genuinely unrelated content a user placed there), is disposed of
+    /// per unmatchedCompanionAction - Maintain leaves it exactly where it is, Delete/Recycle
+    /// removes it. deleteAfterConvert==Maintain overrides all of this and guarantees the source is
+    /// never touched destructively at all, regardless of unmatchedCompanionAction - that's a
+    /// stronger, absolute "hands off source" contract, same as it's always been for the video
+    /// itself. The source folder (and now-empty ancestors, up to but not including inputRoot) is
+    /// only removed once it's genuinely empty - if unmatchedCompanionAction leaves something
+    /// behind on purpose, the folder is left alone rather than deleted out from under it.
     ///
     /// Confirmed live: an earlier "wait until this is the only video left in the folder, then
     /// sweep everything at once" design meant a file's own companions didn't move until the WHOLE
     /// shared batch finished - or never, if a sibling was permanently skipped/removed from the
     /// queue - and even Stop Monitoring landing right after one file finished (before the next
     /// started) left that file's own companions stranded. Moving per-file, immediately, by name
-    /// match rather than by "am I the last one" sidesteps all of that.</summary>
+    /// match rather than by "am I the last one" sidesteps all of that. A later version of the
+    /// final-sweep step also unconditionally deleted every remaining file once a folder had no
+    /// videos left, regardless of what it actually was - risking deletion of non-companion content
+    /// a user had placed there themselves. companionExtensions + unmatchedCompanionAction close
+    /// that gap: only recognized companion types move automatically, and what happens to anything
+    /// else is an explicit user choice, not an assumption.</summary>
     void MoveCompanionFiles(
         string originalFileFullName,
         string originalFileDirectory,
         string destinationFolder,
         IReadOnlyList<string> vidTypes,
         DeleteAfterConvertMode deleteAfterConvert,
-        string inputRoot);
+        string inputRoot,
+        IReadOnlyList<string> companionExtensions,
+        DeleteAfterConvertMode unmatchedCompanionAction);
 }
 
 /// <summary>Ported from Move-CompressarrCompanionFiles; redesigned from a batch-at-the-end sweep
@@ -45,11 +61,18 @@ public sealed class CompanionFileService : ICompanionFileService
         string destinationFolder,
         IReadOnlyList<string> vidTypes,
         DeleteAfterConvertMode deleteAfterConvert,
-        string inputRoot)
+        string inputRoot,
+        IReadOnlyList<string> companionExtensions,
+        DeleteAfterConvertMode unmatchedCompanionAction)
     {
         if (!Directory.Exists(originalFileDirectory)) return;
 
         var extensions = vidTypes
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => "." + t.Trim().TrimStart('.'))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var wantedExtensions = companionExtensions
             .Where(t => !string.IsNullOrWhiteSpace(t))
             .Select(t => "." + t.Trim().TrimStart('.'))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -65,16 +88,30 @@ public sealed class CompanionFileService : ICompanionFileService
 
         foreach (var sibling in ownCompanions)
         {
-            var destPath = Path.Combine(destinationFolder, Path.GetFileName(sibling));
+            var isWanted = wantedExtensions.Contains(Path.GetExtension(sibling));
+
             if (deleteAfterConvert == DeleteAfterConvertMode.Maintain)
             {
-                File.Copy(sibling, destPath, overwrite: true);
+                // Maintain never touches the source, period - an unwanted stem-matched file is
+                // left exactly where it is, regardless of unmatchedCompanionAction.
+                if (isWanted)
+                {
+                    File.Copy(sibling, Path.Combine(destinationFolder, Path.GetFileName(sibling)), overwrite: true);
+                }
+                continue;
             }
-            else
+
+            if (isWanted)
             {
+                var destPath = Path.Combine(destinationFolder, Path.GetFileName(sibling));
                 if (File.Exists(destPath)) File.Delete(destPath);
                 File.Move(sibling, destPath);
             }
+            else if (unmatchedCompanionAction != DeleteAfterConvertMode.Maintain)
+            {
+                _trash.DeleteFile(sibling, unmatchedCompanionAction);
+            }
+            // else: unmatchedCompanionAction == Maintain means "leave in place" - do nothing.
         }
 
         if (deleteAfterConvert == DeleteAfterConvertMode.Maintain) return;
@@ -96,20 +133,29 @@ public sealed class CompanionFileService : ICompanionFileService
             .Any(f => extensions.Contains(Path.GetExtension(f)));
         if (stillHasVideo) return;
 
-        // Clear out anything still left (companions of the last file just moved above; anything
-        // else here is orphaned, non-per-file content), then remove the now-empty source folder.
-        var remaining = Directory.EnumerateFileSystemEntries(originalFileDirectory).ToList();
-        foreach (var item in remaining)
+        // Whatever's left (an orphaned companion from an earlier call, or genuinely unrelated
+        // content) is disposed of per unmatchedCompanionAction, same policy as an unwanted
+        // stem-matched sibling above - Maintain leaves it in place, Delete/Recycle removes it.
+        if (unmatchedCompanionAction != DeleteAfterConvertMode.Maintain)
         {
-            if (Directory.Exists(item))
+            var remaining = Directory.EnumerateFileSystemEntries(originalFileDirectory).ToList();
+            foreach (var item in remaining)
             {
-                try { Directory.Delete(item, recursive: true); } catch { }
-            }
-            else
-            {
-                _trash.DeleteFile(item, deleteAfterConvert);
+                if (Directory.Exists(item))
+                {
+                    _trash.DeleteFolder(item, unmatchedCompanionAction);
+                }
+                else
+                {
+                    _trash.DeleteFile(item, unmatchedCompanionAction);
+                }
             }
         }
+
+        // Only remove the folder itself (and cascade upward) once it's genuinely empty - if
+        // unmatchedCompanionAction left something behind on purpose, this folder isn't done yet.
+        if (Directory.EnumerateFileSystemEntries(originalFileDirectory).Any()) return;
+
         _trash.DeleteFolder(originalFileDirectory, deleteAfterConvert);
 
         // Cascade upward: remove each parent folder in turn as long as it's now completely
