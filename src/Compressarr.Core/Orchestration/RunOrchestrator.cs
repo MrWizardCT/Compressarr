@@ -290,7 +290,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         if (!string.IsNullOrWhiteSpace(postExecCmd) && File.Exists(postExecCmd))
         {
             _logger.Log($"\nRunning post-execution command: {postExecCmd} {config.PostExec.Args}");
-            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(postExecCmd, config.PostExec.Args) { UseShellExecute = false });
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(postExecCmd, config.PostExec.Args) { UseShellExecute = false, CreateNoWindow = true });
             process?.WaitForExit();
         }
 
