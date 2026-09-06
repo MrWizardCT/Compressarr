@@ -109,9 +109,10 @@ public static class MaintenanceEndpoints
 
         // Everything except settings and lanes (both live in compressarr.settings.json, untouched
         // here): every file in Reports and Logs (any extension - not just clear-logs'/clear-history's
-        // own narrower .log/.txt/.html/.csv scopes), the run counter, and tracked resume state - a
-        // full reset for starting genuinely fresh testing, matching what a real production install
-        // would look like on day one.
+        // own narrower .log/.txt/.html/.csv scopes) and tracked resume state - a full reset for
+        // starting genuinely fresh testing. Deliberately leaves the run counter alone - it's a
+        // lifetime stat of the install, not test/report data, and there's no way to reconstruct it
+        // once cleared (unlike reports/logs, which just regenerate from the next real pass).
         app.MapPost("/api/maintenance/clear-all", (IConfigStore configStore, IPathExpander pathExpander, ITrashService trash, IResumeStateStore resumeStore) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
@@ -132,12 +133,6 @@ public static class MaintenanceEndpoints
                 {
                     trash.DeleteFile(file, DeleteAfterConvertMode.Recycle);
                 }
-            }
-
-            var runCountPath = AppPaths.GetRunCountFilePath();
-            if (File.Exists(runCountPath))
-            {
-                trash.DeleteFile(runCountPath, DeleteAfterConvertMode.Recycle);
             }
 
             resumeStore.Update(AppPaths.GetResumeFilePath(), state =>

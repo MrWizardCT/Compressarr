@@ -384,7 +384,7 @@ document.getElementById('clearHistoryBtn').addEventListener('click', () => runMa
 
 document.getElementById('clearAllBtn').addEventListener('click', () => runMaintenanceAction(
   '/api/maintenance/clear-all',
-  'Delete everything except Settings and Lanes - every report, every log, the run counter, and all tracked resume state?\n\nRemoved files go to the Recycle Bin.',
+  'Delete everything except Settings and Lanes - every report, every log, and all tracked resume state?\n\nThe run counter is left untouched. Removed files go to the Recycle Bin.',
   'Everything except Settings and Lanes cleared.'
 ));
 

@@ -463,6 +463,19 @@ h3 {
   color: var(--text-dim);
 }
 
+/* Maintenance card - a tight list of one-line actions rather than the input-oriented
+   field-block/two-col grid (label-above-control, meant for form fields) used elsewhere - a plain
+   list of buttons read as messy stacked that way, with an odd item left alone on the final row. */
+.maintenance-list .field-row {
+  margin-bottom: 0;
+  padding: 9px 0;
+}
+
+.maintenance-divider {
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+
 .help-tag {
   display: inline-flex;
   align-items: center;
