@@ -12,6 +12,7 @@ using Compressarr.Core.Presets;
 using Compressarr.Core.Reporting;
 using Compressarr.Core.Routing;
 using Compressarr.Core.Startup;
+using Compressarr.Core.Updates;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Compressarr.Core;
@@ -83,6 +84,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IBackupService, BackupService>();
         services.AddSingleton<IBackupScheduler, BackupScheduler>();
         services.AddSingleton<IDigestScheduler, DigestScheduler>();
+        services.AddSingleton<IUpdateCheckService, UpdateCheckService>();
 
         return services;
     }

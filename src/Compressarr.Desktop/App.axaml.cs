@@ -102,6 +102,11 @@ public partial class App : Application
         // on/off switches, checked every tick, so there's nothing to gate Start() itself on.
         Services.GetRequiredService<Compressarr.Core.Notifications.IDigestScheduler>().Start();
 
+        // Checks immediately on startup (not just once a day) - a restart is the one moment most
+        // likely to have just resolved a previously-flagged update, so the toolbar indicator
+        // shouldn't need to wait out the rest of a day's cache to notice.
+        Services.GetRequiredService<Compressarr.Core.Updates.IUpdateCheckService>().Start();
+
         base.OnFrameworkInitializationCompleted();
     }
 }

@@ -163,19 +163,19 @@ function renderNav(activePage) {
 }
 
 // Update indicator in the toolbar - visible on every page, same reasoning as the monitoring
-// status cluster above. Checks GitHub at most once a day (cached in localStorage, keyed by when
-// it was last checked) rather than on every page load; once shown, it keeps showing on every
-// subsequent page load without waiting for the next check, and only goes away once a later daily
-// check finds the installed version has caught up - there's no separate "dismiss" for it.
-const UPDATE_CHECK_STORAGE_KEY = 'compressarr.updateCheck';
-const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
-
-function renderUpdateIndicator(cached) {
+// status cluster above. The actual GitHub check runs server-side (IUpdateCheckService), on a
+// background loop that checks immediately on app startup and roughly once a day after that - this
+// just renders whatever the server currently knows, on every page load. Deliberately not cached
+// client-side any more: an in-browser cache would keep showing a stale "update available" for up
+// to a day after an upgrade actually resolved it (the app restarting - the one moment an upgrade
+// always causes - is exactly when the server-side check re-runs and clears it), and a plain local
+// API call is cheap enough to just make every time.
+function renderUpdateIndicator(result) {
   const link = document.getElementById('updateLink');
   if (!link) return; // toolbar not built yet, or this raced a navigation
 
-  if (cached && cached.hasUpdate && cached.releaseUrl) {
-    link.href = cached.releaseUrl;
+  if (result && result.hasUpdate && result.releaseUrl) {
+    link.href = result.releaseUrl;
     link.classList.remove('hidden');
   } else {
     link.classList.add('hidden');
@@ -183,29 +183,10 @@ function renderUpdateIndicator(cached) {
 }
 
 function checkForUpdate() {
-  let cached = null;
-  try { cached = JSON.parse(localStorage.getItem(UPDATE_CHECK_STORAGE_KEY) || 'null'); } catch { /* corrupt/old value - treat as absent */ }
-
-  // Render from cache immediately - don't make every page load wait on a network round-trip
-  // just to show an indicator that, most days, won't even need re-checking.
-  renderUpdateIndicator(cached);
-
-  const dueForRecheck = !cached || (Date.now() - cached.checkedAt) > UPDATE_CHECK_INTERVAL_MS;
-  if (!dueForRecheck) return;
-
-  fetch('/api/about/check-update')
+  fetch('/api/about/update-status')
     .then(res => res.json())
-    .then(body => {
-      const fresh = {
-        checkedAt: Date.now(),
-        hasUpdate: !!body.hasUpdate,
-        releaseUrl: body.releaseUrl || '',
-        latestVersion: body.latestVersion || ''
-      };
-      localStorage.setItem(UPDATE_CHECK_STORAGE_KEY, JSON.stringify(fresh));
-      renderUpdateIndicator(fresh);
-    })
-    .catch(() => {}); // best-effort - GitHub unreachable today just means keep showing whatever was cached before
+    .then(renderUpdateIndicator)
+    .catch(() => {}); // best-effort - server unreachable just means the indicator stays whatever it already was
 }
 
 // Counts runs (within the History page's own retention window) that had at least one error or
