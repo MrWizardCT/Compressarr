@@ -1,6 +1,8 @@
 <img src="Assets/CompressarrLogo.png" width="96" alt="Compressarr logo" align="left">
 
-# Compressarr<br><sub><i style="font-weight: normal; font-size: 0.6em;">Because size matters.</i></sub>
+# Compressarr<br>
+
+<sub><i>Because size matters.</i></sub>
 
 **[compressarr.tv](https://compressarr.tv)** · **[Wiki (full setup guide)](https://github.com/MrWizardCT/Compressarr/wiki)**
 
