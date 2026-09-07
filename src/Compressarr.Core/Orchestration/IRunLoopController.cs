@@ -130,7 +130,18 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
         // consumer never observes "stopped" before "started".
         RunningChanged?.Invoke(true);
 
-        lock (_lock) { _loopTask = LoopAsync(config, pollInterval, cts.Token); }
+        // Task.Run, not a direct call - an async method runs synchronously on the CALLING thread
+        // up to its first real suspension point, and RunOnceAsync's own first stretch of work
+        // (PrepareLane per lane, including FileBotRunner's real, blocking, potentially
+        // multi-second process invocation) has no await early enough to yield before then.
+        // Confirmed live: a direct LoopAsync(...) call here made POST /api/run/start itself block
+        // for the FULL duration of the first lane's FileBot pass before the HTTP response could
+        // even be sent - the Monitor page's very first poll() call (which only fires once that
+        // fetch resolves) could never observe the "Renaming" state, since by the time the browser
+        // got a response FileBot had already finished. Wrapping in Task.Run moves ALL of that
+        // work onto a thread-pool thread immediately, so Start() (and this endpoint) return
+        // right away regardless of how much synchronous work RunOnceAsync ends up doing.
+        lock (_lock) { _loopTask = Task.Run(() => LoopAsync(config, pollInterval, cts.Token)); }
     }
 
     public async Task StopAsync()

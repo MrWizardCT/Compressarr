@@ -190,6 +190,15 @@ public class RunLoopControllerTests
         var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
         controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
 
+        // Start() only guarantees LoopAsync has been scheduled (via Task.Run - see Start()'s own
+        // comment on why a direct call would block whatever thread calls Start), not that its
+        // first pass has actually begun running yet. Without this wait, StopAsync can race ahead
+        // of LoopAsync ever reaching RunOnceAsync at all - the loop then exits on its own (already
+        // cancelled) before SlowRunOrchestrator's blocking await ever engages, so the whole
+        // start-to-stop cycle can race to completion before this test's own polling gets a chance
+        // to observe IsStopping as true even once.
+        await WaitUntil(() => orchestrator.ReceivedStopToken is not null, TimeSpan.FromSeconds(2));
+
         var stopTask = controller.StopAsync();
         await WaitUntil(() => controller.IsStopping, TimeSpan.FromSeconds(2));
         Assert.True(controller.IsStopping);

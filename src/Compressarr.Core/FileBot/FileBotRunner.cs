@@ -147,6 +147,13 @@ public sealed class FileBotRunner : IFileBotRunner
                 return output.ToString();
             }
 
+            // The timeout-based overload above can return true before the async
+            // OutputDataReceived/ErrorDataReceived callbacks for a fast-exiting process's last
+            // lines have actually fired - a well-known .NET race, confirmed flaky here live. The
+            // parameterless overload blocks until the redirected streams are fully drained too, so
+            // sawErrorMarker/output below always reflect everything the process actually printed.
+            process.WaitForExit();
+
             if (process.ExitCode != 0)
             {
                 // FileBot exits non-zero even for a completely benign "nothing to do" outcome -
