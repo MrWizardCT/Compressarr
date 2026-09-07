@@ -1,18 +1,44 @@
 ; Inno Setup script for Compressarr - a tray-only background app with its entire UI in the
-; browser (Radarr/Sonarr-style). Packages the framework-dependent win-x64 publish output produced
-; by (requires the matching .NET Desktop/ASP.NET Core runtime already installed on the target
-; machine - see README for the download link):
-;   dotnet publish src/Compressarr.Desktop -c Release -r win-x64 -f net10.0-windows10.0.19041.0 --self-contained false -o publish/win-x64-fx
+; browser (Radarr/Sonarr-style). Builds TWO installer variants from one script, sharing all the
+; upgrade-safety logic below so it can never drift out of sync between them:
 ;
-; Framework-dependent only as of 2.1.1 (2026-09-05): the previous self-contained "Full" build
-; (275MB, bundling its own .NET runtime) was flagged by Windows Defender's cloud/SmartScreen
-; reputation classifier (Program:Win32/Contebrew.A!ml) on a real download - a live reputation
-; heuristic VirusTotal's static engine never reproduced (it scanned the identical file 0/68 clean,
-; Microsoft's own engine included). A self-signed cert carries no publisher reputation, and a
-; large, rarely-downloaded bundle is exactly what that classifier flags. Dropping to a single,
-; much smaller framework-dependent build removes that exposure entirely rather than chasing it.
+;   Non-bundled (default): packages the framework-dependent win-x64 publish output (requires the
+;   matching .NET ASP.NET Core Runtime already installed on the target machine - see README):
+;     dotnet publish src/Compressarr.Desktop -c Release -r win-x64 -f net10.0-windows10.0.19041.0 --self-contained false -o publish/win-x64-fx
+;     ISCC.exe installer\Compressarr.iss
+;     -> publish\Compressarr-Setup-{version}.exe
 ;
-; Build with: ISCC.exe installer\Compressarr.iss
+;   Full (bundled): packages the self-contained win-x64 publish output (bundles its own .NET
+;   runtime, no separate install needed, much larger):
+;     dotnet publish src/Compressarr.Desktop -c Release -r win-x64 -f net10.0-windows10.0.19041.0 --self-contained true -o publish/win-x64-full
+;     ISCC.exe /DFULL installer\Compressarr.iss
+;     -> publish\Compressarr-Setup-{version}-Full.exe
+;
+; The Full variant was dropped entirely as of 2.1.1 (2026-09-05) after Windows Defender's live
+; cloud/SmartScreen reputation classifier (Program:Win32/Contebrew.A!ml) flagged a real download -
+; a live heuristic VirusTotal's static engine never reproduced (it scanned the identical file 0/68
+; clean, Microsoft's own engine included), so a clean VT scan alone was never proof either way. The
+; self-signed cert used at the time carried zero publisher reputation, which the classifier weighs
+; alongside file size/novelty. **Reinstated 2026-09-07** after switching to a real Azure Trusted
+; Signing certificate (see the compressarr-azure-signing-setup memory) - the user tested BOTH
+; variants with a live Defender scan on a real production machine (the same way Contebrew was
+; originally caught) and both came back clean, real first-hand evidence the reputation issue was
+; actually about publisher trust, not the bundling itself. Both variants now ship every release,
+; using the SAME AppId (below) so installing either one over the other is treated as a normal
+; upgrade/reinstall of the same product, not a separate side-by-side install.
+;
+; Both variants use the SAME [Code] upgrade-safety logic (InitializeSetup/PrepareToInstall/
+; [InstallDelete] below) - critical since a user can switch FROM either variant TO either variant,
+; and the self-contained build's own coreclr.dll/hostfxr.dll left behind by an in-place upgrade is
+; exactly the failure mode that logic exists to prevent (see its own comments for the full story).
+
+#ifdef FULL
+  #define VariantSuffix "-Full"
+  #define SourceFolder "win-x64-full"
+#else
+  #define VariantSuffix ""
+  #define SourceFolder "win-x64-fx"
+#endif
 
 #define MyAppName "Compressarr"
 #define MyAppVersion "2.1.3"
@@ -33,7 +59,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\publish
-OutputBaseFilename=Compressarr-Setup-{#MyAppVersion}
+OutputBaseFilename=Compressarr-Setup-{#MyAppVersion}{#VariantSuffix}
 SetupIconFile=..\src\Compressarr.Desktop\Assets\CompressarrIcon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 ; Uncompressed: LZMA2's compressed/embedded-payload structure is what triggered a Microsoft
@@ -72,9 +98,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Type: filesandordirs; Name: "{app}"
 
 [Files]
-; The framework-dependent publish output (exe, wwwroot, Assets - no bundled .NET runtime) -
-; recursesubdirs/createallsubdirs so wwwroot's own subfolders (assets/) come along too.
-Source: "..\publish\win-x64-fx\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; SourceFolder resolves to win-x64-fx (framework-dependent) or win-x64-full (self-contained,
+; bundles its own .NET runtime) depending on whether /DFULL was passed to ISCC - see the header
+; comment above. recursesubdirs/createallsubdirs so wwwroot's own subfolders (assets/) come along
+; too.
+Source: "..\publish\{#SourceFolder}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

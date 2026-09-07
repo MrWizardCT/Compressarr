@@ -113,40 +113,42 @@ percent saved.
 
 ## Installation
 
-1. Install the **.NET 10 ASP.NET Core Runtime (x64)** if you don't already have it - that single
-   installer includes the base .NET Runtime it depends on too, so nothing else is needed. (You
-   already have it if you run other ASP.NET Core-based apps or services.) Direct download:
-   [aspnetcore-runtime-10.0.11-win-x64.exe](https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/10.0.11/aspnetcore-runtime-10.0.11-win-x64.exe).
+1. Pick which installer you want from the [Releases](https://github.com/MrWizardCT/Compressarr/releases)
+   page - both install and behave identically, the only difference is whether the .NET runtime
+   comes bundled:
+   - **`Compressarr-Setup-x.x.x.exe`** (smaller download) - requires the **.NET 10 ASP.NET Core
+     Runtime (x64)** to already be installed. Direct download:
+     [aspnetcore-runtime-10.0.11-win-x64.exe](https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/10.0.11/aspnetcore-runtime-10.0.11-win-x64.exe)
+     (this single installer includes the base .NET Runtime it depends on too - nothing else is
+     needed, and you likely already have it if you run other ASP.NET Core-based apps or services).
 
-   > If a newer .NET 10.0.x patch has since been released, the direct link above still works fine
-   > (Compressarr just needs 10.0.x, any patch), but for the latest you can instead go to the
-   > [general runtime page](https://dotnet.microsoft.com/en-us/download/dotnet/10.0/runtime) -
-   > that page lists three similarly-named downloads, though, so pick carefully: **.NET Desktop
-   > Runtime**, **ASP.NET Core Runtime**, and **.NET Runtime**. Compressarr needs the **ASP.NET
-   > Core Runtime** specifically, since it hosts its own web UI. The Desktop Runtime looks like
-   > the obvious pick for a desktop app, but it doesn't include what Compressarr actually needs -
-   > Compressarr will refuse to start with a "You must install or update .NET" message if that's
-   > the one you grab instead.
-2. Download `Compressarr-Setup-x.x.x.exe` from the
-   [Releases](https://github.com/MrWizardCT/Compressarr/releases) page.
-3. Run it and follow the installer. It installs to Program Files, adds a Start Menu shortcut
+     > If a newer .NET 10.0.x patch has since been released, the direct link above still works
+     > fine (Compressarr just needs 10.0.x, any patch), but for the latest you can instead go to
+     > the [general runtime page](https://dotnet.microsoft.com/en-us/download/dotnet/10.0/runtime) -
+     > that page lists three similarly-named downloads, though, so pick carefully: **.NET Desktop
+     > Runtime**, **ASP.NET Core Runtime**, and **.NET Runtime**. Compressarr needs the **ASP.NET
+     > Core Runtime** specifically, since it hosts its own web UI. The Desktop Runtime looks like
+     > the obvious pick for a desktop app, but it doesn't include what Compressarr actually needs -
+     > Compressarr will refuse to start with a "You must install or update .NET" message if
+     > that's the one you grab instead.
+   - **`Compressarr-Setup-x.x.x-Full.exe`** (larger download) - includes its own copy of the .NET
+     runtime, so there's nothing to install first. Use this one if you'd rather not deal with the
+     runtime step above.
+2. Run it and follow the installer. It installs to Program Files, adds a Start Menu shortcut
    (and an optional desktop icon), and registers a normal Windows uninstaller.
 
-   > **A note on Windows SmartScreen / Smart App Control**: Windows may flag the installer or
-   > the app as coming from an "Unknown Publisher," or Smart App Control may block it outright
-   > the first time you run it. This is expected, not a sign anything is wrong - it's the same
-   > situation every independently-published Windows tool starts in, including ones you may
-   > already trust and run daily (Sonarr, Radarr, and the rest of the *arr ecosystem included).
-   > Windows' reputation system checks how many machines have already run the exact file you
-   > downloaded, and a freshly published release starts at zero no matter how it's signed. If
-   > SmartScreen shows "Windows protected your PC," click **More info**, then **Run anyway**. If
-   > Smart App Control blocks it outright, either wait for the release's reputation to build (it
-   > typically clears within some weeks of more people downloading it), or turn off Smart App
-   > Control in Windows Security settings, same as most people running non-Store *arr-style
-   > software already have. Every release is also scanned with
-   > [VirusTotal](https://www.virustotal.com/) as part of publishing it - the scan link is at the
-   > bottom of that release's notes on the [Releases](https://github.com/MrWizardCT/Compressarr/releases)
-   > page, if you'd like to check it independently of trusting the publisher signature.
+   > **A note on Windows SmartScreen**: Compressarr is signed with a real publisher certificate
+   > (Janus Computer Systems, Inc.), but Windows' reputation system also weighs how many machines
+   > have already run the exact file you downloaded - so a freshly published release can still
+   > occasionally show a SmartScreen prompt the first few days after release, before its
+   > reputation has had time to build. This is expected, not a sign anything is wrong - the same
+   > situation every independently-published Windows tool goes through, including ones you may
+   > already trust and run daily (Sonarr, Radarr, and the rest of the *arr ecosystem included). If
+   > SmartScreen shows "Windows protected your PC," click **More info**, then **Run anyway**.
+   > Every release is also scanned with [VirusTotal](https://www.virustotal.com/) as part of
+   > publishing it - the scan link is at the bottom of that release's notes on the
+   > [Releases](https://github.com/MrWizardCT/Compressarr/releases) page, if you'd like to check
+   > it independently.
 4. Launch Compressarr from the Start Menu - it runs as a tray icon only, with no window of its
    own. Right-click the tray icon for **Open Web UI**, or just browse to
    `http://localhost:1212` (or whatever port you've configured).
@@ -491,7 +493,8 @@ src/
   Compressarr.Web/         Minimal-API endpoints + wwwroot (the entire browser UI: vanilla JS/HTML/CSS)
   Compressarr.Desktop/     Tray-only host - Avalonia TrayIcon, Windows toast notifications, composition root
 installer/
-  Compressarr.iss           Inno Setup script that packages the framework-dependent publish output
+  Compressarr.iss           Inno Setup script - builds both installer variants (regular and
+                             bundled "Full") from one script via an ISPP /DFULL define
 tests/
   Compressarr.Core.Tests/   xUnit tests for Core
 CHANGELOG.md               Release history

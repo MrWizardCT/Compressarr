@@ -3,13 +3,17 @@
     <OutputType>WinExe</OutputType>
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
-    <!-- Framework-dependent deployment (switched from self-contained as of 2.1.1, 2026-09-05: the
-         self-contained build's size and lack of publisher reputation triggered a Windows Defender
-         cloud/SmartScreen false positive - see installer/Compressarr.iss). Requires the matching
-         .NET runtime already installed on the target machine. Multi-targeted so the Windows build
-         can carry a real Windows.UI.Notifications toast implementation (needs a windows-flavored
-         TFM to reference the raw .winmd metadata) while macOS/Linux stay on the plain
-         cross-platform TFM. -->
+    <!-- Framework-dependent by default (requires the matching .NET runtime already installed on
+         the target machine) - the release pipeline explicitly overrides this per-build for BOTH
+         real shipped installer variants (see installer/Compressarr.iss), so this default only
+         actually governs a plain local `dotnet build`/`dotnet run`. Self-contained was dropped
+         entirely as of 2.1.1 (2026-09-05, a Windows Defender cloud/SmartScreen false positive
+         partly attributed to the self-signed cert's lack of publisher reputation) and reinstated
+         as a real second installer option as of 2.1.3 (2026-09-07) after switching to a real
+         Azure Trusted Signing certificate resolved that - see installer/Compressarr.iss's own
+         header for the full story. Multi-targeted so the Windows build can carry a real
+         Windows.UI.Notifications toast implementation (needs a windows-flavored TFM to reference
+         the raw .winmd metadata) while macOS/Linux stay on the plain cross-platform TFM. -->
     <TargetFramework></TargetFramework>
     <TargetFrameworks>net10.0-windows10.0.19041.0;net10.0</TargetFrameworks>
     <SelfContained>false</SelfContained>

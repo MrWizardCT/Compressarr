@@ -8,11 +8,22 @@ for that full history.
 
 > [!TIP]
 > **What's new in 2.1.3:** optional FileBot integration to rename/organize files before
-> processing, daily/weekly digest notifications on top of per-run alerts, and a live queue file
-> count with a configurable Queue Completion display (date/time or countdown). Everything else
-> below carries forward from 2.1.2 for context - new changes are in **bold**.
+> processing, daily/weekly digest notifications on top of per-run alerts, a live queue file count
+> with a configurable Queue Completion display (date/time or countdown), a real trusted
+> publisher signature in place of the old self-signed certificate, and the bundled installer
+> option is back. Everything else below carries forward from 2.1.2 for context - new changes are
+> in **bold**.
 
 ### Added
+- **Compressarr is now signed with a real, trusted publisher certificate (Janus Computer Systems,
+  Inc.) instead of the previous self-signed one, via Azure Trusted Signing.**
+- **The bundled installer (`Compressarr-Setup-{version}-Full.exe`) is back as a second, permanent
+  download option alongside the regular installer - it includes its own copy of the .NET runtime,
+  so nothing else needs to be installed first, at the cost of a much larger download. It was
+  dropped after 2.1.0 due to a Windows Defender reputation flag that a self-signed certificate
+  contributed to; the real certificate above resolves that. Pick whichever fits: the regular,
+  smaller installer if you already have (or don't mind installing) the .NET runtime it needs, or
+  the Full one if you'd rather not deal with that at all.**
 - **Optional FileBot pre-processing (Settings > File Name Processing): for users who don't run
   Sonarr/Radarr, Compressarr can shell out to the free [FileBot](https://www.filebot.net/) tool to
   rename and organize TV episodes and movies before scanning a lane's Input folder - separate
