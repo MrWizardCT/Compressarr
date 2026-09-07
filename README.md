@@ -157,8 +157,8 @@ right on the row so you can verify it without waiting for the schedule.
 2. Run it and follow the installer. It installs to Program Files, adds a Start Menu shortcut
    (and an optional desktop icon), and registers a normal Windows uninstaller.
 
-   > **A note on Windows SmartScreen**: Compressarr is signed with a real publisher certificate
-   > (Janus Computer Systems, Inc.), but Windows' reputation system also weighs how many machines
+   > **A note on Windows SmartScreen**: Compressarr is signed with a real publisher certificate,
+   > but Windows' reputation system also weighs how many machines
    > have already run the exact file you downloaded - so a freshly published release can still
    > occasionally show a SmartScreen prompt the first few days after release, before its
    > reputation has had time to build. This is expected, not a sign anything is wrong - the same

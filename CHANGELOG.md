@@ -15,8 +15,8 @@ for that full history.
 > in **bold**.
 
 ### Added
-- **Compressarr is now signed with a real, trusted publisher certificate (Janus Computer Systems,
-  Inc.) instead of the previous self-signed one, via Azure Trusted Signing.**
+- **Compressarr is now signed with a real, trusted publisher certificate instead of the previous
+  self-signed one, via Azure Trusted Signing.**
 - **The bundled installer (`Compressarr-Setup-{version}-Full.exe`) is back as a second, permanent
   download option alongside the regular installer - it includes its own copy of the .NET runtime,
   so nothing else needs to be installed first, at the cost of a much larger download. It was
