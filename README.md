@@ -71,6 +71,17 @@ now-empty folder itself is removed too.
 Processing is **sequential** - one file at a time, no parallel HandBrakeCLI jobs. If a run is
 interrupted, relaunching resumes from the unprocessed files.
 
+### FileBot pre-processing (optional)
+
+If you don't run Sonarr/Radarr, filenames dropped into a watch folder often aren't clean enough
+for reliable TV/Movie detection on their own. Settings > File Name Processing can optionally shell
+out to the free [FileBot](https://www.filebot.net/) tool to rename and organize files - looked up
+against TheTVDB/TheMovieDB - right before Compressarr scans a lane's Input folder. TV and Movies
+each get their own enable toggle and Arguments, so one content type's naming rules never affect
+the other; a TV episode-numbering picker (`S01E01` vs `1x01`) fills in FileBot's format string for
+you. A file FileBot couldn't confidently rename shows an amber "Unmatched" badge in the Monitor
+queue instead of failing silently.
+
 ### Monitoring
 
 The Monitor page is the control surface for continuous operation: **Start Monitoring** begins
@@ -101,6 +112,15 @@ report is labeled with a running run number (`Run #237: ...`) - a persistent, cu
 of runs that actually processed at least one file. The History page also lists every report
 still within your configured retention window, with columns for files, before/after size, and
 percent saved.
+
+Beyond the toast, the Notifications page can send a message to Discord, Slack, Telegram, Pushover,
+ntfy, Gotify, Notifiarr, IFTTT, or a custom webhook (which also covers Zapier, Make, n8n, Node-RED,
+and Home Assistant) - add as many channels as you want, each with its own Trigger (always / only
+on error or warning / never) and a Test button. On top of that per-run trigger, every channel
+(and the toast) can also send an independent **daily and/or weekly digest** - a periodic summary
+("Compressed N files, reducing original size from X GB to Y GB, saving Z% of original size")
+instead of, or alongside, a message after every single run - with its own Test/Save/Clear controls
+right on the row so you can verify it without waiting for the schedule.
 
 <img src="Assets/Screenshots/sample-report.png" alt="Sample Compressarr HTML report" width="700">
 
@@ -173,19 +193,26 @@ these pages has a small **?** next to it with a tooltip explaining what it does.
 | HandBrakeCLI path | Path to `HandBrakeCLI.exe` - Check/Install finds or downloads it |
 | presets.json path | Path to HandBrake's presets.json - Install/Merge Presets adds Compressarr's own, Reload picks up changes made to the file without restarting Compressarr |
 | Extra CLI options | Additional flags passed straight through to every HandBrakeCLI conversion |
+| FileBot Enabled | Turns on the optional FileBot pre-processing pass described above |
+| FileBot path | Path to `filebot.exe` |
+| Process movies / Movie Arguments | Per-type enable toggle and FileBot CLI arguments for Movies |
+| Process TV shows / TV episode numbering / TV Arguments | Per-type enable toggle, `S01E01`-vs-`1x01` numbering picker, and FileBot CLI arguments for TV |
 | Video extensions | Comma-separated file extensions to scan for (default: `mkv, avi, mp4, mpg, ts, m4v`) |
-| Minimum size (bytes) | Skip files smaller than this - useful for ignoring samples/junk |
+| Minimum size | Skip files smaller than this - useful for ignoring samples/junk (choose KB/MB/GB) |
 | Max files per run | Caps how many files are picked up in one pass (0 = no limit) |
 | Write output to same folder as input | Convert in place instead of using each lane's Output folder |
 | Move converted files into show/movie folders | Turns on the TV/Movie filing step described above |
 | Clear title metadata | Strips the embedded title tag (via TagLib-Sharp) so a media server reads the filename instead of stale/incorrect metadata - on by default |
 | Original file after convert | Maintain, Delete, or Recycle the source file once conversion succeeds |
+| Companion file extensions | Which sibling file extensions (subtitles, `.nfo`, artwork, etc.) move along with a converted file |
+| Unmatched companion file handling | Maintain, Delete, or Recycle a companion file whose extension isn't on that list |
 | On destination collision | Overwrite (default), Skip, or Rename, when a file already exists at the destination |
 | Log folder / Report folder | Where run logs, the history CSV, and HTML reports are written |
-| Log/report retention (days) | Logs and reports older than this are cleaned up automatically |
+| Log/report retention (days) | Logs and reports older than this are cleaned up automatically (0 = keep forever) |
 | Open report after run | Always, On Error, or Never |
 | Enable Monitoring at Startup | Start watching lanes automatically when Compressarr launches |
 | Poll interval (seconds) | How often the monitor loop checks lanes while monitoring is on |
+| Queue Completion display | Show the Monitor page's estimated finish time as an absolute date/time, or a countdown duration like `2d 5h 36m` |
 | Start with Windows (on login) | Registers Compressarr to launch automatically at login |
 | Post-execution command/arguments | Optional command to run after each pass completes |
 | Sonarr/Radarr Enabled, URL, API Key | See below |
@@ -235,7 +262,7 @@ Two things to know:
 
 ### Notifications page
 
-<img src="Assets/Screenshots/notifications-page.png" alt="Compressarr Notifications page, showing the toast toggle and two configured channels" width="700">
+<img src="Assets/Screenshots/notifications-page.png" alt="Compressarr Notifications page, showing the toast toggle, a configured channel, and the daily/weekly digest controls" width="700">
 
 Get a message wherever you already look - Discord, Slack, your phone, a self-hosted push server,
 or any automation platform - when a run finishes. Every channel is optional and off by default;
@@ -257,6 +284,23 @@ relevant, where to find it. Each channel has:
 | Test | Sends a test message using whatever's currently typed in, even if not yet saved |
 | Save / Remove | Persist or delete this channel |
 
+**Daily/weekly digests**: independent of Trigger above, every channel - and the desktop toast -
+can also send a periodic summary instead of, or alongside, a message after every single run.
+Right on each channel's own row:
+
+| Field | What it's for |
+|---|---|
+| Daily / Weekly | Independent on/off toggles - enable one, both, or neither |
+| at (time) | What time each one fires, local time - Daily and Weekly each have their own |
+| on (day) | Which day of the week Weekly fires |
+| Test | Sends a real digest right now, using today's actual numbers, once per digest type currently checked - bypasses the schedule entirely |
+| Save | Same as the channel's own Save button |
+| Clear | Unchecks both Daily and Weekly without saving |
+
+A digest reads: *"Compressed 12 files, reducing original size from 45.3 GB to 21.1 GB, saving
+53.4% of original size."* Want digest-only for a channel? Set its Trigger to **Never** and enable
+Daily and/or Weekly - the two are independent, so any combination works.
+
 **What data is sent**: every channel receives the run number, an aggregate summary (e.g. "12
 file(s) processed, 4.2 GB saved"), and the outcome (success/warning/error) - never filenames,
 media titles, folder paths, or anything else from your configuration. The one exception is the
@@ -264,7 +308,8 @@ local path to the HTML report file, which only the **Generic Webhook** and **IFT
 include - worth knowing before pointing either at a third-party service, since a path like
 `C:\Users\you\AppData\Roaming\Compressarr\Reports\...` leaves your machine as plain text. Every
 other channel type (Discord, Slack, Telegram, Pushover, ntfy, Gotify, Notifiarr) never sends the
-report path at all.
+report path at all. A digest isn't tied to any single run, so it never includes a report path
+either way, regardless of channel type.
 
 #### Supported services
 
@@ -458,6 +503,14 @@ from the Lanes page.
     "PresetsPath": "%appdata%\\HandBrake\\presets.json",
     "Options": ""
   },
+  "FileBot": {
+    "Enabled": false,
+    "CliPath": "%ProgramFiles%\\FileBot\\filebot.exe",
+    "TvEnabled": true,
+    "TvArgs": "",
+    "MovieEnabled": true,
+    "MovieArgs": ""
+  },
   "Lanes": [],
   "Processing": {
     "VidTypes": ["mkv", "avi", "mp4", "mpg", "ts", "m4v"],
@@ -466,20 +519,42 @@ from the Lanes page.
     "MoveFiles": true,
     "ClearTitleMetadata": true,
     "Limit": 0,
-    "MinSizeBytes": 0
+    "MinSizeBytes": 0,
+    "CompanionExtensions": ["srt", "nfo", "jpg", "jpeg", "png", "tbn", "ass", "ssa", "idx", "sub", "vtt"],
+    "UnmatchedCompanionAction": "Recycle",
+    "OnDestinationCollision": "Overwrite"
   },
   "Logging": { "LogFilePath": "%CompressarrAppData%\\Logs", "RetentionDays": 30 },
   "PostExec": { "Cmd": "", "Args": "" },
   "Report": { "ReportPath": "%CompressarrAppData%\\Reports", "OpenAfterRun": "OnError" },
-  "Repeat": { "Count": 0, "Monitor": false, "PollIntervalSeconds": 60 },
+  "Repeat": { "Count": 0, "Monitor": false, "PollIntervalSeconds": 60, "QueueEtaFormat": "Duration" },
   "Startup": { "CountdownSeconds": 10, "RunAtLogin": false },
   "Arrs": {
     "Sonarr": { "Enabled": false, "Url": "", "ApiKey": "" },
     "Radarr": { "Enabled": false, "Url": "", "ApiKey": "" }
   },
-  "Web": { "Port": 1212 }
+  "Web": { "Port": 1212 },
+  "Backup": {
+    "FolderPath": "%CompressarrAppData%\\Backups",
+    "IntervalDays": 7,
+    "RetentionDays": 28
+  },
+  "Notifications": {
+    "ToastEnabled": false,
+    "ToastDigestDailyEnabled": false,
+    "ToastDigestWeeklyEnabled": false,
+    "ToastDigestDailyTime": "09:00",
+    "ToastDigestWeeklyTime": "09:00",
+    "ToastDigestWeeklyDay": "Monday",
+    "Channels": []
+  }
 }
 ```
+
+`QueueEtaFormat` is `"DateTime"` or `"Duration"` - see the Settings table above. Each entry in
+`Notifications.Channels` also carries its own `DigestDailyEnabled`/`DigestWeeklyEnabled`/
+`DigestDailyTime`/`DigestWeeklyTime`/`DigestWeeklyDay`, same shape as the toast fields above,
+alongside its `Type`/`Trigger`/`Settings` - added from the Notifications page, not hand-edited here.
 
 The output file extension is derived from whichever preset was selected, rather than being
 hardcoded.
