@@ -4,6 +4,11 @@ All notable changes to Compressarr are documented in this file. Pre-release/RC b
 to v1.0.0 are omitted here - see [GitHub Releases](https://github.com/MrWizardCT/Compressarr/releases)
 for that full history.
 
+> [!NOTE]
+> Compressarr contains no AI or machine learning at runtime. Movie/TV detection, file matching,
+> and renaming all run on plain, inspectable regex pattern matching - the same deterministic
+> logic every time, nothing generative involved.
+
 ## [2.1.3] - 2026-09-07
 
 > [!TIP]

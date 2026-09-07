@@ -52,6 +52,11 @@ Watch folder → Detect TV/Movie → Convert (HandBrake) → File into library
    the run is complete - click it to open the report, whether or not Compressarr is still
    running.
 
+> [!NOTE]
+> Compressarr contains no AI or machine learning at runtime. Movie/TV detection, file matching,
+> and renaming all run on plain, inspectable regex pattern matching - the same deterministic
+> logic every time, nothing generative involved.
+
 ## What it does
 
 Compressarr watches an **open-ended set of content lanes** you define yourself - add, remove,
