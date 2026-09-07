@@ -2,6 +2,8 @@
 
 # Compressarr
 
+*Because size matters.*
+
 **[compressarr.tv](https://compressarr.tv)** · **[Wiki (full setup guide)](https://github.com/MrWizardCT/Compressarr/wiki)**
 
 <br clear="left">
