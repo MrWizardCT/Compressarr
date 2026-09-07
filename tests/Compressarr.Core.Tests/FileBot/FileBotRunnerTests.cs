@@ -165,6 +165,25 @@ public class FileBotRunnerTests : IDisposable
     }
 
     [Fact]
+    public void Run_ExternalToolMentionsFileButLeavesItInPlace_IsNotFlaggedUnmatched()
+    {
+        // Regression: FileBot confirms an already-correctly-named file via "[MOVE] Skipped [X]
+        // because [X] already exists" - the path never changes on disk, but FileBot DID engage
+        // with it, so this must not be flagged unmatched just because nothing moved. Found live:
+        // every file Compressarr had already correctly renamed on an earlier pass showed
+        // "Unmatched" on every subsequent re-scan, even though FileBot was working correctly.
+        var tvPath = CreateFile("Show.S01E01.mkv");
+        var runner = new FileBotRunner(new RealFolderScanner());
+        var logger = new RecordingRunLogger();
+        var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvArgs = $"/c echo Skipped \"{tvPath}\" because already exists" };
+
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+
+        Assert.DoesNotContain(tvPath, result);
+        Assert.True(File.Exists(tvPath));
+    }
+
+    [Fact]
     public void Run_NonZeroExitWithoutErrorMarker_DoesNotLogAsError()
     {
         // Regression: FileBot exits non-zero even for a completely benign "nothing to do" outcome

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Compressarr.Core.Config;
 using Compressarr.Core.Conversion;
 using Compressarr.Core.Logging;
@@ -13,12 +14,12 @@ public interface IFileBotRunner
     /// own routing already trusts) and invokes FileBot once per group that's enabled and has files,
     /// using that group's own Args - never both groups in one call, so each group's own --db/--format
     /// choice can never affect the other content type. Returns the union of both groups' "unmatched"
-    /// full paths - a file whose original path still exists after its group's FileBot call is
-    /// "unmatched" (FileBot didn't touch it), whether because FileBot itself couldn't confidently
-    /// match it, its group's Args are blank, or its group is turned off entirely. A file that was
-    /// already perfectly named (nothing to rename) is indistinguishable from a genuine no-match under
-    /// this heuristic - an accepted limitation for a placeholder signal, not a rigorous
-    /// match-confidence readout from FileBot itself.</summary>
+    /// full paths - a file is "unmatched" only if its original path still exists AND its path never
+    /// appears anywhere in FileBot's own output, meaning FileBot genuinely never engaged with it
+    /// (couldn't confidently match it, its group's Args are blank, or its group is turned off
+    /// entirely). A file FileBot confirmed was already correctly named - logged as "[MOVE] Skipped
+    /// [X] because [X] already exists," its path unchanged but still mentioned - is NOT unmatched,
+    /// since FileBot did successfully identify it.</summary>
     HashSet<string> Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger);
 }
 
@@ -87,15 +88,23 @@ public sealed class FileBotRunner : IFileBotRunner
         args = args.Replace("{files}", fileList);
 
         logger.Log($"[FileBot] Running ({label}): \"{cliPath}\" {args}");
-        InvokeProcess(cliPath, args, logger);
+        var output = InvokeProcess(cliPath, args, logger);
 
-        // We know exactly which paths we handed FileBot - anything still sitting at its original
-        // path afterward is exactly what FileBot left alone, no need to rescan the whole folder.
-        return files.Select(f => f.FullName).Where(File.Exists).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // A file whose original path is gone was renamed/moved away - matched. A file whose path
+        // is untouched could still be a genuine match: FileBot logs "[MOVE] Skipped [X] because [X]
+        // already exists" for a file that was ALREADY correctly named (confirmed live - a file
+        // Compressarr already routed correctly on an earlier pass triggers this every time it's
+        // re-scanned). Only a path that never appears anywhere in FileBot's own output at all - it
+        // genuinely never engaged with that file - counts as unmatched.
+        return files
+            .Select(f => f.FullName)
+            .Where(path => File.Exists(path) && !output.Contains(path, StringComparison.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    private void InvokeProcess(string cliPath, string args, IRunLogger logger)
+    private string InvokeProcess(string cliPath, string args, IRunLogger logger)
     {
+        var output = new StringBuilder();
         try
         {
             var startInfo = new ProcessStartInfo(cliPath, args)
@@ -107,16 +116,22 @@ public sealed class FileBotRunner : IFileBotRunner
             };
 
             using var process = new Process { StartInfo = startInfo };
-            var sawErrorMarkerLock = new object();
+            var stateLock = new object();
             var sawErrorMarker = false;
 
             // Logged line-by-line as FileBot actually prints it, not batched until the whole
             // process exits - a real TheTVDB/TMDB lookup can take real wall-clock time, and the
             // Monitor page's Recent Log otherwise shows nothing at all for however long that takes.
+            // Also accumulated (see RunGroup above) so a per-file match can be confirmed afterward
+            // even when nothing about that file's path actually changed on disk.
             void HandleLine(string data, LogSeverity severity)
             {
                 logger.Log($"[FileBot] {data}", severity);
-                if (data.Contains("Error (o_O)")) lock (sawErrorMarkerLock) sawErrorMarker = true;
+                lock (stateLock)
+                {
+                    output.AppendLine(data);
+                    if (data.Contains("Error (o_O)")) sawErrorMarker = true;
+                }
             }
             process.OutputDataReceived += (_, e) => { if (e.Data is not null) HandleLine(e.Data, LogSeverity.Info); };
             process.ErrorDataReceived += (_, e) => { if (e.Data is not null) HandleLine(e.Data, LogSeverity.Error); };
@@ -129,7 +144,7 @@ public sealed class FileBotRunner : IFileBotRunner
             {
                 logger.Log($"[FileBot] Did not exit within {ProcessTimeout.TotalMinutes:0} minutes - likely stuck open (its GUI, a license prompt, etc.) - killing it and continuing with whatever it left behind.", LogSeverity.Error);
                 try { process.Kill(entireProcessTree: true); } catch { /* best effort - it may already be gone */ }
-                return;
+                return output.ToString();
             }
 
             if (process.ExitCode != 0)
@@ -155,5 +170,7 @@ public sealed class FileBotRunner : IFileBotRunner
             // Never let an optional cleanup step block the lane's actual conversion work.
             logger.Log($"[FileBot] Failed to run: {ex.Message}", LogSeverity.Error);
         }
+
+        return output.ToString();
     }
 }
