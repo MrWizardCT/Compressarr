@@ -145,6 +145,10 @@ let selectOpenKey = null;
 let ghostEl = null;
 let grabOffsetY = 0;
 let presetNames = [];
+// Loaded once at startup alongside the preset list below (same settings fetch, no extra round
+// trip) - a Settings-page change to this while Monitor is already open needs a Monitor page
+// reload to take effect, same "load once" pattern this function already had for presetNames.
+let queueEtaFormat = 'DateTime';
 
 const PRESET_DEFAULT_VALUE = '__lane_default__';
 
@@ -155,6 +159,7 @@ async function loadQueuePresetNames() {
   try {
     const settingsRes = await fetch('/api/settings');
     const settings = await settingsRes.json();
+    queueEtaFormat = settings.queueEtaFormat || 'DateTime';
     if (!settings.presetsPath) return;
     const presetsRes = await fetch(`/api/presets?path=${encodeURIComponent(settings.presetsPath)}`);
     presetNames = await presetsRes.json();
@@ -197,6 +202,10 @@ function renderQueue(items) {
   if (draggingKey === null) {
     displayItems = latestItems.map(i => ({ ...i }));
   }
+  // Tracks displayItems, not latestItems, so the count never disagrees with what's actually
+  // rendered below it - including while the list is frozen mid-drag (see the guard further down).
+  const count = displayItems.length;
+  document.getElementById('queueHeading').textContent = `${count} File${count === 1 ? '' : 's'} In Queue`;
   // A row whose item disappeared from the server snapshot (completed, removed elsewhere) shouldn't
   // leave a dangling open popover referencing it.
   const keys = new Set(displayItems.map(queueKey));
@@ -497,6 +506,23 @@ function formatCompletionTime(isoString) {
   return `${month} ${day} ${year}, ${hours}:${minutes}${ampm}`;
 }
 
+// "2d 5h 36m" (not "02:05:36") - labeled units read unambiguously at a glance, where a
+// colon-separated triple looks like a clock (HH:MM:SS) instead of a countdown. Adaptive: drops
+// the "d" once under a day out, and "h" too once under an hour, so a near-finish queue reads
+// "36m" instead of a cluttered "0d 0h 36m". Floored at 0 rather than going negative (the ETA
+// hasn't been recomputed yet for that last few seconds' drift).
+function formatCompletionDuration(isoString) {
+  const diffMs = Math.max(0, new Date(isoString) - new Date());
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
 async function poll() {
   const res = await fetch('/api/run/status');
   const s = await res.json();
@@ -542,7 +568,9 @@ async function poll() {
     queueEtaValueEl.textContent = 'Estimating';
   } else {
     queueEtaLabelEl.textContent = 'Queue Completion:';
-    queueEtaValueEl.textContent = formatCompletionTime(s.queueEtaText);
+    queueEtaValueEl.textContent = queueEtaFormat === 'Duration'
+      ? formatCompletionDuration(s.queueEtaText)
+      : formatCompletionTime(s.queueEtaText);
   }
 
   renderQueue(s.upNext);

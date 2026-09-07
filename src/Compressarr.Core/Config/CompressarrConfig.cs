@@ -160,6 +160,23 @@ public sealed class RepeatSettings
     /// <summary>Cadence for IRunLoopController's monitor-mode loop - matches v1's original 60s
     /// countdown between polls.</summary>
     public int PollIntervalSeconds { get; set; } = 60;
+
+    /// <summary>How the Monitor page's "Queue Completion" stat displays the estimated finish time
+    /// it's already given (an ISO timestamp from RunEndpoints.ComputeQueueEtaText) - purely a
+    /// client-side rendering choice, so this doesn't change what the server computes/sends, only
+    /// how monitor.js formats it. Defaults to Duration for new installs (explicit user choice,
+    /// 2026-09-07) - an existing install's own saved value in settings.json always wins over this
+    /// default once a config file exists, so this only affects a genuinely fresh install.</summary>
+    public QueueEtaDisplayFormat QueueEtaFormat { get; set; } = QueueEtaDisplayFormat.Duration;
+}
+
+/// <summary>DateTime: "Sep 06 2026, 1:45PM" (absolute). Duration: "2d 5h 36m" remaining from now
+/// (relative, adaptive - drops the leading zero units), added per explicit user request as an
+/// alternative to the absolute-time display.</summary>
+public enum QueueEtaDisplayFormat
+{
+    DateTime,
+    Duration
 }
 
 public sealed class StartupSettings
@@ -233,6 +250,17 @@ public sealed class NotificationSettings
     /// toasts back turns this on from the first card on the Notifications page.</summary>
     public bool ToastEnabled { get; set; } = false;
 
+    // Digest settings for the toast itself - toast has no Trigger/channel concept, so its own
+    // digest schedule lives directly here rather than on a NotificationChannel. Same 7-field shape
+    // as NotificationChannel's own digest fields below, see those doc comments for the firing rule.
+    public bool ToastDigestDailyEnabled { get; set; } = false;
+    public bool ToastDigestWeeklyEnabled { get; set; } = false;
+    public string ToastDigestDailyTime { get; set; } = "09:00";
+    public string ToastDigestWeeklyTime { get; set; } = "09:00";
+    public DayOfWeek ToastDigestWeeklyDay { get; set; } = DayOfWeek.Monday;
+    public DateOnly? ToastLastDailyDigestSentDate { get; set; }
+    public DateOnly? ToastLastWeeklyDigestSentDate { get; set; }
+
     public List<NotificationChannel> Channels { get; set; } = new();
 }
 
@@ -247,4 +275,20 @@ public sealed class NotificationChannel
     public string DisplayName { get; set; } = "";
     public NotificationTrigger Trigger { get; set; } = NotificationTrigger.Always;
     public Dictionary<string, string> Settings { get; set; } = new();
+
+    // Digest: an independent periodic summary, on top of (not instead of) Trigger above - a
+    // channel with Trigger=Never and a digest enabled is "digest-only"; Trigger=Always plus a
+    // digest gets both. DigestDailyTime/DigestWeeklyTime are each HH:mm, local time, and fully
+    // independent - Weekly no longer inherits Daily's time (an earlier design; changed after the
+    // user pointed out the digest row has room for its own selector).
+    public bool DigestDailyEnabled { get; set; } = false;
+    public bool DigestWeeklyEnabled { get; set; } = false;
+    public string DigestDailyTime { get; set; } = "09:00";
+    public string DigestWeeklyTime { get; set; } = "09:00";
+    public DayOfWeek DigestWeeklyDay { get; set; } = DayOfWeek.Monday;
+
+    /// <summary>Scheduler-internal dedupe stamp, not user-editable - excluded from
+    /// NotificationChannelDto entirely so a Settings save can never accidentally reset it.</summary>
+    public DateOnly? LastDailyDigestSentDate { get; set; }
+    public DateOnly? LastWeeklyDigestSentDate { get; set; }
 }

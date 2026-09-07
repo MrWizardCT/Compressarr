@@ -29,6 +29,7 @@ public sealed record SettingsDto(
     int RepeatCount,
     bool RepeatMonitor,
     int PollIntervalSeconds,
+    string QueueEtaFormat,
     ArrServiceDto Sonarr,
     ArrServiceDto Radarr,
     int WebPort,

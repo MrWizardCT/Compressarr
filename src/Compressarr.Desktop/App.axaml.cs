@@ -98,6 +98,10 @@ public partial class App : Application
         // own always-on backup posture (only the folder/interval/retention are configurable).
         Services.GetRequiredService<Compressarr.Core.Backup.IBackupScheduler>().Start();
 
+        // Same always-on posture - each channel/toast's own Daily/Weekly checkboxes are the real
+        // on/off switches, checked every tick, so there's nothing to gate Start() itself on.
+        Services.GetRequiredService<Compressarr.Core.Notifications.IDigestScheduler>().Start();
+
         base.OnFrameworkInitializationCompleted();
     }
 }

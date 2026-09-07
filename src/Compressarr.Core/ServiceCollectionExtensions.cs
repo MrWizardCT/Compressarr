@@ -82,6 +82,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IBackupService, BackupService>();
         services.AddSingleton<IBackupScheduler, BackupScheduler>();
+        services.AddSingleton<IDigestScheduler, DigestScheduler>();
 
         return services;
     }

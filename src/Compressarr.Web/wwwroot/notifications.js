@@ -18,18 +18,64 @@ async function loadToastSetting() {
   const res = await fetch('/api/notifications/settings');
   const dto = await res.json();
   document.getElementById('toastEnabled').checked = dto.toastEnabled;
+  document.getElementById('toastDigestDaily').checked = dto.toastDigestDailyEnabled;
+  document.getElementById('toastDigestWeekly').checked = dto.toastDigestWeeklyEnabled;
+  document.getElementById('toastDigestDailyTime').value = dto.toastDigestDailyTime;
+  document.getElementById('toastDigestWeeklyTime').value = dto.toastDigestWeeklyTime;
+  document.getElementById('toastDigestWeeklyDay').value = dto.toastDigestWeeklyDay;
 }
 
-document.getElementById('toastEnabled').addEventListener('change', async e => {
+async function saveToastSettings(message) {
   const statusEl = document.getElementById('toastStatus');
   await fetch('/api/notifications/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ toastEnabled: e.target.checked })
+    body: JSON.stringify({
+      toastEnabled: document.getElementById('toastEnabled').checked,
+      toastDigestDailyEnabled: document.getElementById('toastDigestDaily').checked,
+      toastDigestWeeklyEnabled: document.getElementById('toastDigestWeekly').checked,
+      toastDigestDailyTime: document.getElementById('toastDigestDailyTime').value || '09:00',
+      toastDigestWeeklyTime: document.getElementById('toastDigestWeeklyTime').value || '09:00',
+      toastDigestWeeklyDay: document.getElementById('toastDigestWeeklyDay').value
+    })
   });
-  statusEl.textContent = e.target.checked ? 'Toast notifications enabled.' : 'Toast notifications disabled.';
+  statusEl.textContent = message;
   statusEl.classList.add('success');
   setTimeout(() => { statusEl.textContent = ''; statusEl.classList.remove('success'); }, 4000);
+}
+
+document.getElementById('toastEnabled').addEventListener('change', e => {
+  saveToastSettings(e.target.checked ? 'Toast notifications enabled.' : 'Toast notifications disabled.');
+});
+
+document.getElementById('toastDigestSaveBtn').addEventListener('click', () => saveToastSettings('Digest settings saved.'));
+
+document.getElementById('toastDigestClearBtn').addEventListener('click', () => {
+  document.getElementById('toastDigestDaily').checked = false;
+  document.getElementById('toastDigestWeekly').checked = false;
+});
+
+document.getElementById('toastDigestTestBtn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('toastDigestStatus');
+  const weeklyFlags = [];
+  if (document.getElementById('toastDigestDaily').checked) weeklyFlags.push(false);
+  if (document.getElementById('toastDigestWeekly').checked) weeklyFlags.push(true);
+  if (weeklyFlags.length === 0) weeklyFlags.push(false);
+
+  statusEl.textContent = 'Testing...';
+  statusEl.classList.remove('success');
+
+  const results = [];
+  for (const weekly of weeklyFlags) {
+    const res = await fetch('/api/notifications/digest-test/toast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ weekly })
+    });
+    results.push(await res.json());
+  }
+  statusEl.textContent = results.map(r => r.message).join(' | ');
+  statusEl.classList.toggle('success', results.every(r => r.success));
 });
 
 // ---- Notification channels - a dynamic list, each channel's own field set driven entirely by
@@ -96,6 +142,32 @@ function channelCardFromDto(dto) {
       </div>
     </div>
     <div class="lane-body">
+      <div class="digest-divider"></div>
+      <div class="digest-row">
+        <span class="digest-row-label">Receive Digest:</span>
+        <label class="check-row inline"><input type="checkbox" class="f-digest-daily" /> Daily</label>
+        <span>at</span>
+        <input type="time" class="f-digest-daily-time" />
+        <label class="check-row inline"><input type="checkbox" class="f-digest-weekly" /> Weekly</label>
+        <span>on</span>
+        <select class="f-digest-weekly-day">
+          <option value="Sunday">Sunday</option>
+          <option value="Monday">Monday</option>
+          <option value="Tuesday">Tuesday</option>
+          <option value="Wednesday">Wednesday</option>
+          <option value="Thursday">Thursday</option>
+          <option value="Friday">Friday</option>
+          <option value="Saturday">Saturday</option>
+        </select>
+        <span>at</span>
+        <input type="time" class="f-digest-weekly-time" />
+        <div class="digest-row-spacer"></div>
+        <button type="button" class="digest-test-btn icon-btn">Test</button>
+        <button type="button" class="digest-save-btn icon-btn save">Save</button>
+        <button type="button" class="digest-clear-btn icon-btn">Clear</button>
+      </div>
+      <div class="digest-status"></div>
+      <div class="digest-divider"></div>
       ${fieldBlocks}
       <div class="preset-status"></div>
     </div>
@@ -103,10 +175,22 @@ function channelCardFromDto(dto) {
 
   node.querySelector('.f-displayName').value = dto.displayName;
   node.querySelector('.f-trigger').value = dto.trigger;
+  node.querySelector('.f-digest-daily').checked = dto.digestDailyEnabled;
+  node.querySelector('.f-digest-weekly').checked = dto.digestWeeklyEnabled;
+  node.querySelector('.f-digest-daily-time').value = dto.digestDailyTime || '09:00';
+  node.querySelector('.f-digest-weekly-time').value = dto.digestWeeklyTime || '09:00';
+  node.querySelector('.f-digest-weekly-day').value = dto.digestWeeklyDay || 'Monday';
 
   node.querySelector('.save-channel-btn').addEventListener('click', () => saveChannel(node));
   node.querySelector('.remove-channel-btn').addEventListener('click', () => removeChannel(node));
   node.querySelector('.test-channel-btn').addEventListener('click', () => testChannel(node));
+
+  node.querySelector('.digest-save-btn').addEventListener('click', () => saveChannel(node));
+  node.querySelector('.digest-test-btn').addEventListener('click', () => testChannelDigest(node));
+  node.querySelector('.digest-clear-btn').addEventListener('click', () => {
+    node.querySelector('.f-digest-daily').checked = false;
+    node.querySelector('.f-digest-weekly').checked = false;
+  });
 
   return node;
 }
@@ -121,19 +205,32 @@ function readChannelCard(node) {
     type: node.dataset.type,
     displayName: node.querySelector('.f-displayName').value,
     trigger: node.querySelector('.f-trigger').value,
-    settings
+    settings,
+    digestDailyEnabled: node.querySelector('.f-digest-daily').checked,
+    digestWeeklyEnabled: node.querySelector('.f-digest-weekly').checked,
+    digestDailyTime: node.querySelector('.f-digest-daily-time').value || '09:00',
+    digestWeeklyTime: node.querySelector('.f-digest-weekly-time').value || '09:00',
+    digestWeeklyDay: node.querySelector('.f-digest-weekly-day').value
   };
 }
 
 async function saveChannel(node) {
   const dto = readChannelCard(node);
-  channelsStatus.textContent = `Saving "${dto.displayName}"...`;
+  const statusEl = node.querySelector('.preset-status');
+  statusEl.textContent = `Saving "${dto.displayName}"...`;
+  statusEl.classList.remove('success');
+
   const res = await fetch(`/api/notifications/channels/${dto.id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(dto)
   });
-  channelsStatus.textContent = res.ok ? `"${dto.displayName}" saved.` : 'Failed to save channel.';
+
+  statusEl.textContent = res.ok ? 'Saved.' : 'Failed to save channel.';
+  statusEl.classList.toggle('success', res.ok);
+  if (res.ok) {
+    setTimeout(() => { statusEl.textContent = ''; statusEl.classList.remove('success'); }, 4000);
+  }
 }
 
 async function removeChannel(node) {
@@ -163,6 +260,36 @@ async function testChannel(node) {
   const body = await res.json();
   statusEl.textContent = body.message;
   statusEl.classList.toggle('success', !!body.success);
+}
+
+// Fires a real digest immediately (today's actual numbers, bypassing the schedule entirely) - one
+// send per digest type currently checked on this row, so Daily+Weekly both enabled sends two
+// distinctly-labeled tests, not two identical "Daily Digest" ones. Falls back to a single Daily-
+// style test if neither box is checked yet, so Test still does something useful before saving.
+// Separate status line from the card's main .preset-status so it doesn't collide with Test/Save
+// feedback from the head row above.
+async function testChannelDigest(node) {
+  const dto = readChannelCard(node);
+  const statusEl = node.querySelector('.digest-status');
+  const weeklyFlags = [];
+  if (dto.digestDailyEnabled) weeklyFlags.push(false);
+  if (dto.digestWeeklyEnabled) weeklyFlags.push(true);
+  if (weeklyFlags.length === 0) weeklyFlags.push(false);
+
+  statusEl.textContent = 'Testing...';
+  statusEl.classList.remove('success');
+
+  const results = [];
+  for (const weekly of weeklyFlags) {
+    const res = await fetch('/api/notifications/digest-test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: dto.type, settings: dto.settings, weekly })
+    });
+    results.push(await res.json());
+  }
+  statusEl.textContent = results.map(r => r.message).join(' | ');
+  statusEl.classList.toggle('success', results.every(r => r.success));
 }
 
 async function loadNotifierTypes() {

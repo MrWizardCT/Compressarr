@@ -37,6 +37,7 @@ internal static class ConfigMapping
         RepeatCount: config.Repeat.Count,
         RepeatMonitor: config.Repeat.Monitor,
         PollIntervalSeconds: config.Repeat.PollIntervalSeconds,
+        QueueEtaFormat: config.Repeat.QueueEtaFormat.ToString(),
         Sonarr: new ArrServiceDto(config.Arrs.Sonarr.Enabled, config.Arrs.Sonarr.Url, config.Arrs.Sonarr.ApiKey),
         Radarr: new ArrServiceDto(config.Arrs.Radarr.Enabled, config.Arrs.Radarr.Url, config.Arrs.Radarr.ApiKey),
         WebPort: config.Web.Port,
@@ -76,6 +77,7 @@ internal static class ConfigMapping
         config.Repeat.Count = dto.RepeatCount;
         config.Repeat.Monitor = dto.RepeatMonitor;
         config.Repeat.PollIntervalSeconds = dto.PollIntervalSeconds;
+        config.Repeat.QueueEtaFormat = Enum.Parse<QueueEtaDisplayFormat>(dto.QueueEtaFormat);
         config.Arrs.Sonarr = new ArrServiceSettings { Enabled = dto.Sonarr.Enabled, Url = dto.Sonarr.Url, ApiKey = dto.Sonarr.ApiKey };
         config.Arrs.Radarr = new ArrServiceSettings { Enabled = dto.Radarr.Enabled, Url = dto.Radarr.Url, ApiKey = dto.Radarr.ApiKey };
         config.Web.Port = dto.WebPort;
@@ -104,7 +106,8 @@ internal static class ConfigMapping
     }
 
     public static NotificationChannelDto ToChannelDto(NotificationChannel channel) => new(
-        channel.Id, channel.Type, channel.DisplayName, channel.Trigger.ToString(), new Dictionary<string, string>(channel.Settings));
+        channel.Id, channel.Type, channel.DisplayName, channel.Trigger.ToString(), new Dictionary<string, string>(channel.Settings),
+        channel.DigestDailyEnabled, channel.DigestWeeklyEnabled, channel.DigestDailyTime, channel.DigestWeeklyTime, channel.DigestWeeklyDay.ToString());
 
     public static void ApplyChannelDto(NotificationChannel channel, NotificationChannelDto dto)
     {
@@ -113,5 +116,13 @@ internal static class ConfigMapping
         channel.Settings = new Dictionary<string, string>(dto.Settings);
         // Type is deliberately not settable via update - a channel's type is fixed at creation
         // (its field schema depends on it); changing type would need a new channel instead.
+
+        channel.DigestDailyEnabled = dto.DigestDailyEnabled;
+        channel.DigestWeeklyEnabled = dto.DigestWeeklyEnabled;
+        channel.DigestDailyTime = dto.DigestDailyTime;
+        channel.DigestWeeklyTime = dto.DigestWeeklyTime;
+        channel.DigestWeeklyDay = Enum.Parse<DayOfWeek>(dto.DigestWeeklyDay);
+        // LastDailyDigestSentDate/LastWeeklyDigestSentDate are deliberately not in the DTO at all -
+        // scheduler-internal bookkeeping, never user-editable, so a Settings save can never reset it.
     }
 }

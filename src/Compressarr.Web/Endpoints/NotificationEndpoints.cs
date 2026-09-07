@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Compressarr.Core.Config;
+using Compressarr.Core.Logging;
 using Compressarr.Core.Notifications;
 using Compressarr.Web.Dtos;
 using Microsoft.AspNetCore.Builder;
@@ -14,7 +15,13 @@ public static class NotificationEndpoints
         app.MapGet("/api/notifications/settings", (IConfigStore configStore) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
-            return Results.Json(new NotificationSettingsDto(config.Notifications.ToastEnabled));
+            return Results.Json(new NotificationSettingsDto(
+                config.Notifications.ToastEnabled,
+                config.Notifications.ToastDigestDailyEnabled,
+                config.Notifications.ToastDigestWeeklyEnabled,
+                config.Notifications.ToastDigestDailyTime,
+                config.Notifications.ToastDigestWeeklyTime,
+                config.Notifications.ToastDigestWeeklyDay.ToString()));
         });
 
         app.MapPut("/api/notifications/settings", (NotificationSettingsDto dto, IConfigStore configStore) =>
@@ -22,6 +29,13 @@ public static class NotificationEndpoints
             configStore.Update(AppPaths.GetConfigFilePath(), config =>
             {
                 config.Notifications.ToastEnabled = dto.ToastEnabled;
+                config.Notifications.ToastDigestDailyEnabled = dto.ToastDigestDailyEnabled;
+                config.Notifications.ToastDigestWeeklyEnabled = dto.ToastDigestWeeklyEnabled;
+                config.Notifications.ToastDigestDailyTime = dto.ToastDigestDailyTime;
+                config.Notifications.ToastDigestWeeklyTime = dto.ToastDigestWeeklyTime;
+                config.Notifications.ToastDigestWeeklyDay = Enum.Parse<DayOfWeek>(dto.ToastDigestWeeklyDay);
+                // ToastLastDailyDigestSentDate/ToastLastWeeklyDigestSentDate deliberately untouched -
+                // scheduler-internal bookkeeping, not part of this DTO at all.
                 return true;
             });
             return Results.Ok();
@@ -99,5 +113,46 @@ public static class NotificationEndpoints
             var result = await notifier.TestAsync(request.Settings, CancellationToken.None);
             return Results.Json(new { success = result.Success, message = result.Message });
         });
+
+        // Fires a real digest immediately, bypassing the schedule entirely - built from actual
+        // History (the real Daily/Weekly window a scheduled send would use), so this proves both
+        // the channel's delivery AND the real current numbers, not a canned test message. Same
+        // "test what's on screen, not what's saved" behavior as /api/notifications/test above.
+        // request.Weekly picks which window/label to use - the client calls this once per digest
+        // type currently checked on the card, so testing with both Daily and Weekly enabled sends
+        // two distinctly-labeled tests instead of two identical "Daily Digest" ones.
+        app.MapPost("/api/notifications/digest-test", async (DigestTestRequest request, IEnumerable<INotifier> notifiers, IConfigStore configStore, IRunHistoryStore historyStore, IPathExpander pathExpander) =>
+        {
+            var notifier = notifiers.FirstOrDefault(n => string.Equals(n.Type, request.Type, StringComparison.OrdinalIgnoreCase));
+            if (notifier is null) return Results.Json(new { success = false, message = $"Unknown notification type '{request.Type}'." });
+
+            var periodLabel = request.Weekly ? "Weekly Digest" : "Daily Digest";
+            var summary = DigestTestSummary(configStore, historyStore, pathExpander, request.Weekly);
+            var evt = summary.ToNotificationEvent(periodLabel);
+            var result = await notifier.SendAsync(request.Settings, evt, CancellationToken.None);
+            return Results.Json(new { success = result.Success, message = $"{periodLabel}: {result.Message}" });
+        });
+
+        app.MapPost("/api/notifications/digest-test/toast", (DigestTestToastRequest request, IConfigStore configStore, IRunHistoryStore historyStore, IPathExpander pathExpander, INotificationService notifications) =>
+        {
+            var periodLabel = request.Weekly ? "Weekly Digest" : "Daily Digest";
+            var summary = DigestTestSummary(configStore, historyStore, pathExpander, request.Weekly);
+            // A toast needs a real launch target to actually show up on an unpackaged Win32 app -
+            // see IDigestScheduler's own note on this, confirmed live 2026-09-07.
+            var port = configStore.Load(AppPaths.GetConfigFilePath()).Web.Port;
+            notifications.NotifyDigestComplete(summary, periodLabel, $"http://localhost:{port}/history.html");
+            // NotifyDigestComplete is best-effort/void (see its own doc comment) - there's no
+            // success/failure signal to report beyond "the call was made."
+            return Results.Json(new { success = true, message = $"{periodLabel} sent." });
+        });
+    }
+
+    private static DigestSummary DigestTestSummary(IConfigStore configStore, IRunHistoryStore historyStore, IPathExpander pathExpander, bool weekly)
+    {
+        var config = configStore.Load(AppPaths.GetConfigFilePath());
+        var logFilePath = pathExpander.Expand(config.Logging.LogFilePath);
+        var history = historyStore.GetHistory(logFilePath);
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        return weekly ? DigestSummaryBuilder.BuildWeekly(history, today) : DigestSummaryBuilder.BuildDaily(history, today);
     }
 }

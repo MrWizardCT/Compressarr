@@ -75,6 +75,47 @@ public sealed class WindowsNotificationService : INotificationService
         }
     }
 
+    public void NotifyDigestComplete(DigestSummary summary, string periodLabel, string? launchPath)
+    {
+        try
+        {
+            var progressFraction = Math.Clamp(summary.SavedPercent / 100.0, 0.0, 1.0);
+            var fileWord = summary.TotalFiles == 1 ? "file" : "files";
+
+            var xml = new XmlDocument();
+            var launchAttr = launchPath is not null ? $" launch=\"{new Uri(launchPath).AbsoluteUri}\" activationType=\"protocol\"" : "";
+            var logoElement = File.Exists(LogoPath)
+                ? $"""<image placement="appLogoOverride" hint-crop="circle" src="{new Uri(LogoPath).AbsoluteUri}" />"""
+                : "";
+
+            var headline = Encode($"{summary.TotalFiles} {fileWord} compressed");
+            var detail = Encode($"{summary.BeginSizeGb:0.00} GB → {summary.EndSizeGb:0.00} GB");
+            var progressStatus = Encode($"{summary.SavedPercent:0.#}% smaller");
+            var progressValueOverride = Encode($"Saved {summary.SavedGb:0.00} GB");
+
+            xml.LoadXml($"""
+                <toast{launchAttr}>
+                  <visual>
+                    <binding template="ToastGeneric">
+                      {logoElement}
+                      <text>{Encode($"Compressarr — {periodLabel}")}</text>
+                      <text hint-style="subtitle">{headline}</text>
+                      <text hint-style="captionSubtle">{detail}</text>
+                      <progress value="{progressFraction.ToString(System.Globalization.CultureInfo.InvariantCulture)}" valueStringOverride="{progressValueOverride}" title="Space Saved" status="{progressStatus}" />
+                    </binding>
+                  </visual>
+                </toast>
+                """);
+
+            var toast = new ToastNotification(xml);
+            ToastNotificationManager.CreateToastNotifier(AppId).Show(toast);
+        }
+        catch
+        {
+            // Best-effort only - a broken/unavailable toast subsystem must never fail the digest scheduler.
+        }
+    }
+
     private static string Encode(string text) => System.Net.WebUtility.HtmlEncode(text);
 }
 #endif

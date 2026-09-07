@@ -120,6 +120,7 @@ function fillForm(dto) {
   document.getElementById('openAfterRun').value = dto.openAfterRun;
   document.getElementById('repeatMonitor').checked = dto.repeatMonitor;
   document.getElementById('pollIntervalSeconds').value = dto.pollIntervalSeconds;
+  document.getElementById('queueEtaFormat').value = dto.queueEtaFormat;
   document.getElementById('runAtLogin').checked = dto.runAtLogin;
   document.getElementById('postExecCmd').value = dto.postExecCmd;
   document.getElementById('postExecArgs').value = dto.postExecArgs;
@@ -171,6 +172,7 @@ function readForm() {
     repeatCount: 0,
     repeatMonitor: document.getElementById('repeatMonitor').checked,
     pollIntervalSeconds: parseInt(document.getElementById('pollIntervalSeconds').value, 10) || 60,
+    queueEtaFormat: document.getElementById('queueEtaFormat').value,
     sonarr: {
       enabled: document.getElementById('sonarrEnabled').checked,
       url: document.getElementById('sonarrUrl').value,
