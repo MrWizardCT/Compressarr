@@ -265,7 +265,19 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             MovieEnabled = config.FileBot.MovieEnabled,
             MovieArgs = config.FileBot.MovieArgs
         };
+        // A live UI otherwise has nothing to show between LaneStarted and the first FileStarted -
+        // FileBot's own lookups can take real wall-clock time (a live TheTVDB/TMDB call), during
+        // which the Monitor page would look stuck/idle without this.
+        if (config.FileBot.Enabled)
+        {
+            _progress.FileBotStarted(lane.Id);
+            _logger.Log("Renaming files with FileBot...");
+        }
         var fileBotUnmatched = _fileBotRunner.Run(expandedFileBotSettings, inputPath, config.Processing.VidTypes, _logger);
+        if (config.FileBot.Enabled)
+        {
+            _progress.FileBotCompleted(lane.Id);
+        }
 
         // Always scan (recursively - a lane's files can be nested in subfolders, e.g. one per
         // movie) so the natural fallback order for entries with no explicit user-set Order matches

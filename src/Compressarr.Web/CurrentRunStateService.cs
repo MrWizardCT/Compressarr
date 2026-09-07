@@ -14,6 +14,7 @@ public sealed record LogLineEntry(string Text, string Severity);
 // stops being "current" must still be able to answer this correctly.
 public sealed record RunStateSnapshot(
     bool IsRunning,
+    bool IsRenaming,
     string? LaneDisplayName,
     IReadOnlyDictionary<string, bool> LaneIsResumedById,
     string? FileName,
@@ -57,6 +58,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
     private readonly IHistoryThroughputEstimator _historyEstimator;
 
     private bool _isRunning;
+    private bool _isRenaming;
     private string? _laneId;
     private string? _laneDisplayName;
     private string? _fileName;
@@ -101,6 +103,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
         lock (_lock)
         {
             _isRunning = true;
+            _isRenaming = false;
             _laneId = null;
             _laneDisplayName = null;
             _fileName = null;
@@ -124,6 +127,24 @@ public sealed class CurrentRunStateService : IRunProgressReporter
             _laneDisplayName = laneDisplayName;
             _laneDisplayNamesById[laneId] = laneDisplayName;
             _laneIsResumedById[laneId] = isResumed;
+        }
+    }
+
+    public void FileBotStarted(string laneId)
+    {
+        lock (_lock)
+        {
+            _laneId = laneId;
+            _laneDisplayNamesById.TryGetValue(laneId, out _laneDisplayName);
+            _isRenaming = true;
+        }
+    }
+
+    public void FileBotCompleted(string laneId)
+    {
+        lock (_lock)
+        {
+            _isRenaming = false;
         }
     }
 
@@ -180,6 +201,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
         lock (_lock)
         {
             _isRunning = false;
+            _isRenaming = false;
             _fileName = null;
             _presetName = null;
             _fileIndex = 0;
@@ -270,7 +292,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
     {
         lock (_lock)
         {
-            return new RunStateSnapshot(_isRunning, _laneDisplayName, new Dictionary<string, bool>(_laneIsResumedById), _fileName, _presetName, _fileIndex, _fileTotal, _progressPercent, _progressFps, _progressEta, _recentLines.ToList());
+            return new RunStateSnapshot(_isRunning, _isRenaming, _laneDisplayName, new Dictionary<string, bool>(_laneIsResumedById), _fileName, _presetName, _fileIndex, _fileTotal, _progressPercent, _progressFps, _progressEta, _recentLines.ToList());
         }
     }
 }

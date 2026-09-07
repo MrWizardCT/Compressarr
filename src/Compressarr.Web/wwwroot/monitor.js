@@ -513,12 +513,14 @@ async function poll() {
   renderPauseButton();
 
   const stateValueEl = document.getElementById('stateValue');
-  stateValueEl.textContent = s.isRunning ? 'Running' : (s.isMonitoring ? 'Watching' : 'Idle');
+  stateValueEl.textContent = s.isRenaming ? 'Renaming' : (s.isRunning ? 'Running' : (s.isMonitoring ? 'Watching' : 'Idle'));
   stateValueEl.classList.toggle('running', s.isRunning);
-  document.getElementById('fileLabel').textContent = (s.isRunning && s.laneDisplayName)
-    ? `Compressing File in Lane ${s.laneDisplayName}${s.presetName ? ` using preset ${s.presetName}` : ''}`
-    : 'Waiting for files';
-  document.getElementById('fileValue').textContent = s.isRunning ? (s.fileName || '-') : '-';
+  document.getElementById('fileLabel').textContent = s.isRenaming
+    ? `Renaming files with FileBot in Lane ${s.laneDisplayName}`
+    : (s.isRunning && s.laneDisplayName)
+      ? `Compressing File in Lane ${s.laneDisplayName}${s.presetName ? ` using preset ${s.presetName}` : ''}`
+      : 'Waiting for files';
+  document.getElementById('fileValue').textContent = s.isRenaming ? '-' : (s.isRunning ? (s.fileName || '-') : '-');
 
   const hasPercent = s.progressPercent !== null && s.progressPercent !== undefined;
   document.getElementById('progressFill').style.width = `${hasPercent ? s.progressPercent : 0}%`;

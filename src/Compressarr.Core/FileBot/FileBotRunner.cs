@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using Compressarr.Core.Config;
 using Compressarr.Core.Conversion;
 using Compressarr.Core.Logging;
@@ -108,10 +107,19 @@ public sealed class FileBotRunner : IFileBotRunner
             };
 
             using var process = new Process { StartInfo = startInfo };
-            var stdout = new StringBuilder();
-            var stderr = new StringBuilder();
-            process.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (stdout) stdout.AppendLine(e.Data); };
-            process.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (stderr) stderr.AppendLine(e.Data); };
+            var sawErrorMarkerLock = new object();
+            var sawErrorMarker = false;
+
+            // Logged line-by-line as FileBot actually prints it, not batched until the whole
+            // process exits - a real TheTVDB/TMDB lookup can take real wall-clock time, and the
+            // Monitor page's Recent Log otherwise shows nothing at all for however long that takes.
+            void HandleLine(string data, LogSeverity severity)
+            {
+                logger.Log($"[FileBot] {data}", severity);
+                if (data.Contains("Error (o_O)")) lock (sawErrorMarkerLock) sawErrorMarker = true;
+            }
+            process.OutputDataReceived += (_, e) => { if (e.Data is not null) HandleLine(e.Data, LogSeverity.Info); };
+            process.ErrorDataReceived += (_, e) => { if (e.Data is not null) HandleLine(e.Data, LogSeverity.Error); };
 
             process.Start();
             process.BeginOutputReadLine();
@@ -124,10 +132,6 @@ public sealed class FileBotRunner : IFileBotRunner
                 return;
             }
 
-            var stdoutText = stdout.ToString().Trim();
-            var stderrText = stderr.ToString().Trim();
-            if (stdoutText.Length > 0) logger.Log($"[FileBot] {stdoutText}");
-            if (stderrText.Length > 0) logger.Log($"[FileBot] {stderrText}", LogSeverity.Error);
             if (process.ExitCode != 0)
             {
                 // FileBot exits non-zero even for a completely benign "nothing to do" outcome -
@@ -136,8 +140,7 @@ public sealed class FileBotRunner : IFileBotRunner
                 // never includes FileBot's own "Error (o_O)" failure marker (genuine failures -
                 // network errors, exceptions - always do), so that marker, not the exit code alone,
                 // decides whether this is worth flagging as an actual error.
-                var isRealFailure = stdoutText.Contains("Error (o_O)") || stderrText.Contains("Error (o_O)");
-                if (isRealFailure)
+                if (sawErrorMarker)
                 {
                     logger.Log($"[FileBot] Exited with code {process.ExitCode} - continuing with whatever it left behind.", LogSeverity.Error);
                 }

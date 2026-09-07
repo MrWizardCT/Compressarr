@@ -19,6 +19,15 @@ public interface IRunProgressReporter
     /// avoid.</summary>
     void LaneStarted(string laneId, string laneDisplayName, bool isResumed);
 
+    /// <summary>Brackets the optional FileBot pre-processing pass for a lane (see
+    /// ConversionOrchestrator.PrepareLane) - fired only when FileBot is actually enabled. Without
+    /// this, a live UI has nothing to show between LaneStarted and the first FileStarted, which can
+    /// otherwise look stuck/idle for as long as FileBot's own (potentially slow, real-network)
+    /// lookups take.</summary>
+    void FileBotStarted(string laneId);
+
+    void FileBotCompleted(string laneId);
+
     /// <summary>sizeGb is the source file's size - carried here (not just at FileCompleted) so a
     /// live throughput estimate can be derived from an in-progress encode's own elapsed time and
     /// percent-complete, well before it actually finishes. Long individual encodes would otherwise
