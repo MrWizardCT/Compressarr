@@ -4,6 +4,156 @@ All notable changes to Compressarr are documented in this file. Pre-release/RC b
 to v1.0.0 are omitted here - see [GitHub Releases](https://github.com/MrWizardCT/Compressarr/releases)
 for that full history.
 
+## [2.1.3] - 2026-09-07
+
+> [!TIP]
+> **What's new in 2.1.3:** optional FileBot integration to rename/organize files before
+> processing, daily/weekly digest notifications on top of per-run alerts, and a live queue file
+> count with a configurable Queue Completion display (date/time or countdown). Everything else
+> below carries forward from 2.1.2 for context - new changes are in **bold**.
+
+### Added
+- **Optional FileBot pre-processing (Settings > File Name Processing): for users who don't run
+  Sonarr/Radarr, Compressarr can shell out to the free [FileBot](https://www.filebot.net/) tool to
+  rename and organize TV episodes and movies before scanning a lane's Input folder - separate
+  enable toggles and Arguments for TV vs. Movies, a numbering-style picker (S01E01 vs. 1x01), a
+  Fix Network button for FileBot's own common "Unable to establish loopback connection" issue, and
+  an amber "Unmatched" badge on any queued file FileBot couldn't confidently rename.**
+- **Daily and/or weekly digest notifications on every notification channel and the desktop toast,
+  independent of the existing per-run trigger - a periodic summary ("Compressed N files, reducing
+  original size from X GB to Y GB, saving Z% of original size") instead of, or alongside, a message
+  after every single run. Each channel gets its own Daily/Weekly toggle, time, and day, plus
+  Test/Save/Clear controls right on the row.**
+- **Queue ETA on the Monitor page's state card ("Queue Completion"), estimated from real observed
+  encode throughput - shows "Estimating" until enough data exists to calculate from. Configurable
+  in Settings to display as an absolute date/time or a countdown duration (e.g. "2d 5h 36m").**
+- **"Move to top" / "Move to bottom" in the queue item's 3-dot menu, for quickly repositioning a
+  file in a long queue without a long drag.**
+- **The Monitor page's "In Queue" heading now shows a live file count ("N Files In Queue").**
+- **Configurable companion file extensions and unmatched-companion-file handling
+  (Maintain/Delete/Recycle) in Settings, instead of a fixed built-in list.**
+- **Clear Logs, Clear History, and Clear All buttons on Settings' Maintenance card.**
+- Per-queue-item controls on the Monitor page: drag a file to reorder it within its lane, skip it
+  (stays visible, dimmed, excluded from processing until un-skipped), remove it from the queue
+  entirely, or override its preset for that one file only from a dropdown of installed presets - a
+  "Use Lane Preset" option resets an override back to the lane default.
+- Error queue entries are now shown on Monitor (red badge) with a Remove action, instead of being
+  invisible until the next report.
+- Failed file *moves* (encode succeeded, but couldn't be filed into the library - an offline
+  network drive, etc.) are now retried automatically on the lane's next pass, without re-encoding.
+- Configurable behavior when a destination file already exists - Overwrite (previous behavior,
+  still the default), Skip, or Rename - instead of always silently overwriting.
+- Automated backups (Settings > Backups): scheduled zip backups of your full setup (settings,
+  lanes, resume state, run counter, history) to a local or network folder, plus a "Backup Now"
+  button and a list of existing backups you can restore from with one click - including on a
+  brand-new install, before you've configured anything else.
+- Export/import your full configuration as a single file from Settings, for backing up or moving
+  to a new machine.
+- Test Connection button next to the Sonarr/Radarr integration settings, so a bad URL or API key
+  shows up immediately instead of only at unmonitor-time during a real run.
+- A warning before leaving Settings or Lanes with unsaved changes, plus a Clear Changes button to
+  discard edits in place.
+- Pause/Resume for the file currently being converted.
+- KB/MB/GB unit dropdown next to Settings' Minimum size field (previously bytes only).
+- Per-file conversion duration on the HTML report, and a running total time on the History page.
+- The Monitor page's status now shows which preset the current file is using.
+- A completely redesigned web UI: a left sidebar for navigation (in place of the old top tab bar),
+  a persistent toolbar showing monitoring status and CPU usage on every page, and a consistent
+  card-based layout across Settings, Lanes, History, and About.
+- A Donate page with QR codes and one-click copy for several cryptocurrency addresses.
+- A small indicator appears in the toolbar when a newer version of Compressarr is available.
+- Notification channels (Notifications page): get a message when a run completes via Discord,
+  Slack, Telegram, Pushover, ntfy, Gotify, Notifiarr, IFTTT, or a custom webhook (which also
+  covers Zapier, Make, n8n, Node-RED, and Home Assistant) - configure as many channels as you
+  want, each with its own trigger (always / only on error or warning / never) and a Test button.
+  A separate toggle controls the existing Windows toast notification, now off by default. Every
+  field has a help bubble explaining what it needs and where to find it.
+- True cross-lane queue priority: dragging a file in the Monitor page's queue can now move it
+  ahead of files in a *different* Lane, not just within its own Lane - the order shown is exactly
+  the order files will be processed in, regardless of which Lane each one belongs to.
+- A [detailed GitHub Wiki](https://github.com/MrWizardCT/Compressarr/wiki) with a full walkthrough
+  of every page, written for people new to Compressarr.
+
+### Changed
+- **Settings saves now show a clear green confirmation instead of no feedback at all - both at the
+  top of the page and directly on the row you just changed (e.g. a notification channel's own Save
+  button).**
+- **Page status messages now also mirror into the toolbar, so a confirmation like "Settings saved"
+  stays visible even after scrolling down a long page.**
+- Start/Stop Monitoring is now a single toggle button instead of two separate ones.
+- Stop Monitoring now stops after the file currently converting finishes, rather than continuing
+  to process every other file still queued behind it.
+- Subtitle and other companion files now move to their destination immediately once their own
+  video finishes converting, instead of waiting for every file in a shared folder to finish first.
+- The queue's preset picker is a plain dropdown showing the preset actually in effect, instead of
+  a custom popover that could show a stale or misleading placeholder.
+
+### Fixed
+- **FileBot's own console window no longer flashes on screen during an otherwise-background
+  automated run.**
+- **A file FileBot confirmed was already correctly named (it logs "already exists" for these) was
+  incorrectly flagged "Unmatched" in the queue instead of being recognized as a real match.**
+- **The Monitor page's "Renaming" state now appears as soon as FileBot actually starts, not after
+  the fact - fixed a real blocking bug where starting monitoring could hang the page's very first
+  status update for the full duration of FileBot's own work before anything appeared to happen.**
+- **The post-execution command's own process launch could also flash a console window, the same
+  root cause as FileBot's.**
+- **A movie filename containing a raw resolution tag (e.g. an older DivX-era rip with "720x480" in
+  the name) could be misdetected as a TV episode and routed into a nonsense "Season 720" folder.**
+- **Log/report retention set to "0 days" deleted everything immediately instead of the intuitive
+  "keep forever."**
+- **The Monitor page's queue completion estimate could disappear once only a few files remained in
+  the queue.**
+- A queue edit (reorder, skip, or preset override) made while a file was actively converting could
+  be silently discarded once that file finished, and the wrong file could be processed next.
+- Removing a file from the queue didn't stick - it could reappear within seconds.
+- The queue's preset dropdown or its right-click-style menu could be yanked shut mid-interaction
+  by the page's own periodic refresh.
+- A queue edit could reorder the whole queue as a side effect, or make untouched files incorrectly
+  show as "Resumed" instead of "New."
+- The In Queue list could freeze while its own lane's pass was actively running.
+- A stale Error entry whose source file was already gone (deleted by hand, or handled elsewhere)
+  never cleared itself the way a stale queued entry already did, and could permanently inflate the
+  "resuming previous run" count on every single pass.
+- Reordering, skipping, removing, or overriding the preset for a file that lives in a subfolder
+  under a Lane's Input folder (rather than directly in it - e.g. one folder per movie) silently
+  did nothing, with no error shown.
+- Resolved a false-positive `Trojan:Win32/Wacatac.B!ml` flag from one vendor on v2.1.0's
+  installer. Root-caused through systematic isolation testing against VirusTotal to the
+  installer's LZMA2 compression of the embedded application payload, not to any notification
+  code, service, or architecture - confirmed by an A/B test where an identical build scanned
+  clean the moment compression was disabled. The installer now ships uncompressed
+  (`Compression=none`) as a result; every notification channel, including Discord and Slack,
+  remains fully intact.
+- Along the way, the notification providers (Discord, Slack, Telegram, Pushover, ntfy, Gotify,
+  Notifiarr, IFTTT) were also rewritten onto a narrower, intentionally boring HTTP client
+  interface (fixed JSON/form/text POST shapes, never a fully generic method+headers+content-type
+  sender) instead of sharing one universal webhook-sending routine - a deliberate architecture
+  improvement independent of the VirusTotal finding above. Generic Webhook keeps its own
+  fully-flexible sender, since it's the one channel that genuinely needs arbitrary
+  method/header/URL configurability.
+- Resolved a second, unrelated false positive (`Program:Win32/Contebrew.A!ml`) that Windows
+  Defender's live cloud/SmartScreen reputation classifier flagged on a real download of the
+  self-contained installer, despite VirusTotal - including a same-day re-scan with Microsoft's own
+  engine - showing it completely clean. That classifier weighs signals VirusTotal's static engine
+  never sees: publisher trust (this project's cert is self-signed, so it starts with none) and how
+  new/large/rarely-downloaded a file is. Rather than chase a live reputation heuristic, Compressarr
+  now ships a single, much smaller framework-dependent installer instead of the self-contained
+  build - removing the exposure rather than working around it. See Installation below for the
+  runtime it now requires.
+- Upgrading from a self-contained install (v2.1.0, or the briefly-shipped self-contained 2.1.1
+  build) left `coreclr.dll`/`hostfxr.dll`/`hostpolicy.dll` behind in the install folder, since an
+  in-place upgrade only overwrites files the new package ships - it never removes files that
+  belonged only to the old one. .NET's host then treated the install folder itself as a
+  self-contained runtime root and failed to find the real machine-wide runtime, showing "You must
+  install or update .NET" even on a machine with the correct runtime properly installed. The
+  installer now runs the previous version's own uninstaller before installing, guaranteeing a
+  clean upgrade every time.
+
+### Security
+- Donation addresses on the Donate page are no longer stored as single literal strings in the
+  compiled binary - a reasonable hardening measure.
+
 ## [2.1.2] - 2026-09-06
 
 > [!TIP]
