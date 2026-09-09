@@ -86,12 +86,25 @@ public partial class App : Application
             DataContext = Services.GetRequiredService<AppTrayViewModel>();
         }
 
-        _ = WebMonitorStartup.StartAsync(_webApp, Services.GetRequiredService<Compressarr.Core.Logging.IRunLogger>());
+        var webStartTask = WebMonitorStartup.StartAsync(_webApp, Services.GetRequiredService<Compressarr.Core.Logging.IRunLogger>());
 
         if (earlyConfig.Repeat.Monitor)
         {
             var loopController = Services.GetRequiredService<Compressarr.Core.Orchestration.IRunLoopController>();
             loopController.Start(earlyConfig, TimeSpan.FromSeconds(Math.Max(5, earlyConfig.Repeat.PollIntervalSeconds)));
+        }
+
+        // Independent of Repeat.Monitor above - opens the browser regardless of whether
+        // monitoring itself was also set to auto-start. Reuses IReportLauncher rather than a new
+        // service: Process.Start(UseShellExecute: true) opens a URL in the OS default browser the
+        // same way it opens a report file in its own default handler, no Windows-specific
+        // shell-launch code needed. Waits on webStartTask first - Kestrel hasn't necessarily
+        // finished binding yet at this point (StartAsync above is fire-and-forget), and opening
+        // the browser before it has would just show a connection-refused page.
+        if (earlyConfig.Repeat.LaunchMonitorAtStartup)
+        {
+            var reportLauncher = Services.GetRequiredService<Compressarr.Core.Reporting.IReportLauncher>();
+            _ = webStartTask.ContinueWith(_ => reportLauncher.Open($"{webUrl}monitor.html"), TaskScheduler.Default);
         }
 
         // Always started, unconditionally - no separate enable/disable setting, matching Sonarr's

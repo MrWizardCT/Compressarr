@@ -31,6 +31,7 @@ public sealed record SettingsDto(
     string OpenAfterRun,
     int RepeatCount,
     bool RepeatMonitor,
+    bool LaunchMonitorAtStartup,
     int PollIntervalSeconds,
     string QueueEtaFormat,
     ArrServiceDto Sonarr,

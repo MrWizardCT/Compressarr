@@ -165,6 +165,11 @@ public sealed class RepeatSettings
     public int Count { get; set; } = 0;
     public bool Monitor { get; set; } = false;
 
+    /// <summary>When true, the tray host opens the Monitor page in the OS default browser as soon
+    /// as the web server is up - independent of Monitor above (monitoring can auto-start with no
+    /// browser window, or a browser can open with monitoring left off, or both/neither).</summary>
+    public bool LaunchMonitorAtStartup { get; set; } = false;
+
     /// <summary>Cadence for IRunLoopController's monitor-mode loop - matches v1's original 60s
     /// countdown between polls.</summary>
     public int PollIntervalSeconds { get; set; } = 60;

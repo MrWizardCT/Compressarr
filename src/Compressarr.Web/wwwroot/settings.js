@@ -88,6 +88,7 @@ function fillForm(dto) {
   document.getElementById('keepSuccessfulHandBrakeLogs').checked = dto.keepSuccessfulHandBrakeLogs;
   document.getElementById('openAfterRun').value = dto.openAfterRun;
   document.getElementById('repeatMonitor').checked = dto.repeatMonitor;
+  document.getElementById('launchMonitorAtStartup').checked = dto.launchMonitorAtStartup;
   document.getElementById('pollIntervalSeconds').value = dto.pollIntervalSeconds;
   document.getElementById('queueEtaFormat').value = dto.queueEtaFormat;
   document.getElementById('runAtLogin').checked = dto.runAtLogin;
@@ -141,6 +142,7 @@ function readForm() {
     openAfterRun: document.getElementById('openAfterRun').value,
     repeatCount: 0,
     repeatMonitor: document.getElementById('repeatMonitor').checked,
+    launchMonitorAtStartup: document.getElementById('launchMonitorAtStartup').checked,
     pollIntervalSeconds: parseInt(document.getElementById('pollIntervalSeconds').value, 10) || 60,
     queueEtaFormat: document.getElementById('queueEtaFormat').value,
     sonarr: {

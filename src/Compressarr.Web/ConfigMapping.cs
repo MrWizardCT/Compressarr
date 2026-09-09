@@ -37,6 +37,7 @@ internal static class ConfigMapping
         OpenAfterRun: config.Report.OpenAfterRun.ToString(),
         RepeatCount: config.Repeat.Count,
         RepeatMonitor: config.Repeat.Monitor,
+        LaunchMonitorAtStartup: config.Repeat.LaunchMonitorAtStartup,
         PollIntervalSeconds: config.Repeat.PollIntervalSeconds,
         QueueEtaFormat: config.Repeat.QueueEtaFormat.ToString(),
         Sonarr: new ArrServiceDto(config.Arrs.Sonarr.Enabled, config.Arrs.Sonarr.Url, config.Arrs.Sonarr.ApiKey),
@@ -79,6 +80,7 @@ internal static class ConfigMapping
         config.Report.OpenAfterRun = Enum.Parse<OpenReportMode>(dto.OpenAfterRun);
         config.Repeat.Count = dto.RepeatCount;
         config.Repeat.Monitor = dto.RepeatMonitor;
+        config.Repeat.LaunchMonitorAtStartup = dto.LaunchMonitorAtStartup;
         config.Repeat.PollIntervalSeconds = dto.PollIntervalSeconds;
         config.Repeat.QueueEtaFormat = Enum.Parse<QueueEtaDisplayFormat>(dto.QueueEtaFormat);
         config.Arrs.Sonarr = new ArrServiceSettings { Enabled = dto.Sonarr.Enabled, Url = dto.Sonarr.Url, ApiKey = dto.Sonarr.ApiKey };
