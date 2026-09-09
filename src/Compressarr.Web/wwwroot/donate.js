@@ -29,7 +29,7 @@ async function renderCryptoGrid() {
         <span class="crypto-qr-hint">Click to display QR code</span>
       </button>
       <div class="crypto-address-row">
-        <span class="crypto-address">${escapeHtml(currency.address)}</span>
+        <span class="crypto-address" title="${escapeHtml(currency.address)}">${escapeHtml(truncateAddress(currency.address))}</span>
         <button type="button" class="crypto-copy-btn" aria-label="Copy ${escapeHtml(currency.name)} address">${COPY_ICON}</button>
       </div>
     `;
@@ -127,6 +127,14 @@ function openQrModal(currency) {
 
 function closeQrModal() {
   if (_qrModal) _qrModal.classList.add('hidden');
+}
+
+// Shown in the card instead of the full address so a long one never wraps to multiple lines and
+// stretches the card - the copy button (and this span's own hover title) still use/show the real
+// full address, only the on-card text is shortened.
+function truncateAddress(address) {
+  if (address.length <= 14) return address;
+  return `${address.slice(0, 5)}....${address.slice(-5)}`;
 }
 
 function escapeHtml(text) {

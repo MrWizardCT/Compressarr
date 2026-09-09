@@ -1307,30 +1307,35 @@ td { font-variant-numeric: tabular-nums; }
 
 .crypto-grid {
   display: grid;
-  /* Fixed 3-across (not auto-fit) so 6 cards land 3-over-3, not 4-over-2. */
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  /* Fixed 6-across (not auto-fit) so all 6 currencies land in one row on a normal-width window,
+     rather than however many happen to fit at some arbitrary card width. */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
   margin-bottom: 16px;
 }
 
-@media (max-width: 760px) {
-  .crypto-grid { grid-template-columns: 1fr; }
+@media (max-width: 900px) {
+  .crypto-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 520px) {
+  .crypto-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .crypto-card {
   display: flex;
   flex-direction: column;
-  padding: 20px 18px;
+  padding: 10px 10px;
 }
 
 .crypto-trigger {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   background: none;
   border: none;
-  padding: 0 0 16px;
+  padding: 0 0 8px;
   margin: 0;
   cursor: pointer;
   width: 100%;
@@ -1342,46 +1347,50 @@ td { font-variant-numeric: tabular-nums; }
 .crypto-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 10px; }
 
 .crypto-icon {
-  width: 56px;
-  height: 56px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #ffffff;
   font-weight: 800;
-  font-size: 21px;
+  font-size: 13px;
   letter-spacing: -0.02em;
   flex-shrink: 0;
   transition: transform 0.15s;
 }
 
-.crypto-name { font-size: 14.5px; font-weight: 700; color: var(--text); }
+.crypto-name { font-size: 12.5px; font-weight: 700; color: var(--text); text-align: center; }
 
 .crypto-qr-hint {
-  font-size: 11.5px;
+  font-size: 10px;
   color: var(--text-dim);
   transition: color 0.15s;
+  text-align: center;
 }
 
 .crypto-address-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
+  border-radius: 6px;
+  padding: 5px 6px;
 }
 
 .crypto-address {
   flex: 1;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10.5px;
   line-height: 1.4;
   color: var(--text);
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
 }
 
 .crypto-copy-btn {
@@ -1389,8 +1398,8 @@ td { font-variant-numeric: tabular-nums; }
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   background: none;
   border: 1px solid var(--border);
@@ -1402,7 +1411,7 @@ td { font-variant-numeric: tabular-nums; }
 
 .crypto-copy-btn:hover { border-color: var(--accent); color: var(--accent); }
 .crypto-copy-btn.copied { border-color: var(--ok); color: var(--ok); }
-.crypto-copy-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.crypto-copy-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
 
 .donate-thanks {
   grid-column: 1 / -1;
