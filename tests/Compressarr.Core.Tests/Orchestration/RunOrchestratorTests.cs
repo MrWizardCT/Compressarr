@@ -79,8 +79,11 @@ file sealed class NoOpTrashService : ITrashService
 file sealed class NoOpRunLogger : IRunLogger
 {
     public event Action<string, LogSeverity>? LineWritten { add { } remove { } }
-    public string Initialize(string logFilePath, string timestamp) => Path.GetTempFileName();
-    public void Log(string message, LogSeverity severity = LogSeverity.Info) { }
+    public bool HasLoggedError { get; private set; }
+    public string Initialize(string logFilePath, string timestamp) { HasLoggedError = false; return Path.GetTempFileName(); }
+    public void Log(string message, LogSeverity severity = LogSeverity.Info) { if (severity == LogSeverity.Error) HasLoggedError = true; }
+    public void LogProblem(string key, string message) => Log(message, LogSeverity.Error);
+    public void ClearProblem(string key) { }
     public void FileStart(string laneDisplayName, int index, int total, string fileName, double sizeGb, string contentType, string preset) { }
     public void FileComplete(string fileName, double beginSizeGb, double endSizeGb, TimeSpan duration, bool success, string? detailLogFile) { }
 }
@@ -110,11 +113,6 @@ file sealed class NoOpHistoryRollupCalculator : IHistoryRollupCalculator
 {
     public (HistoryRollup Today, HistoryRollup ThisMonth, HistoryRollup ThisYear) Calculate(string logFilePath) =>
         (new HistoryRollup(0, 0, 0), new HistoryRollup(0, 0, 0), new HistoryRollup(0, 0, 0));
-}
-
-file sealed class NoOpHtmlReportGenerator : IHtmlReportGenerator
-{
-    public string Generate(ReportModel model) => "<html></html>";
 }
 
 file sealed class NoOpReportLauncher : IReportLauncher
@@ -172,7 +170,7 @@ public class RunOrchestratorTests : IDisposable
     // RecordingProcessRunner can't appear in a member signature of this non-file-local test class,
     // even a private one, so the caller constructs it and passes it in instead of getting it back.
     private (RunOrchestrator Orchestrator, string ResumeFilePath) BuildOrchestrator(
-        CompressarrConfig config, IHandBrakeProcessRunner processRunner, IResumeStateStore? resumeStore = null)
+        CompressarrConfig config, IHandBrakeProcessRunner processRunner, IResumeStateStore? resumeStore = null, IRunLogger? logger = null)
     {
         // HandBrakeCLI/presets "paths" just need to exist on disk for PathExists to pass -
         // PassThroughPathExpander does no real expansion, and FixedExtensionPresetService never
@@ -187,17 +185,21 @@ public class RunOrchestratorTests : IDisposable
         // explicit parameter) and the RunOrchestrator side (which doesn't) agree on the same file.
         var resumeFilePath = AppPaths.GetResumeFilePath();
         var effectiveResumeStore = resumeStore ?? new JsonResumeStateStore();
+        // One shared instance for both orchestrators, matching real DI (IRunLogger is a
+        // singleton) - RunOrchestrator's own HasLoggedError check needs to see errors logged
+        // from deep inside ConversionOrchestrator too, the same as it does in production.
+        var effectiveLogger = logger ?? new NoOpRunLogger();
 
         var conversionOrchestrator = new ConversionOrchestrator(
             new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             processRunner, new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
-            new NoOpTrashService(), new NoOpRunLogger(), effectiveResumeStore, new NoOpProgressReporter(),
+            new NoOpTrashService(), effectiveLogger, effectiveResumeStore, new NoOpProgressReporter(),
             new StaticConfigStore(config));
 
         var runOrchestrator = new RunOrchestrator(
             new PassThroughPathExpander(), new FixedExtensionPresetService(), conversionOrchestrator, new MetadataService(),
-            effectiveResumeStore, new NoOpRunLogger(), new NoOpHistoryStore(), new NoOpHistoryRollupCalculator(),
-            new NoOpHtmlReportGenerator(), new NoOpReportLauncher(), new NoOpNotificationService(), new NoOpNotificationDispatcher(),
+            effectiveResumeStore, effectiveLogger, new NoOpHistoryStore(), new NoOpHistoryRollupCalculator(),
+            new Compressarr.Core.Reporting.HtmlReportGenerator(), new NoOpReportLauncher(), new NoOpNotificationService(), new NoOpNotificationDispatcher(),
             new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController());
 
         return (runOrchestrator, resumeFilePath);
@@ -443,5 +445,180 @@ public class RunOrchestratorTests : IDisposable
 
         var finalState = realResumeStore.Load(resumeFilePath);
         Assert.All(finalState, e => Assert.Equal(ResumeStatus.Completed, e.Status));
+    }
+
+    // Real bug found live: with a normal monitoring poll interval, a pass that finds nothing new
+    // (by far the most common outcome) still wrote a full summary log file AND a full HTML report
+    // to disk every single time - over 8000 of each on one production machine, most of them
+    // completely empty of anything worth seeing, making the genuinely useful ones hard to find.
+    // History already correctly skipped an empty pass; log/report needed the same treatment.
+    [Fact]
+    public async Task RunOnceAsync_ZeroFilesAndNoError_DeletesTheSummaryLogFile_AndWritesNoReport()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+        // Deliberately empty - this pass has nothing to do.
+
+        var lane = MakeLane("lane1", "Test Lane", inputDir, outputDir);
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.HandBrake.CliPath = Path.Combine(_tempDir, "HandBrakeCLI.exe");
+        config.HandBrake.PresetsPath = Path.Combine(_tempDir, "presets.json");
+        config.Logging.LogFilePath = Path.Combine(_tempDir, "Logs");
+        config.Report.ReportPath = Path.Combine(_tempDir, "Reports");
+        config.Lanes.Add(lane);
+
+        var logger = new Compressarr.Core.Logging.FileRunLogger();
+        var (orchestrator, _) = BuildOrchestrator(config, new RecordingProcessRunner(), logger: logger);
+
+        var result = await orchestrator.RunOnceAsync(config);
+
+        Assert.NotNull(result);
+        Assert.Equal(0, result!.TotalFiles);
+        Assert.False(Directory.Exists(config.Report.ReportPath) && Directory.GetFiles(config.Report.ReportPath).Length > 0,
+            "an empty pass should not write a report file");
+        Assert.False(Directory.Exists(config.Logging.LogFilePath) && Directory.GetFiles(config.Logging.LogFilePath).Length > 0,
+            "an empty, error-free pass should not leave a summary log file behind");
+    }
+
+    // Contrast case for the test above - a pass that processes 0 files because a lane is genuinely
+    // misconfigured (missing preset, here) is a real diagnostic worth keeping, unlike a quiet
+    // "nothing new" poll - its log must survive even though TotalFiles is also 0.
+    [Fact]
+    public async Task RunOnceAsync_ZeroFilesButErrorLogged_KeepsTheSummaryLogFile()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Misconfigured Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir
+            // No TvPreset or MoviePreset - RunOrchestrator logs an Error and skips this lane
+            // entirely, so the pass still ends with TotalFiles == 0.
+        };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.HandBrake.CliPath = Path.Combine(_tempDir, "HandBrakeCLI.exe");
+        config.HandBrake.PresetsPath = Path.Combine(_tempDir, "presets.json");
+        config.Logging.LogFilePath = Path.Combine(_tempDir, "Logs");
+        config.Report.ReportPath = Path.Combine(_tempDir, "Reports");
+        config.Lanes.Add(lane);
+
+        var logger = new Compressarr.Core.Logging.FileRunLogger();
+        var (orchestrator, _) = BuildOrchestrator(config, new RecordingProcessRunner(), logger: logger);
+
+        var result = await orchestrator.RunOnceAsync(config);
+
+        Assert.NotNull(result);
+        Assert.Equal(0, result!.TotalFiles);
+        Assert.True(Directory.Exists(config.Logging.LogFilePath) && Directory.GetFiles(config.Logging.LogFilePath).Length > 0,
+            "a pass that hit a real error should keep its summary log even with 0 files processed");
+    }
+
+    // Same file-proliferation problem the test above guards against, but for a STANDING config
+    // problem repeated every poll rather than a one-off - real gap found live: a persistently
+    // misconfigured lane (missing preset, missing HandBrakeCLI, etc) logged Error on literally
+    // every poll for as long as it stayed broken, which (combined with the fix above) meant a
+    // kept log file every poll for the whole time it stayed broken. IRunLogger.LogProblem fixes
+    // this the same way the per-file move-retry dedup does: Error only the first time (or if the
+    // message changes), Info for an unchanged repeat, and back to Error again once the problem is
+    // confirmed resolved (ClearProblem) and then recurs later - proven end-to-end here across 4
+    // real passes through RunOrchestrator.
+    [Fact]
+    public async Task RunOnceAsync_StandingLaneConfigProblem_OnlyKeepsLogOnFirstOccurrenceAndOnRecurrenceAfterResolution()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.HandBrake.CliPath = Path.Combine(_tempDir, "HandBrakeCLI.exe");
+        config.HandBrake.PresetsPath = Path.Combine(_tempDir, "presets.json");
+        config.Logging.LogFilePath = Path.Combine(_tempDir, "Logs");
+        config.Report.ReportPath = Path.Combine(_tempDir, "Reports");
+        config.Lanes.Add(lane);
+
+        var logger = new Compressarr.Core.Logging.FileRunLogger();
+        var (orchestrator, _) = BuildOrchestrator(config, new RecordingProcessRunner(), logger: logger);
+
+        // A kept file from an earlier pass legitimately stays on disk forever (nothing retroactively
+        // deletes it) - the real signal for "was THIS pass's own log kept or discarded" is whether a
+        // NEW file appeared, not the running total. RunOnceAsync's timestamp has 1-second
+        // resolution, so each pass needs its own tick to get a distinct filename.
+        HashSet<string> Snapshot() => Directory.Exists(config.Logging.LogFilePath)
+            ? Directory.GetFiles(config.Logging.LogFilePath).ToHashSet()
+            : new HashSet<string>();
+
+        // Pass 1: lane has no preset - first occurrence, kept (a new file appears).
+        var before1 = Snapshot();
+        await orchestrator.RunOnceAsync(config);
+        var newFiles1 = Snapshot().Except(before1).ToList();
+        Assert.Single(newFiles1);
+
+        // Pass 2: still no preset, identical message - unchanged repeat, discarded (no new file).
+        await Task.Delay(1100);
+        var before2 = Snapshot();
+        await orchestrator.RunOnceAsync(config);
+        Assert.Empty(Snapshot().Except(before2));
+
+        // Pass 3: fixed - no preset problem this time, and nothing else happened either, so this
+        // pass's own log is also discarded (a genuinely quiet pass), but ClearProblem should have
+        // run so a LATER recurrence isn't treated as "already known" any more.
+        lane.MoviePreset = "Any Preset";
+        await Task.Delay(1100);
+        var before3 = Snapshot();
+        await orchestrator.RunOnceAsync(config);
+        Assert.Empty(Snapshot().Except(before3));
+
+        // Pass 4: broken again, identical message to passes 1-2 - but since it was confirmed
+        // resolved in between, this must be treated as new again (kept - a new file appears),
+        // not silently swallowed as "still the same old problem."
+        lane.MoviePreset = "";
+        await Task.Delay(1100);
+        var before4 = Snapshot();
+        await orchestrator.RunOnceAsync(config);
+        Assert.Single(Snapshot().Except(before4));
+    }
+
+    // Extends the fix above one step further: a misconfigured lane used to leave the pass with
+    // TotalFiles == 0 and, before ReportErrorCode's 106+ values existed, no report at all - the
+    // real reason was log-only, invisible to anyone who only checks the report (which can even
+    // auto-open on error). A report must now be written even with zero files processed, and it
+    // must actually show why.
+    [Fact]
+    public async Task RunOnceAsync_MisconfiguredLane_WritesAReportExplainingWhy_EvenWithZeroFilesProcessed()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        // No TvPreset/MoviePreset - the exact "1 lane problem(s)" scenario found live.
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Broken Lane", Enabled = true, Input = inputDir, Output = outputDir };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.HandBrake.CliPath = Path.Combine(_tempDir, "HandBrakeCLI.exe");
+        config.HandBrake.PresetsPath = Path.Combine(_tempDir, "presets.json");
+        config.Logging.LogFilePath = Path.Combine(_tempDir, "Logs");
+        config.Report.ReportPath = Path.Combine(_tempDir, "Reports");
+        config.Lanes.Add(lane);
+
+        var (orchestrator, _) = BuildOrchestrator(config, new RecordingProcessRunner());
+
+        var result = await orchestrator.RunOnceAsync(config);
+
+        Assert.NotNull(result);
+        Assert.Equal(0, result!.TotalFiles);
+        Assert.True(File.Exists(result.ReportFilePath), "a misconfigured lane must still produce a report, even with 0 files processed");
+        var reportHtml = await File.ReadAllTextAsync(result.ReportFilePath);
+        Assert.Contains("ERROR 106", reportHtml);
+        Assert.Contains("1 lane problem(s)", reportHtml);
     }
 }

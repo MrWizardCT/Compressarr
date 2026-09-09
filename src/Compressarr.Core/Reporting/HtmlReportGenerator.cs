@@ -1,6 +1,7 @@
 using System.Net;
 using System.Reflection;
 using System.Text;
+using Compressarr.Core.Conversion;
 
 namespace Compressarr.Core.Reporting;
 
@@ -27,6 +28,7 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
         var totalSavings = Math.Round(totalBeg - totalEnd, 3);
         var savingsPct = totalBeg > 0 ? Math.Round(100 - (totalEnd / totalBeg) * 100, 2) : 0;
         var errorCount = model.ErrorCount;
+        var hasAnyProblem = errorCount > 0 || model.HasAnyLaneProblems;
 
         var logoTag = LoadEmbeddedBase64(LogoResourceName) is { } logoB64
             ? $"<img src=\"data:image/png;base64,{logoB64}\" alt=\"Compressarr\" class=\"logo\" />"
@@ -37,9 +39,19 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
         var runLabel = model.RunNumber > 0 ? $"Run #{model.RunNumber}:" : "Run:";
         var timestamp = model.GeneratedAt.ToString("yyyy-MM-dd HH:mm:ss");
 
-        var statusBanner = errorCount > 0
-            ? $"<div class=\"banner err\">{errorCount} error(s) occurred - see the per-lane tables below and the detail logs.</div>"
-            : "<div class=\"banner ok\">Run completed with no errors.</div>";
+        string statusBanner;
+        if (hasAnyProblem)
+        {
+            var bannerParts = new List<string>();
+            if (errorCount > 0) bannerParts.Add($"{errorCount} error(s) occurred");
+            var laneProblemCount = model.Lanes.Sum(l => l.LaneProblems.Count);
+            if (laneProblemCount > 0) bannerParts.Add($"{laneProblemCount} lane problem(s)");
+            statusBanner = $"<div class=\"banner err\">{string.Join(", ", bannerParts)} - see the per-lane sections below.</div>";
+        }
+        else
+        {
+            statusBanner = "<div class=\"banner ok\">Run completed with no errors.</div>";
+        }
 
         var sb = new StringBuilder();
         sb.Append($@"<!DOCTYPE html>
@@ -65,6 +77,8 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
   tr.err {{ background: #fdeaea; }}
   tr.warn {{ background: #fdf6e3; }}
   .warn-text {{ color: #8a6414; }}
+  .err-code {{ border-bottom: 1px dotted #a1231e; cursor: help; }}
+  .lane-problem {{ background: #fdeaea; color: #a1231e; padding: 0.4rem 0.75rem; border-radius: 6px; margin: 0.25rem 0; }}
   .summary-grid {{ display: flex; gap: 2rem; flex-wrap: wrap; margin: 1rem 0; }}
   .stat {{ background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem 1.25rem; min-width: 140px; }}
   .stat .label {{ font-size: 0.8em; color: #666; }}
@@ -90,7 +104,7 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
 
         foreach (var lane in model.Lanes)
         {
-            AppendLaneSection(sb, lane);
+            AppendLaneSection(sb, lane, model.SummaryLogFilePath);
         }
 
         if (model.Today is not null || model.ThisMonth is not null || model.ThisYear is not null)
@@ -102,18 +116,38 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
         return sb.ToString();
     }
 
-    private static void AppendLaneSection(StringBuilder sb, LaneReportSection lane)
+    private static void AppendLaneSection(StringBuilder sb, LaneReportSection lane, string? summaryLogFilePath)
     {
+        // Lane/run-level problems (missing preset, missing Output folder, FileBot path not found)
+        // aren't tied to any one file, so they're shown here instead of in the Status column - a
+        // lane can have one of these AND still have processed files normally otherwise (e.g. a
+        // missing TV preset doesn't stop movies in the same lane from working), so this renders
+        // regardless of whether Results is empty.
+        if (lane.LaneProblems.Count > 0)
+        {
+            sb.Append($"<h3>{WebUtility.HtmlEncode(lane.LaneDisplayName)}</h3>\n");
+            foreach (var problem in lane.LaneProblems)
+            {
+                var problemCodeNumber = (int)problem;
+                var problemDescription = WebUtility.HtmlEncode(problem.Describe());
+                sb.Append($"<p class=\"lane-problem\"><span class=\"err-code\" title=\"{problemDescription}\">ERROR {problemCodeNumber}</span></p>\n");
+            }
+        }
+        else
+        {
+            sb.Append($"<h3>{WebUtility.HtmlEncode(lane.LaneDisplayName)}</h3>\n");
+        }
+
         if (lane.Results.Count == 0)
         {
-            sb.Append($"<h3>{WebUtility.HtmlEncode(lane.LaneDisplayName)}</h3>\n<p class=\"muted\">No files processed.</p>\n");
+            sb.Append("<p class=\"muted\">No files processed.</p>\n");
             return;
         }
 
         var beg = Math.Round(lane.Results.Sum(r => r.BeginSizeGb), 3);
         var end = Math.Round(lane.Results.Sum(r => r.EndSizeGb), 3);
 
-        sb.Append($"<h3>{WebUtility.HtmlEncode(lane.LaneDisplayName)} <span class=\"muted\">({lane.Results.Count} file(s), {beg} GB &rarr; {end} GB)</span></h3>\n");
+        sb.Append($"<p class=\"muted\">{lane.Results.Count} file(s), {beg} GB &rarr; {end} GB</p>\n");
         sb.Append("<div class=\"table-wrap\">\n<table>\n  <thead><tr><th>File</th><th>Type</th><th>Preset</th><th>Before</th><th>After</th><th>Savings</th><th>Duration</th><th>Status</th><th>Sonarr/Radarr</th></tr></thead>\n  <tbody>\n");
 
         foreach (var r in lane.Results)
@@ -125,15 +159,46 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
             // same negate-if-negative clamp RunOrchestrator already uses for the run-level duration.
             var duration = r.EndTime - r.StartTime;
             if (duration < TimeSpan.Zero) duration = duration.Negate();
-            var status = r.Success ? "OK" : (r.FailureReason ?? "ERROR");
-            var statusHtml = WebUtility.HtmlEncode(status);
-            if (!r.Success && !string.IsNullOrEmpty(r.DetailLogFile) && File.Exists(r.DetailLogFile))
+            string statusHtml;
+            if (r.Success)
             {
-                // The detail log is a plain local file, same machine the report itself lives on -
-                // a file:// link resolves whether the report was opened directly (the common case)
-                // or viewed through the app's own /api/reports/ route.
-                var detailUri = new Uri(r.DetailLogFile).AbsoluteUri;
-                statusHtml += $"<br><a href=\"{detailUri}\" target=\"_blank\" rel=\"noopener\">Full Details</a>";
+                statusHtml = "OK";
+            }
+            else if (r.ErrorCode is { } code)
+            {
+                // A compact "ERROR <code>" badge with the full description in a native title
+                // tooltip (a "help bubble") keeps the table itself clean regardless of how long
+                // the description is - see ReportErrorCode's own doc comment for why this replaced
+                // plain "ERROR" here.
+                var codeNumber = (int)code;
+                var description = WebUtility.HtmlEncode(code.Describe());
+                statusHtml = $"<span class=\"err-code\" title=\"{description}\">ERROR {codeNumber}</span>";
+
+                // HandBrake's own detail log is only relevant for a genuine encode failure - for
+                // every other code (a move failure, a missing preset) HandBrake had nothing to do
+                // with the problem, and linking its log there was actively misleading (a real bug
+                // found live: the report always linked it for any failure, even when HandBrake had
+                // succeeded fine and the actual problem was a destination move). Those codes link
+                // this run's own Compressarr summary log instead - it has the real exception
+                // message for this file (search it by filename), which HandBrake's log never did.
+                var (linkTarget, linkText) = code == ReportErrorCode.EncodeFailed
+                    ? (r.DetailLogFile, "Full Details")
+                    : (summaryLogFilePath, "Full Details (Compressarr log)");
+                if (!string.IsNullOrEmpty(linkTarget) && File.Exists(linkTarget))
+                {
+                    // A plain local file, same machine the report itself lives on - a file:// link
+                    // resolves whether the report was opened directly (the common case) or viewed
+                    // through the app's own /api/reports/ route.
+                    var detailUri = new Uri(linkTarget).AbsoluteUri;
+                    statusHtml += $"<br><a href=\"{detailUri}\" target=\"_blank\" rel=\"noopener\">{linkText}</a>";
+                }
+            }
+            else
+            {
+                // No classified code (shouldn't normally happen now that every failure branch
+                // sets one, but kept as a safe fallback) - same plain "ERROR" the report always
+                // showed before this classification existed.
+                statusHtml = "ERROR";
             }
             if (hasWarning)
             {

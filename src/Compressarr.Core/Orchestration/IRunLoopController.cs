@@ -229,6 +229,7 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
                 // rather than waiting for the ENTIRE pass (every remaining file across every lane)
                 // to finish naturally before StopAsync's own await can ever return.
                 var result = await _runOrchestrator.RunOnceAsync(config, token);
+                _logger.ClearProblem("monitor-pass-failed");
                 if (result?.DiskFull == true)
                 {
                     // Retrying on the next poll interval is actively pointless here - the volume
@@ -245,8 +246,12 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
             }
             catch (Exception ex)
             {
-                // A failed pass must not kill the monitor loop - log and keep polling.
-                _logger.Log($"Monitor-mode pass failed: {ex.Message}", LogSeverity.Error);
+                // A failed pass must not kill the monitor loop - log and keep polling. LogProblem
+                // (not Log) since an unhandled exception here would otherwise repeat identically
+                // every poll for as long as whatever's actually broken stays broken - same
+                // standing-condition file-proliferation problem as RunOrchestrator's own config
+                // checks.
+                _logger.LogProblem("monitor-pass-failed", $"Monitor-mode pass failed: {ex.Message}");
             }
 
             if (token.IsCancellationRequested) break;

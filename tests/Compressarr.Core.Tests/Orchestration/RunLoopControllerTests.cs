@@ -44,8 +44,11 @@ file sealed class DiskFullRunOrchestrator : IRunOrchestrator
 file sealed class FakeRunLogger : IRunLogger
 {
     public event Action<string, LogSeverity>? LineWritten;
+    public bool HasLoggedError => false;
     public string Initialize(string logFilePath, string timestamp) => "";
     public void Log(string message, LogSeverity severity = LogSeverity.Info) => LineWritten?.Invoke(message, severity);
+    public void LogProblem(string key, string message) => Log(message, LogSeverity.Error);
+    public void ClearProblem(string key) { }
     public void FileStart(string laneDisplayName, int index, int total, string fileName, double sizeGb, string contentType, string preset) { }
     public void FileComplete(string fileName, double beginSizeGb, double endSizeGb, TimeSpan duration, bool success, string? detailLogFile) { }
 }

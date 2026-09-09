@@ -1,5 +1,7 @@
 namespace Compressarr.Web.Dtos;
 
+public sealed record ValidationIssueDto(string Field, string Message);
+
 public sealed record SettingsDto(
     string HandBrakeCliPath,
     string PresetsPath,
@@ -22,6 +24,7 @@ public sealed record SettingsDto(
     string OnDestinationCollision,
     string LogFilePath,
     int RetentionDays,
+    bool KeepSuccessfulHandBrakeLogs,
     string PostExecCmd,
     string PostExecArgs,
     string ReportPath,
@@ -37,6 +40,7 @@ public sealed record SettingsDto(
     string BackupFolderPath,
     int BackupIntervalDays,
     int BackupRetentionDays,
-    DateTimeOffset? BackupLastRunUtc);
+    DateTimeOffset? BackupLastRunUtc,
+    List<ValidationIssueDto> ValidationIssues);
 
 public sealed record ArrServiceDto(bool Enabled, string Url, string ApiKey);

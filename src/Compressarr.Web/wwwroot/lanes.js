@@ -1,6 +1,5 @@
 renderNav('lanes');
 
-const statusEl = document.getElementById('status');
 const lanesContainer = document.getElementById('lanes');
 const template = document.getElementById('lane-template');
 
@@ -8,8 +7,25 @@ const template = document.getElementById('lane-template');
 // <option>s to already exist before setting .value, unlike the old <input list> combo.
 let presetNames = [];
 
-function setStatus(text) {
-  statusEl.textContent = text;
+// success truthy -> green (auto-clears after 4s), same convention as settings.js's setStatus -
+// this used to just set plain text with no color at all, which is why Lanes' own save messages
+// never turned green like Settings/Notifications did.
+function setStatus(text, success) { setStatusMessage(text, success ? 'success' : ''); }
+
+// Logical validation-issue field key -> the class each field lives on, resolved within one lane
+// card's own node (not the whole document) - every card repeats the same classes, so scoping
+// matters. `node.querySelector` (not `document.querySelector`) is what makes that scoping work.
+const LANE_FIELD_MAP = {
+  input: '.f-input',
+  output: '.f-output',
+  tvPreset: '.f-tvPreset',
+  moviePreset: '.f-moviePreset'
+};
+
+// Highlights just this one card's fields - the aggregate page-level status message (if any) is
+// decided by the caller, since a single lane's issues shouldn't overwrite/hide another card's.
+function applyLaneValidation(node, issues) {
+  return applyValidationIssues(node, issues, LANE_FIELD_MAP, '');
 }
 
 function escapeHtml(text) {
@@ -75,33 +91,51 @@ async function putLane(dto) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(dto)
   });
-  return res.ok;
+  return { ok: res.ok, dto: res.ok ? await res.json() : null };
 }
 
 async function saveLane(node) {
   const dto = readLaneCard(node);
   setStatus(`Saving lane "${dto.displayName}"...`);
-  const ok = await putLane(dto);
-  setStatus(ok ? `Lane "${dto.displayName}" saved.` : 'Failed to save lane.');
+  const result = await putLane(dto);
+  if (!result.ok) {
+    setStatus('Failed to save lane.');
+    return;
+  }
+
   // A single lane's Save clears the global dirty flag even if another card still has unsaved
   // edits of its own - a known simplification (no per-card tracking), same trade-off as Settings.
-  if (ok) lanesDirty = false;
+  lanesDirty = false;
+  if (applyLaneValidation(node, result.dto.validationIssues)) {
+    setStatusMessage(`Lane "${dto.displayName}" saved, but has a configuration issue - check the fields below.`, 'error');
+  } else {
+    setStatus(`Lane "${dto.displayName}" saved.`, true);
+  }
 }
 
 async function saveAllLanes() {
-  const cards = lanesContainer.querySelectorAll('.lane-card');
+  const cards = Array.from(lanesContainer.querySelectorAll('.lane-card'));
   if (cards.length === 0) {
     setStatus('No lanes to save.');
     return;
   }
 
   setStatus(`Saving ${cards.length} lane(s)...`);
-  const results = await Promise.all(Array.from(cards).map(node => putLane(readLaneCard(node))));
-  const failedCount = results.filter(ok => !ok).length;
+  const results = await Promise.all(cards.map(node => putLane(readLaneCard(node))));
+  const failedCount = results.filter(r => !r.ok).length;
 
-  setStatus(failedCount === 0
-    ? `All ${cards.length} lane(s) saved.`
-    : `Saved ${cards.length - failedCount} of ${cards.length} lane(s) - ${failedCount} failed.`);
+  let anyIssues = false;
+  results.forEach((result, i) => {
+    if (result.ok && applyLaneValidation(cards[i], result.dto.validationIssues)) anyIssues = true;
+  });
+
+  if (failedCount > 0) {
+    setStatus(`Saved ${cards.length - failedCount} of ${cards.length} lane(s) - ${failedCount} failed.`);
+  } else if (anyIssues) {
+    setStatusMessage(`All ${cards.length} lane(s) saved, but one or more has a configuration issue - check the fields below.`, 'error');
+  } else {
+    setStatus(`All ${cards.length} lane(s) saved.`, true);
+  }
   if (failedCount === 0) lanesDirty = false;
 }
 
@@ -113,7 +147,7 @@ async function removeLane(node) {
   const res = await fetch(`/api/lanes/${dto.id}`, { method: 'DELETE' });
   if (res.ok) {
     node.remove();
-    setStatus(`Lane "${dto.displayName}" removed.`);
+    setStatus(`Lane "${dto.displayName}" removed.`, true);
   } else {
     setStatus('Failed to remove lane.');
   }
@@ -132,17 +166,25 @@ async function loadLanes() {
   const res = await fetch('/api/lanes');
   const lanes = await res.json();
   lanesContainer.innerHTML = '';
+  let anyIssues = false;
   for (const dto of lanes) {
-    lanesContainer.appendChild(laneCardFromDto(dto));
+    const node = laneCardFromDto(dto);
+    lanesContainer.appendChild(node);
+    if (applyLaneValidation(node, dto.validationIssues)) anyIssues = true;
   }
   lanesDirty = false;
+  if (anyIssues) {
+    setStatusMessage('One or more lanes has a configuration issue - check the fields below.', 'error');
+  }
 }
 
 document.getElementById('addLaneBtn').addEventListener('click', async () => {
   const res = await fetch('/api/lanes', { method: 'POST' });
   const dto = await res.json();
-  lanesContainer.appendChild(laneCardFromDto(dto));
-  setStatus(`Lane "${dto.displayName}" added.`);
+  const node = laneCardFromDto(dto);
+  lanesContainer.appendChild(node);
+  applyLaneValidation(node, dto.validationIssues);
+  setStatus(`Lane "${dto.displayName}" added.`, true);
 });
 
 document.getElementById('saveAllLanesBtn').addEventListener('click', saveAllLanes);
@@ -150,7 +192,7 @@ document.getElementById('saveAllLanesBtn').addEventListener('click', saveAllLane
 document.getElementById('clearChangesBtn').addEventListener('click', async () => {
   if (lanesDirty && !confirm('Discard unsaved changes and reload the last saved lanes?')) return;
   await loadLanes();
-  setStatus('Changes cleared.');
+  setStatus('Changes cleared.', true);
 });
 
 // Warn before leaving with unsaved field edits inside a lane card - Add/Remove/Save all persist

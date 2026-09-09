@@ -32,7 +32,7 @@ public static class PresetEndpoints
             return Results.Json(new { needsMergePrompt = presetInstaller.NeedsMergePrompt(presetsPath) });
         });
 
-        app.MapPost("/api/presets/install", (InstallPresetsRequest request, IConfigStore configStore, IPresetInstaller presetInstaller, IPathExpander pathExpander) =>
+        app.MapPost("/api/presets/install", (InstallPresetsRequest request, IConfigStore configStore, IPresetInstaller presetInstaller, IPathExpander pathExpander, IHandBrakePresetService presetService) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             var presetsPath = pathExpander.Expand(config.HandBrake.PresetsPath);
@@ -45,6 +45,12 @@ public static class PresetEndpoints
             {
                 presetInstaller.InstallFresh(presetsPath);
             }
+
+            // The preset tree is cached per-path (see HandBrakePresetService) and is never
+            // otherwise invalidated by a write to the file - without this, every other page
+            // (Lanes' preset dropdowns, lane preset-existence validation) keeps serving whatever
+            // was cached before this install/merge until someone separately hits Reload.
+            presetService.InvalidateCache(presetsPath);
 
             return Results.Ok();
         });

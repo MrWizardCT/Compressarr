@@ -11,18 +11,20 @@ public static class SettingsEndpoints
 {
     public static void MapSettingsEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/settings", (IConfigStore configStore) =>
+        app.MapGet("/api/settings", (IConfigStore configStore, IPathExpander pathExpander) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
-            return Results.Json(ConfigMapping.ToSettingsDto(config));
+            var issues = SettingsValidator.Validate(config, pathExpander).Select(i => new ValidationIssueDto(i.Field, i.Message)).ToList();
+            return Results.Json(ConfigMapping.ToSettingsDto(config, issues));
         });
 
-        app.MapPut("/api/settings", (SettingsDto dto, IConfigStore configStore, IStartupRegistrationService startupRegistration) =>
+        app.MapPut("/api/settings", (SettingsDto dto, IConfigStore configStore, IStartupRegistrationService startupRegistration, IPathExpander pathExpander) =>
         {
             var result = configStore.Update(AppPaths.GetConfigFilePath(), config =>
             {
                 ConfigMapping.ApplySettingsDto(config, dto);
-                return ConfigMapping.ToSettingsDto(config);
+                var issues = SettingsValidator.Validate(config, pathExpander).Select(i => new ValidationIssueDto(i.Field, i.Message)).ToList();
+                return ConfigMapping.ToSettingsDto(config, issues);
             });
             startupRegistration.Apply(dto.RunAtLogin);
             return Results.Json(result);

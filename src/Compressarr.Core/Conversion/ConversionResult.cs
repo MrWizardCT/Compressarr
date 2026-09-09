@@ -22,11 +22,15 @@ public sealed class ConversionResult
     /// itself on the next poll.</summary>
     public bool DiskFull { get; init; }
 
-    /// <summary>Short, human-readable reason shown in the report's Status column in place of the
-    /// generic "ERROR", for the specific failure modes Compressarr can actually diagnose. Null for
-    /// a failure with no more specific known cause (the report still shows plain "ERROR" for
-    /// those) - this is deliberately not a catch-all "why did this fail" field.</summary>
+    /// <summary>Short, human-readable reason logged to the plain-text run log in place of the
+    /// generic "ERROR" - this is deliberately not a catch-all "why did this fail" field, only set
+    /// for the specific failure modes Compressarr can actually diagnose.</summary>
     public string? FailureReason { get; init; }
+
+    /// <summary>The report's own numbered classification of this failure (see ReportErrorCode) -
+    /// null for a success. Encode failures link the HandBrake detail log as before; every move
+    /// failure shows this code + a help-bubble description instead of that irrelevant link.</summary>
+    public ReportErrorCode? ErrorCode { get; init; }
 
     /// <summary>Set when a successful conversion still had a problem in a secondary post-process
     /// step - moving companion files (subtitles, .nfo, artwork) or the Sonarr/Radarr unmonitor

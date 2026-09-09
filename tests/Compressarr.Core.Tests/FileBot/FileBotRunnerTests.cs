@@ -9,9 +9,18 @@ file sealed class RecordingRunLogger : IRunLogger
 {
     public event Action<string, LogSeverity>? LineWritten;
     public List<(string Message, LogSeverity Severity)> Logs { get; } = new();
+    public bool HasLoggedError => Logs.Any(l => l.Severity == LogSeverity.Error);
+    private readonly Dictionary<string, string> _lastProblemMessages = new();
 
     public string Initialize(string logFilePath, string timestamp) => "";
     public void Log(string message, LogSeverity severity = LogSeverity.Info) => Logs.Add((message, severity));
+    public void LogProblem(string key, string message)
+    {
+        var changed = !_lastProblemMessages.TryGetValue(key, out var last) || last != message;
+        Log(changed ? message : $"{message} (still unresolved, same as last check)", changed ? LogSeverity.Error : LogSeverity.Info);
+        _lastProblemMessages[key] = message;
+    }
+    public void ClearProblem(string key) => _lastProblemMessages.Remove(key);
     public void FileStart(string laneDisplayName, int index, int total, string fileName, double sizeGb, string contentType, string preset) { }
     public void FileComplete(string fileName, double beginSizeGb, double endSizeGb, TimeSpan duration, bool success, string? detailLogFile) { }
 }

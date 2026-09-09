@@ -117,24 +117,14 @@ function renderNav(activePage) {
   // actions (About) just leave it empty.
   if (actionsEl) toolbar.querySelector('.toolbar-spacer').appendChild(actionsEl);
 
-  // Settings/Lanes/About each set a plain-text confirmation (e.g. "Settings saved.") into their
-  // own #status element, historically only visible at the bottom of the page - easy to miss since
-  // the Save button that triggered it now lives up here after the move above. Mirror it into the
-  // toolbar too, right next to the actions, via a MutationObserver rather than per-page changes -
-  // works automatically for every current and future page that already uses this same #status
-  // convention, no settings.js/lanes.js/about.js edits needed.
+  // The one place every page's transient action feedback ("Saved.", "Testing...", a validation
+  // error) is shown - see setStatusMessage below. Every page used to set this into its own local
+  // element (#status, #presetStatus, a per-card .preset-status, ...); those are gone from the page
+  // bodies now, so this toolbar span is the only target left.
   const toolbarStatus = document.createElement('span');
   toolbarStatus.className = 'toolbar-page-status';
   toolbar.querySelector('.toolbar-spacer').appendChild(toolbarStatus);
-  const pageStatusEl = existingMain ? existingMain.querySelector('#status') : null;
-  if (pageStatusEl) {
-    const mirrorStatus = () => {
-      toolbarStatus.textContent = pageStatusEl.textContent;
-      toolbarStatus.classList.toggle('success', pageStatusEl.classList.contains('success'));
-    };
-    mirrorStatus();
-    new MutationObserver(mirrorStatus).observe(pageStatusEl, { characterData: true, childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
-  }
+  toolbarStatusEl = toolbarStatus;
 
   // Wraps the page's remaining content in .content-inner (see styles.css) so <main> itself can
   // span the full column width for scrolling while the actual content still visually caps/centers
@@ -302,3 +292,67 @@ document.addEventListener('focusin', e => {
   const tag = e.target.closest('.help-tag');
   if (tag) positionHelpTip(tag);
 });
+
+// The single element every page's transient action feedback is shown in - set by renderNav()
+// above, since it builds the toolbar before any page script's own status-related code runs.
+let toolbarStatusEl = null;
+
+// The one status-message convention every page uses - every page used to keep its own local
+// element(s) for this (#status, #presetStatus, a per-card .preset-status, etc); those are gone
+// now, so this always targets the shared toolbar span. kind: 'success' (green, auto-clears after
+// 4s - a success message left up forever is easy to miss/mistake for stale), 'error' (red via
+// --err, stays up until the next call - a broken-config error shouldn't silently disappear while
+// it's still true), or '' (neutral, e.g. "Saving..." - stays up, no color). Since there's only
+// one target now, whichever page/card/button set a message last is simply what's showing -
+// there's no per-widget status to preserve across two things happening close together.
+function setStatusMessage(text, kind) {
+  const el = toolbarStatusEl;
+  if (!el) return;
+  clearTimeout(el._statusClearTimer);
+  el.textContent = text;
+  el.classList.toggle('success', kind === 'success');
+  el.classList.toggle('error', kind === 'error');
+
+  if (kind === 'success') {
+    el._statusClearTimer = setTimeout(() => {
+      el.textContent = '';
+      el.classList.remove('success');
+    }, 4000);
+  }
+}
+
+// Removes the red outline/tooltip left by a previous applyValidationIssues call. fieldMap:
+// { logicalKey: cssSelector }, resolved within `container` (the whole document for a
+// single-form page; one lane card's own node for Lanes, since field ids repeat per card).
+function clearValidationIssues(container, fieldMap) {
+  for (const key of Object.keys(fieldMap)) {
+    const el = container.querySelector(fieldMap[key]);
+    if (!el) continue;
+    el.classList.remove('field-invalid');
+    el.removeAttribute('title');
+  }
+}
+
+// issues: [{ field, message }, ...] (a ValidationIssueDto list from the server, or - for
+// Notifications, which validates required fields client-side before ever calling the server -
+// a locally-built list shaped the same way). Outlines each matching field red with its specific
+// message as a hover tooltip, and shows `genericMessage` via setStatusMessage if there's anything
+// to report (pass '' to skip - e.g. when a caller is looping over several cards and wants to set
+// one aggregate message itself afterward, not one per card). Returns true if there were any
+// issues, so the caller knows whether to fall through to its own normal success message instead.
+function applyValidationIssues(container, issues, fieldMap, genericMessage) {
+  clearValidationIssues(container, fieldMap);
+  if (!issues || issues.length === 0) return false;
+
+  for (const issue of issues) {
+    const selector = fieldMap[issue.field];
+    if (!selector) continue;
+    const el = container.querySelector(selector);
+    if (!el) continue;
+    el.classList.add('field-invalid');
+    el.title = el.title ? `${el.title}\n${issue.message}` : issue.message;
+  }
+
+  if (genericMessage) setStatusMessage(genericMessage, 'error');
+  return true;
+}

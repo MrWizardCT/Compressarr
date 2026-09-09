@@ -1,62 +1,30 @@
 renderNav('settings');
 
-const statusEl = document.getElementById('status');
-const presetStatusEl = document.getElementById('presetStatus');
-const fileBotFixStatusEl = document.getElementById('fileBotFixStatus');
-let presetStatusClearTimer = null;
-let fileBotFixStatusClearTimer = null;
-let statusClearTimer = null;
+// Thin wrapper over nav.js's shared setStatusMessage - every call site below already passes a
+// plain success boolean, not a 'success'/'error'/'' kind. Every status message on this page
+// (Save, Install/Reload Presets, Fix Network, Arr connection tests, Import, maintenance actions)
+// goes through this one function into the toolbar - there's no per-section status left in the
+// page body any more.
+function setStatus(text, success) { setStatusMessage(text, success ? 'success' : ''); }
 
-function setStatus(text, success) {
-  clearTimeout(statusClearTimer);
-  statusEl.textContent = text;
-  statusEl.classList.toggle('success', !!success);
+// Logical validation-issue field key -> the actual input it lives on (see ValidationIssue's own
+// note on why these can differ - e.g. the HandBrakeCliPath field's real id is #hbCliPath).
+const SETTINGS_FIELD_MAP = {
+  handBrakeCliPath: '#hbCliPath',
+  presetsPath: '#presetsPath',
+  fileBotCliPath: '#fileBotCliPath',
+  vidTypes: '#vidTypes'
+};
 
-  // Same reasoning as setPresetStatus below - a success message is easy to miss if it just sits
-  // there indefinitely, so it fades out after a few seconds. Everything else (in-progress text,
-  // failures) stays up until the next call overwrites it.
-  if (success) {
-    statusClearTimer = setTimeout(() => {
-      statusEl.textContent = '';
-      statusEl.classList.remove('success');
-    }, 4000);
-  }
-}
-
-function setPresetStatus(text, success) {
-  clearTimeout(presetStatusClearTimer);
-  presetStatusEl.textContent = text;
-  presetStatusEl.classList.toggle('success', !!success);
-
-  // Success messages are easy to miss if they just sit there indefinitely next to a button the
-  // user might click again - fade them out after a few seconds instead of leaving stale
-  // "reloaded"/"installed" text up forever. Errors stay up so they're not missed.
-  if (success) {
-    presetStatusClearTimer = setTimeout(() => {
-      presetStatusEl.textContent = '';
-      presetStatusEl.classList.remove('success');
-    }, 4000);
-  }
-}
-
-function setFileBotFixStatus(text, success) {
-  clearTimeout(fileBotFixStatusClearTimer);
-  fileBotFixStatusEl.textContent = text;
-  fileBotFixStatusEl.classList.toggle('success', !!success);
-
-  if (success) {
-    fileBotFixStatusClearTimer = setTimeout(() => {
-      fileBotFixStatusEl.textContent = '';
-      fileBotFixStatusEl.classList.remove('success');
-    }, 4000);
-  }
+function applySettingsValidation(issues) {
+  return applyValidationIssues(document, issues, SETTINGS_FIELD_MAP, 'Error in base configuration, check fields below.');
 }
 
 document.getElementById('fileBotFixNetworkBtn').addEventListener('click', async () => {
-  setFileBotFixStatus('Applying FileBot network fix...', false);
+  setStatus('Applying FileBot network fix...');
   const res = await fetch('/api/filebot/fix-network', { method: 'POST' });
   const body = await res.json().catch(() => ({}));
-  setFileBotFixStatus(body.message || 'Fix failed - see the recent log for details.', !!body.success);
+  setStatus(body.message || 'Fix failed - see the recent log for details.', !!body.success);
 });
 
 const MIN_SIZE_UNIT_MULTIPLIERS = { KB: 1024, MB: 1024 * 1024, GB: 1024 * 1024 * 1024 };
@@ -117,6 +85,7 @@ function fillForm(dto) {
   document.getElementById('logFilePath').value = dto.logFilePath;
   document.getElementById('reportPath').value = dto.reportPath;
   document.getElementById('retentionDays').value = dto.retentionDays;
+  document.getElementById('keepSuccessfulHandBrakeLogs').checked = dto.keepSuccessfulHandBrakeLogs;
   document.getElementById('openAfterRun').value = dto.openAfterRun;
   document.getElementById('repeatMonitor').checked = dto.repeatMonitor;
   document.getElementById('pollIntervalSeconds').value = dto.pollIntervalSeconds;
@@ -134,7 +103,7 @@ function fillForm(dto) {
   document.getElementById('backupFolderPath').value = dto.backupFolderPath;
   document.getElementById('backupIntervalDays').value = dto.backupIntervalDays;
   document.getElementById('backupRetentionDays').value = dto.backupRetentionDays;
-  setAutomatedBackupStatus(formatLastBackup(dto.backupLastRunUtc), false);
+  setLastBackupLabel(formatLastBackup(dto.backupLastRunUtc));
   loadBackupList();
 }
 
@@ -165,6 +134,7 @@ function readForm() {
     onDestinationCollision: document.getElementById('onDestinationCollision').value,
     logFilePath: document.getElementById('logFilePath').value,
     retentionDays: parseInt(document.getElementById('retentionDays').value, 10) || 0,
+    keepSuccessfulHandBrakeLogs: document.getElementById('keepSuccessfulHandBrakeLogs').checked,
     postExecCmd: document.getElementById('postExecCmd').value,
     postExecArgs: document.getElementById('postExecArgs').value,
     reportPath: document.getElementById('reportPath').value,
@@ -200,6 +170,7 @@ async function loadSettings() {
   const dto = await res.json();
   fillForm(dto);
   settingsDirty = false;
+  applySettingsValidation(dto.validationIssues);
 }
 
 document.getElementById('saveBtn').addEventListener('click', async () => {
@@ -210,8 +181,11 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     body: JSON.stringify(readForm())
   });
   if (res.ok) {
-    setStatus('Settings saved.', true);
+    const dto = await res.json();
     settingsDirty = false;
+    if (!applySettingsValidation(dto.validationIssues)) {
+      setStatus('Settings saved.', true);
+    }
   } else {
     setStatus('Failed to save settings.');
   }
@@ -220,7 +194,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
 document.getElementById('clearChangesBtn').addEventListener('click', async () => {
   if (settingsDirty && !confirm('Discard unsaved changes and reload the last saved settings?')) return;
   await loadSettings();
-  setStatus('Changes cleared.');
+  setStatus('Changes cleared.', true);
 });
 
 // Warn before leaving with unsaved edits - covers tab close/reload and sidebar nav clicks alike,
@@ -247,7 +221,7 @@ document.getElementById('runOnceBtn').addEventListener('click', async () => {
   const res = await fetch('/api/run/once', { method: 'POST' });
   const body = await res.json();
   if (res.ok) {
-    setStatus(`Done: ${body.totalFiles} file(s) processed.`);
+    setStatus(`Done: ${body.totalFiles} file(s) processed.`, true);
   } else {
     setStatus(body.message || 'Run failed.');
   }
@@ -258,7 +232,7 @@ document.getElementById('checkHandBrakeBtn').addEventListener('click', async () 
   const statusRes = await fetch('/api/handbrake/status');
   const statusBody = await statusRes.json();
   if (statusBody.exists) {
-    setStatus('HandBrakeCLI already found at the configured path.');
+    setStatus('HandBrakeCLI already found at the configured path.', true);
     return;
   }
 
@@ -279,7 +253,7 @@ document.getElementById('checkHandBrakeBtn').addEventListener('click', async () 
   const installBody = await installRes.json();
   if (installRes.ok) {
     document.getElementById('hbCliPath').value = installBody.installedPath;
-    setStatus(`HandBrakeCLI ${installBody.version} installed.`);
+    setStatus(`HandBrakeCLI ${installBody.version} installed.`, true);
   } else {
     setStatus('HandBrakeCLI install failed.');
   }
@@ -298,25 +272,23 @@ document.getElementById('installPresetsBtn').addEventListener('click', async () 
     mode = 'merge';
   }
 
-  setPresetStatus('Installing presets...', false);
+  setStatus('Installing presets...');
   const res = await fetch('/api/presets/install', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode })
   });
-  setPresetStatus(res.ok ? 'Presets installed.' : 'Failed to install presets.', res.ok);
+  setStatus(res.ok ? 'Presets installed.' : 'Failed to install presets.', res.ok);
 });
 
 document.getElementById('reloadPresetsBtn').addEventListener('click', async () => {
-  setPresetStatus('Reloading presets...', false);
+  setStatus('Reloading presets...');
   const res = await fetch('/api/presets/reload', { method: 'POST' });
-  setPresetStatus(res.ok ? 'Presets reloaded.' : 'Failed to reload presets.', res.ok);
+  setStatus(res.ok ? 'Presets reloaded.' : 'Failed to reload presets.', res.ok);
 });
 
-async function testArrConnection(service, statusElId) {
-  const statusEl = document.getElementById(statusElId);
-  statusEl.textContent = 'Testing...';
-  statusEl.classList.remove('success');
+async function testArrConnection(service) {
+  setStatus('Testing...');
 
   const res = await fetch('/api/arr/test', {
     method: 'POST',
@@ -328,12 +300,11 @@ async function testArrConnection(service, statusElId) {
     })
   });
   const body = await res.json();
-  statusEl.textContent = body.message;
-  statusEl.classList.toggle('success', !!body.success);
+  setStatus(body.message, !!body.success);
 }
 
-document.getElementById('sonarrTestBtn').addEventListener('click', () => testArrConnection('sonarr', 'sonarrTestStatus'));
-document.getElementById('radarrTestBtn').addEventListener('click', () => testArrConnection('radarr', 'radarrTestStatus'));
+document.getElementById('sonarrTestBtn').addEventListener('click', () => testArrConnection('sonarr'));
+document.getElementById('radarrTestBtn').addEventListener('click', () => testArrConnection('radarr'));
 
 document.getElementById('exportConfigBtn').addEventListener('click', () => {
   // Content-Disposition: attachment (set by Results.File's fileDownloadName on the server) makes
@@ -345,17 +316,14 @@ document.getElementById('exportConfigBtn').addEventListener('click', () => {
 document.getElementById('importConfigBtn').addEventListener('click', () => {
   const fileInput = document.getElementById('importConfigFile');
   const file = fileInput.files[0];
-  const backupStatusEl = document.getElementById('backupStatus');
   if (!file) {
-    backupStatusEl.textContent = 'Choose a file to import first.';
-    backupStatusEl.classList.remove('success');
+    setStatus('Choose a file to import first.');
     return;
   }
 
   if (!confirm('Import this file? It will replace all current settings and lanes.')) return;
 
-  backupStatusEl.textContent = 'Importing...';
-  backupStatusEl.classList.remove('success');
+  setStatus('Importing...');
 
   const reader = new FileReader();
   reader.onload = async () => {
@@ -365,14 +333,12 @@ document.getElementById('importConfigBtn').addEventListener('click', () => {
       body: reader.result
     });
     if (res.ok) {
-      backupStatusEl.textContent = 'Config imported.';
-      backupStatusEl.classList.add('success');
+      setStatus('Config imported.', true);
       fileInput.value = '';
       loadSettings();
     } else {
       const body = await res.json().catch(() => ({}));
-      backupStatusEl.textContent = body.message || 'Failed to import config.';
-      backupStatusEl.classList.remove('success');
+      setStatus(body.message || 'Failed to import config.');
     }
   };
   reader.readAsText(file);
@@ -381,13 +347,10 @@ document.getElementById('importConfigBtn').addEventListener('click', () => {
 async function runMaintenanceAction(url, confirmMessage, successMessage) {
   if (!confirm(confirmMessage)) return;
 
-  const statusEl = document.getElementById('maintenanceStatus');
-  statusEl.textContent = 'Working...';
-  statusEl.classList.remove('success');
+  setStatus('Working...');
 
   const res = await fetch(url, { method: 'POST' });
-  statusEl.textContent = res.ok ? successMessage : 'Failed - see the recent log for details.';
-  statusEl.classList.toggle('success', res.ok);
+  setStatus(res.ok ? successMessage : 'Failed - see the recent log for details.', res.ok);
 
   // Every maintenance action only ever writes a file - reloading the form (which re-fetches
   // /api/settings) is how the effect actually shows up immediately, no app restart needed. A
@@ -437,10 +400,13 @@ document.getElementById('clearConfigBtn').addEventListener('click', () => runMai
   'Configuration reset to defaults.'
 ));
 
-function setAutomatedBackupStatus(text, success) {
-  const el = document.getElementById('automatedBackupStatus');
-  el.textContent = text;
-  el.classList.toggle('success', !!success);
+// Not a transient action-feedback message like everything else on this page - this is a
+// persistent fact ("Last backup: <when>", or "No backup yet.") that stays visible next to the
+// Backup Now button regardless of whatever else the toolbar is showing, so it doesn't belong in
+// the toolbar's own "last message wins" rotation. Set on load (see fillForm) and refreshed after
+// a successful backup/restore.
+function setLastBackupLabel(text) {
+  document.getElementById('automatedBackupStatus').textContent = text;
 }
 
 document.querySelector('.browse-btn[data-target="backupFolderPath"]').addEventListener('click', () => {
@@ -456,15 +422,16 @@ document.querySelector('.browse-btn[data-target="backupFolderPath"]').addEventLi
 document.getElementById('backupFolderPath').addEventListener('blur', () => loadBackupList());
 
 document.getElementById('runBackupNowBtn').addEventListener('click', async () => {
-  setAutomatedBackupStatus('Creating backup...', false);
+  setStatus('Creating backup...');
   const res = await fetch('/api/backups/run', { method: 'POST' });
   if (res.ok) {
     const body = await res.json();
-    setAutomatedBackupStatus(`Backup created: ${body.fileName}`, true);
+    setStatus(`Backup created: ${body.fileName}`, true);
+    setLastBackupLabel(formatLastBackup(new Date().toISOString()));
     loadBackupList();
   } else {
     const body = await res.json().catch(() => ({}));
-    setAutomatedBackupStatus(body.message || 'Failed to create backup.', false);
+    setStatus(body.message || 'Failed to create backup.');
   }
 });
 
@@ -515,7 +482,7 @@ async function loadBackupList() {
 async function restoreBackup(fileName) {
   if (!confirm(`Restore from ${fileName}?\n\nThis will overwrite your current settings, lanes, resume state, and history with the contents of this backup. This cannot be undone.`)) return;
 
-  setAutomatedBackupStatus(`Restoring ${fileName}...`, false);
+  setStatus(`Restoring ${fileName}...`);
   const folder = document.getElementById('backupFolderPath').value;
   const res = await fetch('/api/backups/restore', {
     method: 'POST',
@@ -524,11 +491,11 @@ async function restoreBackup(fileName) {
   });
 
   if (res.ok) {
-    setAutomatedBackupStatus(`Restored from ${fileName}.`, true);
-    loadSettings(); // the config on disk just changed out from under this page - reload the form
+    setStatus(`Restored from ${fileName}.`, true);
+    loadSettings(); // the config on disk just changed out from under this page - reload the form (and its Last Backup label)
   } else {
     const body = await res.json().catch(() => ({}));
-    setAutomatedBackupStatus(body.message || 'Failed to restore backup.', false);
+    setStatus(body.message || 'Failed to restore backup.');
   }
 }
 

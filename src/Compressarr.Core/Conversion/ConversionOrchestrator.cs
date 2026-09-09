@@ -52,12 +52,19 @@ public interface IConversionOrchestrator
     /// if this lane can't be processed at
     /// all (bad Input path, or no Output configured with "write output to same folder as input"
     /// off) - the caller should skip the lane entirely in that case, the same way the lane-scoped
-    /// early-returns worked before this method existed.</summary>
+    /// early-returns worked before this method existed.
+    ///
+    /// reportProblems, if given, has every lane/run-level ReportErrorCode found during this call
+    /// appended to it (no Output configured, FileBot path not found) - the caller supplies the
+    /// list so it can merge these with whatever it already found itself (e.g. RunOrchestrator's
+    /// own no-preset-configured/preset-not-found checks) into one combined per-lane list for the
+    /// report. Optional and simply not populated if the caller doesn't care.</summary>
     LaneProcessingContext? PrepareLane(
         LaneConfig lane,
         CompressarrConfig config,
         List<ResumeEntry> resumeState,
-        string resumeFilePath);
+        string resumeFilePath,
+        List<ReportErrorCode>? reportProblems = null);
 
     /// <summary>Processes exactly one already-selected file for the lane context carries - fully
     /// finished (converted, routed, arr-unmonitored, companions handled) before returning, so the
@@ -147,7 +154,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         LaneConfig lane,
         CompressarrConfig config,
         List<ResumeEntry> resumeState,
-        string resumeFilePath)
+        string resumeFilePath,
+        List<ReportErrorCode>? reportProblems = null)
     {
         var inputPath = _pathExpander.Expand(lane.Input);
         var outputBase = _pathExpander.Expand(lane.Output);
@@ -158,14 +166,24 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         {
             return null;
         }
-        if (string.IsNullOrWhiteSpace(outputBase) && !config.Processing.OutSameAsIn)
-        {
-            _logger.Log($"Lane '{lane.DisplayName}' has no Output folder configured and 'write output to same folder as input' is off - skipping.", LogSeverity.Error);
-            return null;
-        }
 
         var hbloc = _pathExpander.Expand(config.HandBrake.CliPath);
         var presetsPath = _pathExpander.Expand(config.HandBrake.PresetsPath);
+
+        // LaneValidator is the single source of truth for "does this lane have an Output folder
+        // configured" - shared with RunOrchestrator's own lane-prep loop and the Lanes page's own
+        // validation (LaneEndpoints.cs). Only the "output" finding is acted on here - the
+        // preset-related findings this same call also returns were already checked and logged by
+        // RunOrchestrator right before it called PrepareLane; re-deriving them here would just be
+        // redundant, not wrong, but there's nothing useful to do with a second copy of the same
+        // warning.
+        if (LaneValidator.Validate(lane, config, presetsPath, _pathExpander, _presets).Any(i => i.Field == "output"))
+        {
+            _logger.LogProblem($"lane-no-output:{lane.Id}", $"Lane '{lane.DisplayName}' has no Output folder configured and 'write output to same folder as input' is off - skipping.");
+            reportProblems?.Add(ReportErrorCode.LaneNoOutputConfigured);
+            return null;
+        }
+        _logger.ClearProblem($"lane-no-output:{lane.Id}");
 
         List<FileInfo> videoFiles;
 
@@ -218,13 +236,23 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 var retryDestPath = _fileRouter.RouteFile(entry.EncodedFilePath, retryIsTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
                 entry.Status = ResumeStatus.Completed;
                 entry.EncodedFilePath = null;
+                entry.LastRetryFailureMessage = null;
                 _logger.Log($"  Retried move for '{retryFileName}' - succeeded.");
 
                 if (retryDestPath is not null)
                 {
                     try
                     {
-                        _companionFiles.MoveCompanionFiles(entry.EncodedFilePath!, Path.GetDirectoryName(entry.EncodedFilePath)!, Path.GetDirectoryName(retryDestPath)!, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath, config.Processing.CompanionExtensions, config.Processing.UnmatchedCompanionAction);
+                        // originalFileFullName/originalFileDirectory must be the TRUE original
+                        // source location (entry.FullName), not entry.EncodedFilePath - that's the
+                        // already-converted file sitting in the processing/staging area, a
+                        // completely different folder. Passing it here (a real bug found live) made
+                        // companion-file matching search the wrong directory and left the actual
+                        // source folder behind as an orphan even after a successful retried move,
+                        // since the empty-folder cascade-delete below only ever looked at the
+                        // staging folder.
+                        var originalSourceDirectory = Path.GetDirectoryName(entry.FullName)!;
+                        _companionFiles.MoveCompanionFiles(entry.FullName, originalSourceDirectory, Path.GetDirectoryName(retryDestPath)!, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath, config.Processing.CompanionExtensions, config.Processing.UnmatchedCompanionAction);
                     }
                     catch (Exception ex)
                     {
@@ -238,12 +266,25 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 // retry, so this is as resolved as it's going to get.
                 entry.Status = ResumeStatus.Completed;
                 entry.EncodedFilePath = null;
+                entry.LastRetryFailureMessage = null;
                 _logger.Log($"  {ex.Message}");
             }
             catch (Exception ex)
             {
-                // Still failing - leave it as MoveFailed, tried again on the next pass.
-                _logger.Log($"  Retried move for '{retryFileName}' failed again: {ex.Message}", LogSeverity.Error);
+                // Still failing - leave it as MoveFailed, tried again on the next pass. Only
+                // flagged as an Error (which is what keeps this pass's log file from being
+                // discarded - see RunOrchestrator) the FIRST time this exact failure shows up, or
+                // if it's changed since last poll - a real gap found live: an offline destination
+                // retried every single poll otherwise logged Error every single poll too, and a
+                // multi-hour outage meant a kept log file per poll for the whole outage, the same
+                // file-proliferation problem all over again just gated on "error" instead of
+                // "empty." Still logged either way so it's visible live in the Recent Log panel,
+                // just at Info once it's confirmed to be the same still-unresolved problem.
+                var isSameFailureAsLastPoll = entry.LastRetryFailureMessage == ex.Message;
+                var severity = isSameFailureAsLastPoll ? LogSeverity.Info : LogSeverity.Error;
+                var suffix = isSameFailureAsLastPoll ? " (still failing, same as last check)" : "";
+                _logger.Log($"  Retried move for '{retryFileName}' failed again: {ex.Message}{suffix}", severity);
+                entry.LastRetryFailureMessage = ex.Message;
             }
 
             _resumeStore.Save(resumeState, resumeFilePath);
@@ -265,6 +306,15 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             MovieEnabled = config.FileBot.MovieEnabled,
             MovieArgs = config.FileBot.MovieArgs
         };
+        // Same condition IFileBotRunner.Run itself checks (and logs via LogProblem) - duplicated
+        // here rather than having Run report it back, since Run's own return value is just the
+        // unmatched-files set and changing that shape for one caller's report-visibility need
+        // wasn't worth it. Kept simple and equivalent; if IFileBotRunner's own check ever changes,
+        // this one needs to move with it.
+        if (config.FileBot.Enabled && (string.IsNullOrWhiteSpace(expandedFileBotSettings.CliPath) || !File.Exists(expandedFileBotSettings.CliPath)))
+        {
+            reportProblems?.Add(ReportErrorCode.FileBotPathNotFound);
+        }
         // A live UI otherwise has nothing to show between LaneStarted and the first FileStarted -
         // FileBot's own lookups can take real wall-clock time (a live TheTVDB/TMDB call), during
         // which the Monitor page would look stuck/idle without this.
@@ -402,6 +452,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 EndSizeGb = 0,
                 Success = false,
                 FailureReason = $"No {contentType} preset configured for this lane",
+                ErrorCode = ReportErrorCode.NoPresetConfigured,
                 StartTime = startTime,
                 EndTime = DateTime.Now
             };
@@ -491,6 +542,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         var moveFailed = false;
         var diskFull = false;
         string? failureReason = null;
+        ReportErrorCode? errorCode = null;
         string? postProcessWarning = null;
 
         if (success)
@@ -541,14 +593,21 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 {
                     diskFull = true;
                     failureReason = "Output drive full, monitoring stopped";
+                    errorCode = ReportErrorCode.MoveDiskFull;
                 }
                 else if (LooksLikePathUnavailable(ex))
                 {
                     failureReason = "Base folder path unavailable, move skipped";
+                    errorCode = ReportErrorCode.MoveDestinationUnavailable;
                 }
-                // else: some other move failure (permission denied, file locked, etc.) - leave
-                // failureReason null so the report shows generic "ERROR" rather than a
-                // path-unavailable message that would be actively wrong for this cause.
+                else
+                {
+                    // Some other move failure (permission denied, invalid credentials, a locked
+                    // file, etc.) - leave failureReason null so the plain-text log still shows
+                    // generic "ERROR" rather than a path-unavailable message that would be actively
+                    // wrong for this cause, but the report still gets its own numbered code.
+                    errorCode = ReportErrorCode.MoveFailedOther;
+                }
                 _logger.Log($"  Move skipped: {ex.Message} - file remains at '{newFileName}'.", LogSeverity.Error);
             }
 
@@ -603,6 +662,10 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         {
             try { File.Delete(tempFileName); } catch { }
             resumeEntry.Status = ResumeStatus.Error;
+            // HandBrake's own detail log is genuinely the relevant diagnostic for an encode
+            // failure (unlike a move failure, where it's irrelevant) - stays linked from the
+            // report for this code.
+            errorCode = ReportErrorCode.EncodeFailed;
 
             // HandBrakeCLI still writes its own log even on a failed encode - confirmed live
             // against a genuinely full disk that its mux error names the cause explicitly ("No
@@ -613,6 +676,20 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 diskFull = true;
                 failureReason = "Output drive full, monitoring stopped";
             }
+        }
+
+        // "Keep Logs of successful HandBrake Encodes" (Settings, off by default): a successful
+        // encode's own HBdetails.txt has nothing more to say once every other step for this file
+        // is done - unlike a failed encode's (still linked from the report, kept regardless of
+        // this setting), or a move-retry's (the retry never re-invokes HandBrake, so this is the
+        // only detail log that file will ever get - deleting it here based on encode success
+        // alone, before knowing whether the move itself will succeed, is still correct: the report
+        // never links a move failure's HandBrake log anyway, per ReportErrorCode's own design).
+        // Best-effort, same as every other cleanup-only delete in this method - a locked file
+        // (an antivirus scan, etc.) shouldn't fail an otherwise-successful file's processing.
+        if (success && !config.Logging.KeepSuccessfulHandBrakeLogs)
+        {
+            try { if (File.Exists(detailLogFile)) File.Delete(detailLogFile); } catch { }
         }
 
         var duration = endTime - startTime;
@@ -643,6 +720,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             Success = overallSuccess,
             DiskFull = diskFull,
             FailureReason = failureReason,
+            ErrorCode = errorCode,
             DetailLogFile = detailLogFile,
             StartTime = startTime,
             EndTime = endTime,

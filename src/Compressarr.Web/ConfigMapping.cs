@@ -8,7 +8,7 @@ namespace Compressarr.Web;
 /// JSON instead.</summary>
 internal static class ConfigMapping
 {
-    public static SettingsDto ToSettingsDto(CompressarrConfig config) => new(
+    public static SettingsDto ToSettingsDto(CompressarrConfig config, List<ValidationIssueDto> validationIssues) => new(
         HandBrakeCliPath: config.HandBrake.CliPath,
         PresetsPath: config.HandBrake.PresetsPath,
         HandBrakeOptions: config.HandBrake.Options,
@@ -30,6 +30,7 @@ internal static class ConfigMapping
         OnDestinationCollision: config.Processing.OnDestinationCollision.ToString(),
         LogFilePath: config.Logging.LogFilePath,
         RetentionDays: config.Logging.RetentionDays,
+        KeepSuccessfulHandBrakeLogs: config.Logging.KeepSuccessfulHandBrakeLogs,
         PostExecCmd: config.PostExec.Cmd,
         PostExecArgs: config.PostExec.Args,
         ReportPath: config.Report.ReportPath,
@@ -45,7 +46,8 @@ internal static class ConfigMapping
         BackupFolderPath: config.Backup.FolderPath,
         BackupIntervalDays: config.Backup.IntervalDays,
         BackupRetentionDays: config.Backup.RetentionDays,
-        BackupLastRunUtc: config.Backup.LastRunUtc);
+        BackupLastRunUtc: config.Backup.LastRunUtc,
+        ValidationIssues: validationIssues);
 
     public static void ApplySettingsDto(CompressarrConfig config, SettingsDto dto)
     {
@@ -70,6 +72,7 @@ internal static class ConfigMapping
         config.Processing.OnDestinationCollision = Enum.Parse<DestinationCollisionMode>(dto.OnDestinationCollision);
         config.Logging.LogFilePath = dto.LogFilePath;
         config.Logging.RetentionDays = dto.RetentionDays;
+        config.Logging.KeepSuccessfulHandBrakeLogs = dto.KeepSuccessfulHandBrakeLogs;
         config.PostExec.Cmd = dto.PostExecCmd;
         config.PostExec.Args = dto.PostExecArgs;
         config.Report.ReportPath = dto.ReportPath;
@@ -89,9 +92,9 @@ internal static class ConfigMapping
         // itself after a real backup runs, never round-tripped back in from a settings save.
     }
 
-    public static LaneDto ToLaneDto(LaneConfig lane) => new(
+    public static LaneDto ToLaneDto(LaneConfig lane, List<ValidationIssueDto> validationIssues) => new(
         lane.Id, lane.DisplayName, lane.Enabled, lane.Input, lane.Output,
-        lane.TvPreset, lane.MoviePreset, lane.TvShowBasePath, lane.MovieBasePath);
+        lane.TvPreset, lane.MoviePreset, lane.TvShowBasePath, lane.MovieBasePath, validationIssues);
 
     public static void ApplyLaneDto(LaneConfig lane, LaneDto dto)
     {

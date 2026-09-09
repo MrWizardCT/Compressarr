@@ -138,6 +138,14 @@ public sealed class LoggingSettings
 {
     public string LogFilePath { get; set; } = "%CompressarrAppData%\\Logs";
     public int RetentionDays { get; set; } = 30;
+
+    /// <summary>Off by default. A successful encode's own HBdetails.txt (HandBrake's raw output
+    /// for that one file) is deleted as soon as all other processing of that file finishes, rather
+    /// than left to age out via RetentionDays like every other log/report file - most of these are
+    /// never opened, and by far most passes are successful, so they were the largest source of log
+    /// clutter even after RetentionDays kicks in. A failed encode's detail log is always kept
+    /// (linked from the report) regardless of this setting - only successful ones are affected.</summary>
+    public bool KeepSuccessfulHandBrakeLogs { get; set; } = false;
 }
 
 public sealed class PostExecSettings

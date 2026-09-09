@@ -97,40 +97,56 @@ public sealed class RunOrchestrator : IRunOrchestrator
 
         var logFilePath = _pathExpander.Expand(config.Logging.LogFilePath);
         var reportPath = _pathExpander.Expand(config.Report.ReportPath);
-        _logger.Initialize(logFilePath, timestamp);
+        var summaryLogFilePath = _logger.Initialize(logFilePath, timestamp);
 
         _logger.Log($"Compressarr - run started {timestamp}");
         _logger.Log(new string('-', 80));
         _progress.RunStarted(timestamp);
 
         var token = _activeRunController.Begin();
+        RunResult? result;
         try
         {
-            return await RunOnceCoreAsync(config, timestamp, beginTime, logFilePath, reportPath, token, stopToken);
+            result = await RunOnceCoreAsync(config, timestamp, beginTime, logFilePath, reportPath, summaryLogFilePath, token, stopToken);
         }
         finally
         {
             _activeRunController.End();
         }
+
+        // A pass that found nothing new and hit no problem worth flagging shouldn't leave a
+        // near-empty file behind forever - confirmed live: with a normal polling interval this is
+        // by far the most common outcome of a pass, and it was generating thousands of
+        // essentially-content-free log files (one per idle poll) that made the genuinely useful
+        // ones hard to find. A pass that processed real files, or hit a real error even while
+        // processing none (a misconfigured lane, a missing HandBrakeCLI, etc), still keeps its log.
+        if ((result?.TotalFiles ?? 0) == 0 && !_logger.HasLoggedError)
+        {
+            try { if (File.Exists(summaryLogFilePath)) File.Delete(summaryLogFilePath); } catch { }
+        }
+
+        return result;
     }
 
-    private async Task<RunResult?> RunOnceCoreAsync(CompressarrConfig config, string timestamp, DateTime beginTime, string logFilePath, string reportPath, CancellationToken token, CancellationToken stopToken)
+    private async Task<RunResult?> RunOnceCoreAsync(CompressarrConfig config, string timestamp, DateTime beginTime, string logFilePath, string reportPath, string summaryLogFilePath, CancellationToken token, CancellationToken stopToken)
     {
         var hbloc = _pathExpander.Expand(config.HandBrake.CliPath);
         if (!_pathExpander.PathExists(config.HandBrake.CliPath))
         {
-            _logger.Log($"HandBrakeCLI.exe not found at {hbloc}. Download it from https://handbrake.fr/downloads2.php", LogSeverity.Error);
+            _logger.LogProblem("handbrake-cli-missing", $"HandBrakeCLI.exe not found at {hbloc}. Download it from https://handbrake.fr/downloads2.php");
             _progress.RunCompleted(0);
             return null;
         }
+        _logger.ClearProblem("handbrake-cli-missing");
 
         var presetsPath = _pathExpander.Expand(config.HandBrake.PresetsPath);
         if (!_pathExpander.PathExists(config.HandBrake.PresetsPath))
         {
-            _logger.Log($"HandBrake presets file not found at {presetsPath}", LogSeverity.Error);
+            _logger.LogProblem("presets-file-missing", $"HandBrake presets file not found at {presetsPath}");
             _progress.RunCompleted(0);
             return null;
         }
+        _logger.ClearProblem("presets-file-missing");
 
         var resumeFilePath = AppPaths.GetResumeFilePath();
         var resumeState = _resumeStore.Load(resumeFilePath);
@@ -142,6 +158,11 @@ public sealed class RunOrchestrator : IRunOrchestrator
         _metadata.Enabled = config.Processing.ClearTitleMetadata;
 
         var laneResults = new Dictionary<string, List<ConversionResult>>();
+        // Every configured lane gets an entry (even one that ends up empty), populated as
+        // problems are found below - merged into the report as LaneReportSection.LaneProblems so
+        // a lane/run-level issue (a missing preset, a missing Output folder, FileBot's path not
+        // found) is visible on the report itself, not just log-only. See ReportErrorCode 106+.
+        var laneProblems = new Dictionary<string, List<ReportErrorCode>>();
         try
         {
             // Phase 1: per-lane prep, unchanged validation/logging - every enabled, valid lane gets
@@ -165,19 +186,45 @@ public sealed class RunOrchestrator : IRunOrchestrator
 
                 if (string.IsNullOrWhiteSpace(lane.Input)) { configLaneIndex++; continue; }
 
+                var thisLaneProblems = new List<ReportErrorCode>();
+                laneProblems[lane.Id] = thisLaneProblems;
+
                 if (string.IsNullOrWhiteSpace(lane.TvPreset) && string.IsNullOrWhiteSpace(lane.MoviePreset))
                 {
-                    _logger.Log($"Skipping lane [{lane.DisplayName}] - no TV or Movie preset configured.", LogSeverity.Error);
+                    _logger.LogProblem($"lane-no-preset:{lane.Id}", $"Skipping lane [{lane.DisplayName}] - no TV or Movie preset configured.");
+                    thisLaneProblems.Add(ReportErrorCode.LaneNoPresetConfigured);
                     configLaneIndex++;
                     continue;
                 }
-                if (!string.IsNullOrWhiteSpace(lane.TvPreset) && !_presets.PresetExists(lane.TvPreset, presetsPath))
+                _logger.ClearProblem($"lane-no-preset:{lane.Id}");
+
+                // LaneValidator is the single source of truth for "does this lane's own configured
+                // TV/Movie preset actually exist in presets.json" - shared with the Lanes page's
+                // own validation (LaneEndpoints.cs), so the two can never disagree. At this point
+                // at least one of TvPreset/MoviePreset is non-empty (the no-preset-at-all case
+                // above already continued), so a "tvPreset"/"moviePreset" issue coming back here
+                // can only mean "set, but not found in presets.json" - the log/report wording
+                // below is kept exactly as it was before this was factored out, only the
+                // PresetExists condition itself moved.
+                var laneIssues = LaneValidator.Validate(lane, config, presetsPath, _pathExpander, _presets);
+
+                if (laneIssues.Any(i => i.Field == "tvPreset"))
                 {
-                    _logger.Log($"Lane [{lane.DisplayName}] - TV preset '{lane.TvPreset}' not found in presets.json. TV episodes in this lane will be skipped.", LogSeverity.Error);
+                    _logger.LogProblem($"lane-tv-preset-missing:{lane.Id}", $"Lane [{lane.DisplayName}] - TV preset '{lane.TvPreset}' not found in presets.json. TV episodes in this lane will be skipped.");
+                    thisLaneProblems.Add(ReportErrorCode.LaneTvPresetNotFound);
                 }
-                if (!string.IsNullOrWhiteSpace(lane.MoviePreset) && !_presets.PresetExists(lane.MoviePreset, presetsPath))
+                else
                 {
-                    _logger.Log($"Lane [{lane.DisplayName}] - Movie preset '{lane.MoviePreset}' not found in presets.json. Movies in this lane will be skipped.", LogSeverity.Error);
+                    _logger.ClearProblem($"lane-tv-preset-missing:{lane.Id}");
+                }
+                if (laneIssues.Any(i => i.Field == "moviePreset"))
+                {
+                    _logger.LogProblem($"lane-movie-preset-missing:{lane.Id}", $"Lane [{lane.DisplayName}] - Movie preset '{lane.MoviePreset}' not found in presets.json. Movies in this lane will be skipped.");
+                    thisLaneProblems.Add(ReportErrorCode.LaneMoviePresetNotFound);
+                }
+                else
+                {
+                    _logger.ClearProblem($"lane-movie-preset-missing:{lane.Id}");
                 }
 
                 _logger.Log($"\nScanning lane [{lane.DisplayName}] - {_pathExpander.Expand(lane.Input)}");
@@ -188,7 +235,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 var laneIsResumed = resumeState.Any(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending);
                 _progress.LaneStarted(lane.Id, lane.DisplayName, laneIsResumed);
 
-                var context = _conversionOrchestrator.PrepareLane(lane, config, resumeState, resumeFilePath);
+                var context = _conversionOrchestrator.PrepareLane(lane, config, resumeState, resumeFilePath, thisLaneProblems);
                 configLaneIndex++;
                 if (context is null) continue;
 
@@ -311,27 +358,41 @@ public sealed class RunOrchestrator : IRunOrchestrator
             Lanes = config.Lanes.Select(lane => new LaneReportSection
             {
                 LaneDisplayName = lane.DisplayName,
-                Results = laneResults.TryGetValue(lane.Id, out var results) ? results : Array.Empty<ConversionResult>()
+                Results = laneResults.TryGetValue(lane.Id, out var results) ? results : Array.Empty<ConversionResult>(),
+                LaneProblems = laneProblems.TryGetValue(lane.Id, out var problems) ? problems : Array.Empty<ReportErrorCode>()
             }).ToList(),
             Today = today,
             ThisMonth = thisMonth,
-            ThisYear = thisYear
+            ThisYear = thisYear,
+            SummaryLogFilePath = summaryLogFilePath
         };
 
-        Directory.CreateDirectory(reportPath);
         var reportFilePath = Path.Combine(reportPath, reportFileName);
-        var html = _reportGenerator.Generate(reportModel);
-        File.WriteAllText(reportFilePath, html);
 
-        var shouldOpen = config.Report.OpenAfterRun switch
+        // Broader than the history record/run-counter gate above (deliberately): a pass that
+        // processed nothing AND hit no lane/run-level problem gets no report on disk at all, same
+        // "don't leave empty artifacts behind" reasoning as the log-file cleanup. But a pass that
+        // processed nothing BECAUSE a lane is misconfigured (no preset, no Output folder, etc)
+        // still gets a report, so that's visible on the report itself and not just log-only - the
+        // whole point of ReportErrorCode's 106+ values. reportModel/reportFilePath still get
+        // built either way since RunResult always needs them (and building the model itself is
+        // free - no I/O), but nothing writes them out for a genuinely empty, problem-free pass.
+        if (totalFiles > 0 || reportModel.HasAnyLaneProblems)
         {
-            OpenReportMode.Always => true,
-            OpenReportMode.OnError => reportModel.ErrorCount > 0,
-            _ => false
-        };
-        if (shouldOpen)
-        {
-            _reportLauncher.Open(reportFilePath);
+            Directory.CreateDirectory(reportPath);
+            var html = _reportGenerator.Generate(reportModel);
+            File.WriteAllText(reportFilePath, html);
+
+            var shouldOpen = config.Report.OpenAfterRun switch
+            {
+                OpenReportMode.Always => true,
+                OpenReportMode.OnError => reportModel.ErrorCount > 0 || reportModel.HasAnyLaneProblems,
+                _ => false
+            };
+            if (shouldOpen)
+            {
+                _reportLauncher.Open(reportFilePath);
+            }
         }
 
         // Fires independent of OpenAfterRun (which can be Never/OnError-with-no-errors, in which

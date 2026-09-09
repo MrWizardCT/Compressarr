@@ -27,7 +27,6 @@
         <div class="field-block">
           <label for="presetsPath">presets.json path<span class="help-tag" tabindex="0" title="Path to HandBrake's presets.json. Use Install/Merge Presets to add Compressarr's own presets to it.">?<span class="help-tip">Path to HandBrake's presets.json. Use Install/Merge Presets to add Compressarr's own presets to it.</span></span></label>
           <div class="field-with-btn"><input type="text" id="presetsPath" /><button id="installPresetsBtn">Install/Merge Presets</button><button id="reloadPresetsBtn">Reload</button></div>
-          <div class="preset-status" id="presetStatus"></div>
         </div>
         <div class="field-block">
           <label for="hbOptions">Extra CLI options<span class="help-tag" tabindex="0" title="Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.">?<span class="help-tip">Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.</span></span></label>
@@ -51,7 +50,6 @@
           <p class="filebot-fix-text">If a run's log shows "Unable to establish loopback connection" under FileBot, it can't reach TheTVDB/TMDB due to a network issue between FileBot and the internet on this machine. Click Fix Network to apply FileBot's own recommended fix and try again.</p>
           <button id="fileBotFixNetworkBtn">Fix Network</button>
         </div>
-        <div class="preset-status" id="fileBotFixStatus"></div>
 
         <div class="routing-grid">
           <div class="routing-col">
@@ -178,6 +176,7 @@
             </select>
           </div>
         </div>
+        <div class="check-row"><input type="checkbox" id="keepSuccessfulHandBrakeLogs" /><label for="keepSuccessfulHandBrakeLogs">Keep Logs of successful HandBrake Encodes<span class="help-tag" tabindex="0" title="HandBrake writes its own detailed log for every file it converts. When off (default), a successful encode's own log is deleted as soon as that file is fully done processing, instead of sitting around until it ages out under Log/report retention above - most of these are never opened, and by far most conversions succeed, so they're the biggest source of log clutter. A failed encode's log is always kept regardless of this setting, since it's linked from the report.">?<span class="help-tip">HandBrake writes its own detailed log for every file it converts. When off (default), a successful encode's own log is deleted as soon as that file is fully done processing, instead of sitting around until it ages out under Log/report retention above - most of these are never opened, and by far most conversions succeed, so they're the biggest source of log clutter. A failed encode's log is always kept regardless of this setting, since it's linked from the report.</span></span></label></div>
       </div>
     </div>
 
@@ -242,7 +241,6 @@
             <div class="field-block">
               <label for="sonarrApiKey">API Key<span class="help-tag" tabindex="0" title="Found in Sonarr under Settings &gt; General &gt; Security.">?<span class="help-tip">Found in Sonarr under Settings &gt; General &gt; Security.</span></span></label>
               <div class="field-with-btn"><input type="password" id="sonarrApiKey" /><button id="sonarrTestBtn">Test Connection</button></div>
-              <div class="preset-status" id="sonarrTestStatus"></div>
             </div>
           </div>
           <div class="routing-col">
@@ -258,7 +256,6 @@
             <div class="field-block">
               <label for="radarrApiKey">API Key<span class="help-tag" tabindex="0" title="Found in Radarr under Settings &gt; General &gt; Security.">?<span class="help-tip">Found in Radarr under Settings &gt; General &gt; Security.</span></span></label>
               <div class="field-with-btn"><input type="password" id="radarrApiKey" /><button id="radarrTestBtn">Test Connection</button></div>
-              <div class="preset-status" id="radarrTestStatus"></div>
             </div>
           </div>
         </div>
@@ -281,7 +278,6 @@
             <div class="field-with-btn"><input type="file" id="importConfigFile" accept="application/json,.json" /><button id="importConfigBtn">Import</button></div>
           </div>
         </div>
-        <div class="preset-status" id="backupStatus"></div>
       </div>
     </div>
 
@@ -376,7 +372,6 @@
             <button id="clearConfigBtn" class="danger">Clear Configuration</button>
           </div>
         </div>
-        <div class="preset-status" id="maintenanceStatus"></div>
       </div>
     </div>
 
@@ -385,7 +380,6 @@
       <button id="clearChangesBtn"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>Clear Changes</button>
       <button id="runOnceBtn"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"></polygon><polygon points="13 4 23 12 13 20 13 4"></polygon></svg>Run Once</button>
     </div>
-    <div class="status" id="status"></div>
   </main>
 
   <script src="/nav.js"></script>

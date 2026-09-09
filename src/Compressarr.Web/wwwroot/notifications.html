@@ -24,7 +24,6 @@
           <input type="checkbox" id="toastEnabled" />
           <label for="toastEnabled">Show a Windows toast notification when a run completes</label>
         </div>
-        <div class="preset-status" id="toastStatus" style="margin-left: 0"></div>
         <p style="color: var(--text-dim); font-size: 12.5px; margin: 4px 0 0;">
           Off by default - useful on a desktop machine, not needed for a headless/server install.
         </p>
@@ -53,7 +52,6 @@
           <button type="button" id="toastDigestSaveBtn" class="icon-btn save">Save</button>
           <button type="button" id="toastDigestClearBtn" class="icon-btn">Clear</button>
         </div>
-        <div class="preset-status" id="toastDigestStatus" style="margin-left: 0"></div>
         <div class="digest-divider"></div>
         <p style="color: var(--text-dim); font-size: 12.5px; margin: 4px 0 0;">
           A periodic toast summarizing recent activity ("Compressed N files, reducing original size
@@ -72,7 +70,6 @@
         <button id="addChannelBtn">Add Channel</button>
       </div>
       <div class="card-body">
-        <div class="status" id="channelsStatus"></div>
         <div id="channelsList"></div>
       </div>
     </div>

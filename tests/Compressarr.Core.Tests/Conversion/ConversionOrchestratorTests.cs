@@ -21,6 +21,17 @@ file sealed class RealFolderScanner : IVideoFileScanner
         Directory.GetFiles(inputPath).Select(f => new FileInfo(f)).OrderBy(f => f.Name, StringComparer.Ordinal).ToList();
 }
 
+// Unlike RealFolderScanner above (deliberately flat, used by most tests in this file),
+// recurses into subfolders - matching the real VideoFileScanner's own behavior. Needed for a
+// "one folder per movie" library layout (e.g. Input\Caddyshack (1980)\Caddyshack (1980).mkv),
+// which is exactly the shape the orphaned-source-folder bug this file also tests for showed up
+// in live.
+file sealed class RecursiveFolderScanner : IVideoFileScanner
+{
+    public IReadOnlyList<FileInfo> FindVideoFiles(string inputPath, IReadOnlyList<string> vidTypes, long minSizeBytes, int limit) =>
+        Directory.GetFiles(inputPath, "*", SearchOption.AllDirectories).Select(f => new FileInfo(f)).OrderBy(f => f.Name, StringComparer.Ordinal).ToList();
+}
+
 file sealed class NoOpFileBotRunner : IFileBotRunner
 {
     public HashSet<string> Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger) => new();
@@ -71,6 +82,10 @@ file sealed class FakeProcessRunner : IHandBrakeProcessRunner
         string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken)
     {
         File.WriteAllText(tempOutputPath, "fake encoded output");
+        // Matches real HandBrakeProcessRunner - it always writes a detail log, success or not, so
+        // KeepSuccessfulHandBrakeLogs-driven deletion has a real file to actually exercise.
+        Directory.CreateDirectory(Path.GetDirectoryName(detailLogFile)!);
+        File.WriteAllText(detailLogFile, "fake HandBrake detail output");
         return Task.FromResult(new HandBrakeRunResult(Success: true, DetailLogFile: detailLogFile));
     }
 }
@@ -105,6 +120,18 @@ file sealed class ConcurrentEditProcessRunner : IHandBrakeProcessRunner
 /// truncated temp output file, a failed HandBrakeRunResult, and the real HandBrakeCLI log content
 /// observed (mux error naming "No space left on device", "Finished work at" printed anyway,
 /// "Encode failed").</summary>
+file sealed class FailingProcessRunner : IHandBrakeProcessRunner
+{
+    public Task<HandBrakeRunResult> RunAsync(
+        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
+        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(detailLogFile)!);
+        File.WriteAllText(detailLogFile, "Encode failed (error 1).\n");
+        return Task.FromResult(new HandBrakeRunResult(Success: false, DetailLogFile: detailLogFile));
+    }
+}
+
 file sealed class DiskFullProcessRunner : IHandBrakeProcessRunner
 {
     public Task<HandBrakeRunResult> RunAsync(
@@ -176,14 +203,36 @@ file sealed class RecordingTrashService : ITrashService
 file sealed class DeletingTrashService : ITrashService
 {
     public void DeleteFile(string path, DeleteAfterConvertMode mode) { try { File.Delete(path); } catch { } }
-    public void DeleteFolder(string path, DeleteAfterConvertMode mode) { }
+    public void DeleteFolder(string path, DeleteAfterConvertMode mode) { try { Directory.Delete(path, recursive: true); } catch { } }
 }
 
 file sealed class NoOpRunLogger : IRunLogger
 {
     public event Action<string, LogSeverity>? LineWritten { add { } remove { } }
+    public bool HasLoggedError => false;
     public string Initialize(string logFilePath, string timestamp) => Path.GetTempFileName();
     public void Log(string message, LogSeverity severity = LogSeverity.Info) { }
+    public void LogProblem(string key, string message) { }
+    public void ClearProblem(string key) { }
+    public void FileStart(string laneDisplayName, int index, int total, string fileName, double sizeGb, string contentType, string preset) { }
+    public void FileComplete(string fileName, double beginSizeGb, double endSizeGb, TimeSpan duration, bool success, string? detailLogFile) { }
+}
+
+file sealed class RecordingRunLogger : IRunLogger
+{
+    public event Action<string, LogSeverity>? LineWritten { add { } remove { } }
+    public List<(string Message, LogSeverity Severity)> Logs { get; } = new();
+    public bool HasLoggedError => Logs.Any(l => l.Severity == LogSeverity.Error);
+    private readonly Dictionary<string, string> _lastProblemMessages = new();
+    public string Initialize(string logFilePath, string timestamp) { Logs.Clear(); return Path.GetTempFileName(); }
+    public void Log(string message, LogSeverity severity = LogSeverity.Info) => Logs.Add((message, severity));
+    public void LogProblem(string key, string message)
+    {
+        var changed = !_lastProblemMessages.TryGetValue(key, out var last) || last != message;
+        Log(changed ? message : $"{message} (still unresolved, same as last check)", changed ? LogSeverity.Error : LogSeverity.Info);
+        _lastProblemMessages[key] = message;
+    }
+    public void ClearProblem(string key) => _lastProblemMessages.Remove(key);
     public void FileStart(string laneDisplayName, int index, int total, string fileName, double sizeGb, string contentType, string preset) { }
     public void FileComplete(string fileName, double beginSizeGb, double endSizeGb, TimeSpan duration, bool success, string? detailLogFile) { }
 }
@@ -355,6 +404,92 @@ public class ConversionOrchestratorTests : IDisposable
         var file2Call = Assert.Single(trash.Calls);
         Assert.Equal(file2Path, file2Call.Path);
         Assert.Equal(DeleteAfterConvertMode.Delete, file2Call.Mode);
+    }
+
+    [Fact]
+    public async Task ProcessOneFileAsync_SuccessfulEncode_KeepSuccessfulHandBrakeLogsOff_DeletesTheDetailLog()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+        File.WriteAllText(Path.Combine(inputDir, "file1.mkv"), "source");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir, MoviePreset = "Any Preset" };
+        var config = BuildConfig(DeleteAfterConvertMode.Maintain);
+        config.Logging.KeepSuccessfulHandBrakeLogs = false; // default
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var results = await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.True(result.Success);
+        Assert.NotNull(result.DetailLogFile);
+        Assert.False(File.Exists(result.DetailLogFile), "a successful encode's own detail log should be removed once processing finishes, with the setting off");
+    }
+
+    [Fact]
+    public async Task ProcessOneFileAsync_SuccessfulEncode_KeepSuccessfulHandBrakeLogsOn_KeepsTheDetailLog()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+        File.WriteAllText(Path.Combine(inputDir, "file1.mkv"), "source");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir, MoviePreset = "Any Preset" };
+        var config = BuildConfig(DeleteAfterConvertMode.Maintain);
+        config.Logging.KeepSuccessfulHandBrakeLogs = true;
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var results = await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.True(result.Success);
+        Assert.NotNull(result.DetailLogFile);
+        Assert.True(File.Exists(result.DetailLogFile), "a successful encode's own detail log should survive when the setting is on");
+    }
+
+    [Fact]
+    public async Task ProcessOneFileAsync_FailedEncode_KeepSuccessfulHandBrakeLogsOff_StillKeepsTheDetailLog()
+    {
+        // The setting only affects a SUCCESSFUL encode's log - a failed one is always kept
+        // regardless, since it's linked from the report (ReportErrorCode.EncodeFailed).
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+        File.WriteAllText(Path.Combine(inputDir, "file1.mkv"), "source");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir, MoviePreset = "Any Preset" };
+        var config = BuildConfig(DeleteAfterConvertMode.Maintain);
+        config.Logging.KeepSuccessfulHandBrakeLogs = false;
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FailingProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var results = await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.False(result.Success);
+        Assert.NotNull(result.DetailLogFile);
+        Assert.True(File.Exists(result.DetailLogFile), "a failed encode's detail log must always be kept, regardless of the setting");
     }
 
     [Fact]
@@ -818,6 +953,67 @@ public class ConversionOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessLaneAsync_MoveFailedEntry_RetriedAndSucceeds_RemovesOrphanedSourceFolder()
+    {
+        // Real bug found live: the retry path passed entry.EncodedFilePath (the already-converted
+        // file sitting in the processing/staging folder) to MoveCompanionFiles as if it were the
+        // original source file, so companion-cleanup/empty-folder-cascade-delete ran against the
+        // wrong directory entirely and the true original source folder was left behind forever,
+        // even after a successful retried move. Needs the REAL CompanionFileService (not the
+        // NoOp fake the other MoveFailed tests use) to actually exercise that cleanup logic.
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        // Nested one level deep, like a real "one folder per movie" library layout - the orphan
+        // the user hit live was exactly this shape (Reacher\Season 04\<file>.mkv).
+        var sourceSubfolder = Path.Combine(inputDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(sourceSubfolder);
+        var sourcePath = Path.Combine(sourceSubfolder, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = @"Z:\Unavailable\Movies" // first pass: unreachable
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RecursiveFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new CompanionFileService(new DeletingTrashService()), new NoOpArrUnmonitorService(),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>();
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        Assert.Equal(ResumeStatus.MoveFailed, Assert.Single(resumeState).Status);
+        Assert.False(File.Exists(sourcePath)); // DeleteAfterConvert already removed it, even though the move failed
+        Assert.True(Directory.Exists(sourceSubfolder)); // the now-empty source folder is still there, orphaned
+
+        // Second pass: the base path is reachable now - only the move should be retried.
+        lane.MovieBasePath = movieBaseDir;
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000100", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        Assert.Equal(ResumeStatus.Completed, Assert.Single(resumeState).Status);
+        Assert.True(File.Exists(Path.Combine(movieBaseDir, "Caddyshack (1980)", "Caddyshack (1980).mkv")));
+        Assert.False(Directory.Exists(sourceSubfolder)); // the orphaned source folder must be gone now
+    }
+
+    [Fact]
     public async Task ProcessLaneAsync_MoveFailedEntry_StillFailing_StaysMoveFailed()
     {
         var inputDir = Path.Combine(_tempDir, "Input");
@@ -862,6 +1058,61 @@ public class ConversionOrchestratorTests : IDisposable
         Assert.Equal(ResumeStatus.MoveFailed, entry.Status);
         Assert.Equal(encodedPath, entry.EncodedFilePath);
         Assert.True(File.Exists(encodedPath)); // still sitting right where it was
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_MoveFailedEntry_RepeatedIdenticalFailure_LogsInfoNotErrorAfterTheFirstTime()
+    {
+        // Real gap found live: an offline destination (a network share down overnight) got
+        // retried every single poll, and every one of those retries logged at Error severity -
+        // which, combined with the "don't keep an empty/error-free pass's log" fix, meant a KEPT
+        // log file every poll for the whole outage - the same file-proliferation problem the fix
+        // was meant to solve, just gated on "error" instead of "empty." Only the first occurrence
+        // of a given failure (and any later occurrence whose message actually changes) should log
+        // at Error; an unchanged repeat should log at Info so it doesn't force the file to survive.
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = @"Z:\Unavailable\Movies" // stays unreachable for every pass below
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var logger = new RecordingRunLogger();
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new DeletingTrashService(), logger, new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>();
+        // Pass 1: real encode + first move failure.
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        // Pass 2 and 3: pure retries against the exact same unreachable path - same failure both times.
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000100", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000200", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var retryLogs = logger.Logs.Where(l => l.Message.Contains("Retried move for")).ToList();
+        Assert.Equal(2, retryLogs.Count); // one retry attempt per pass 2 and 3 (pass 1 was the original move, not a retry)
+        Assert.Equal(LogSeverity.Error, retryLogs[0].Severity); // first retry failure - genuinely new information
+        Assert.Equal(LogSeverity.Info, retryLogs[1].Severity); // second retry, identical failure - already known
     }
 
     [Fact]

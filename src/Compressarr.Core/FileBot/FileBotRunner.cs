@@ -56,9 +56,15 @@ public sealed class FileBotRunner : IFileBotRunner
 
         if (string.IsNullOrWhiteSpace(settings.CliPath) || !File.Exists(settings.CliPath))
         {
-            logger.Log($"FileBot is enabled but its path '{settings.CliPath}' was not found - skipping.", LogSeverity.Error);
+            // Keyed by inputPath (stable per lane) rather than a lane id - this method never
+            // receives one. Runs unconditionally on every pass FileBot is enabled for, regardless
+            // of whether there are new files, so a broken path would otherwise log Error on every
+            // single poll for as long as it stays broken - the same standing-condition
+            // file-proliferation problem RunOrchestrator's own config checks have.
+            logger.LogProblem($"filebot-path-missing:{inputPath}", $"FileBot is enabled but its path '{settings.CliPath}' was not found - skipping.");
             return new HashSet<string>();
         }
+        logger.ClearProblem($"filebot-path-missing:{inputPath}");
 
         var allFiles = _scanner.FindVideoFiles(inputPath, vidTypes, minSizeBytes: 0, limit: 0);
         var tvFiles = allFiles.Where(f => ContentClassifier.IsTvFile(f.Name)).ToList();

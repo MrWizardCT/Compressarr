@@ -5,8 +5,14 @@ namespace Compressarr.Core.Logging;
 public sealed class FileRunLogger : IRunLogger
 {
     private string? _summaryLogFile;
+    // Deliberately NOT reset by Initialize - this has to survive across polls (that's the whole
+    // point) for as long as the app process itself keeps running. See LogProblem's own doc
+    // comment on IRunLogger.
+    private readonly Dictionary<string, string> _lastProblemMessages = new();
 
     public event Action<string, LogSeverity>? LineWritten;
+
+    public bool HasLoggedError { get; private set; }
 
     public string Initialize(string logFilePath, string timestamp)
     {
@@ -20,12 +26,15 @@ public sealed class FileRunLogger : IRunLogger
         var logName = $"Compressarr_{timestamp}_Summary.txt";
         _summaryLogFile = Path.Combine(logFilePath, logName);
         if (File.Exists(_summaryLogFile)) File.Delete(_summaryLogFile);
+        HasLoggedError = false;
 
         return _summaryLogFile;
     }
 
     public void Log(string message, LogSeverity severity = LogSeverity.Info)
     {
+        if (severity == LogSeverity.Error) HasLoggedError = true;
+
         if (_summaryLogFile is not null)
         {
             File.AppendAllText(_summaryLogFile, message + Environment.NewLine);
@@ -33,6 +42,15 @@ public sealed class FileRunLogger : IRunLogger
 
         LineWritten?.Invoke(message, severity);
     }
+
+    public void LogProblem(string key, string message)
+    {
+        var changed = !_lastProblemMessages.TryGetValue(key, out var last) || last != message;
+        Log(changed ? message : $"{message} (still unresolved, same as last check)", changed ? LogSeverity.Error : LogSeverity.Info);
+        _lastProblemMessages[key] = message;
+    }
+
+    public void ClearProblem(string key) => _lastProblemMessages.Remove(key);
 
     public void FileStart(string laneDisplayName, int index, int total, string fileName, double sizeGb, string contentType, string preset)
     {

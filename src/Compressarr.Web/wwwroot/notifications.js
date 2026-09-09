@@ -1,7 +1,6 @@
 renderNav('notifications');
 
 const channelsList = document.getElementById('channelsList');
-const channelsStatus = document.getElementById('channelsStatus');
 const addChannelType = document.getElementById('addChannelType');
 
 let notifierTypes = []; // [{type, displayName, fields: [{key,label,inputType,required,secret,options}]}]
@@ -26,7 +25,6 @@ async function loadToastSetting() {
 }
 
 async function saveToastSettings(message) {
-  const statusEl = document.getElementById('toastStatus');
   await fetch('/api/notifications/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -39,9 +37,7 @@ async function saveToastSettings(message) {
       toastDigestWeeklyDay: document.getElementById('toastDigestWeeklyDay').value
     })
   });
-  statusEl.textContent = message;
-  statusEl.classList.add('success');
-  setTimeout(() => { statusEl.textContent = ''; statusEl.classList.remove('success'); }, 4000);
+  setStatusMessage(message, 'success');
 }
 
 document.getElementById('toastEnabled').addEventListener('change', e => {
@@ -56,14 +52,12 @@ document.getElementById('toastDigestClearBtn').addEventListener('click', () => {
 });
 
 document.getElementById('toastDigestTestBtn').addEventListener('click', async () => {
-  const statusEl = document.getElementById('toastDigestStatus');
   const weeklyFlags = [];
   if (document.getElementById('toastDigestDaily').checked) weeklyFlags.push(false);
   if (document.getElementById('toastDigestWeekly').checked) weeklyFlags.push(true);
   if (weeklyFlags.length === 0) weeklyFlags.push(false);
 
-  statusEl.textContent = 'Testing...';
-  statusEl.classList.remove('success');
+  setStatusMessage('Testing...', '');
 
   const results = [];
   for (const weekly of weeklyFlags) {
@@ -74,8 +68,7 @@ document.getElementById('toastDigestTestBtn').addEventListener('click', async ()
     });
     results.push(await res.json());
   }
-  statusEl.textContent = results.map(r => r.message).join(' | ');
-  statusEl.classList.toggle('success', results.every(r => r.success));
+  setStatusMessage(results.map(r => r.message).join(' | '), results.every(r => r.success) ? 'success' : '');
 });
 
 // ---- Notification channels - a dynamic list, each channel's own field set driven entirely by
@@ -166,10 +159,8 @@ function channelCardFromDto(dto) {
         <button type="button" class="digest-save-btn icon-btn save">Save</button>
         <button type="button" class="digest-clear-btn icon-btn">Clear</button>
       </div>
-      <div class="digest-status"></div>
       <div class="digest-divider"></div>
       ${fieldBlocks}
-      <div class="preset-status"></div>
     </div>
   `;
 
@@ -214,22 +205,44 @@ function readChannelCard(node) {
   };
 }
 
+// Every notifier field already carries its own `required` flag (NotifierFieldDto), sent to the
+// browser but never read until now. A missing required value is knowable without a round trip -
+// unlike a HandBrake/FileBot path's existence, which can only be checked server-side - so this
+// runs client-side, right before the PUT that would otherwise just fail the same check on the
+// far end. Warn, don't block, same as everywhere else: the save below still happens either way.
+function requiredChannelFieldIssues(dto) {
+  const typeInfo = notifierTypes.find(t => t.type === dto.type);
+  const fieldMap = {};
+  const issues = [];
+  for (const field of (typeInfo ? typeInfo.fields : [])) {
+    if (!field.required) continue;
+    fieldMap[field.key] = `.f-setting[data-key="${field.key}"]`;
+    if (!(dto.settings[field.key] || '').trim()) {
+      issues.push({ field: field.key, message: `${field.label} is required.` });
+    }
+  }
+  return { issues, fieldMap };
+}
+
 async function saveChannel(node) {
   const dto = readChannelCard(node);
-  const statusEl = node.querySelector('.preset-status');
-  statusEl.textContent = `Saving "${dto.displayName}"...`;
-  statusEl.classList.remove('success');
 
+  const { issues, fieldMap } = requiredChannelFieldIssues(dto);
+  const hasIssues = applyValidationIssues(node, issues, fieldMap, '');
+
+  setStatusMessage(`Saving "${dto.displayName}"...`, '');
   const res = await fetch(`/api/notifications/channels/${dto.id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(dto)
   });
 
-  statusEl.textContent = res.ok ? 'Saved.' : 'Failed to save channel.';
-  statusEl.classList.toggle('success', res.ok);
-  if (res.ok) {
-    setTimeout(() => { statusEl.textContent = ''; statusEl.classList.remove('success'); }, 4000);
+  if (!res.ok) {
+    setStatusMessage('Failed to save channel.', '');
+  } else if (hasIssues) {
+    setStatusMessage(`"${dto.displayName}" saved, but a required field is missing - check fields below.`, 'error');
+  } else {
+    setStatusMessage(`"${dto.displayName}" saved.`, 'success');
   }
 }
 
@@ -240,17 +253,15 @@ async function removeChannel(node) {
   const res = await fetch(`/api/notifications/channels/${dto.id}`, { method: 'DELETE' });
   if (res.ok) {
     node.remove();
-    channelsStatus.textContent = `"${dto.displayName}" removed.`;
+    setStatusMessage(`"${dto.displayName}" removed.`, 'success');
   } else {
-    channelsStatus.textContent = 'Failed to remove channel.';
+    setStatusMessage('Failed to remove channel.', '');
   }
 }
 
 async function testChannel(node) {
   const dto = readChannelCard(node);
-  const statusEl = node.querySelector('.preset-status');
-  statusEl.textContent = 'Testing...';
-  statusEl.classList.remove('success');
+  setStatusMessage(`Testing "${dto.displayName}"...`, '');
 
   const res = await fetch('/api/notifications/test', {
     method: 'POST',
@@ -258,26 +269,21 @@ async function testChannel(node) {
     body: JSON.stringify({ type: dto.type, settings: dto.settings })
   });
   const body = await res.json();
-  statusEl.textContent = body.message;
-  statusEl.classList.toggle('success', !!body.success);
+  setStatusMessage(body.message, body.success ? 'success' : '');
 }
 
 // Fires a real digest immediately (today's actual numbers, bypassing the schedule entirely) - one
 // send per digest type currently checked on this row, so Daily+Weekly both enabled sends two
 // distinctly-labeled tests, not two identical "Daily Digest" ones. Falls back to a single Daily-
 // style test if neither box is checked yet, so Test still does something useful before saving.
-// Separate status line from the card's main .preset-status so it doesn't collide with Test/Save
-// feedback from the head row above.
 async function testChannelDigest(node) {
   const dto = readChannelCard(node);
-  const statusEl = node.querySelector('.digest-status');
   const weeklyFlags = [];
   if (dto.digestDailyEnabled) weeklyFlags.push(false);
   if (dto.digestWeeklyEnabled) weeklyFlags.push(true);
   if (weeklyFlags.length === 0) weeklyFlags.push(false);
 
-  statusEl.textContent = 'Testing...';
-  statusEl.classList.remove('success');
+  setStatusMessage(`Testing "${dto.displayName}" digest...`, '');
 
   const results = [];
   for (const weekly of weeklyFlags) {
@@ -288,8 +294,7 @@ async function testChannelDigest(node) {
     });
     results.push(await res.json());
   }
-  statusEl.textContent = results.map(r => r.message).join(' | ');
-  statusEl.classList.toggle('success', results.every(r => r.success));
+  setStatusMessage(results.map(r => r.message).join(' | '), results.every(r => r.success) ? 'success' : '');
 }
 
 async function loadNotifierTypes() {
@@ -320,7 +325,7 @@ document.getElementById('addChannelBtn').addEventListener('click', async () => {
   });
   const dto = await res.json();
   channelsList.appendChild(channelCardFromDto(dto));
-  channelsStatus.textContent = `"${dto.displayName}" added.`;
+  setStatusMessage(`"${dto.displayName}" added.`, 'success');
 });
 
 loadToastSetting();

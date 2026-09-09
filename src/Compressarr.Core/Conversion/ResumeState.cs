@@ -26,6 +26,16 @@ public sealed class ResumeEntry
     /// location) so a later retry can find and route it without re-encoding.</summary>
     public string? EncodedFilePath { get; set; }
 
+    /// <summary>The exception message from this entry's most recent failed move-retry attempt -
+    /// lets ConversionOrchestrator tell "still the same unresolved problem as last poll" apart
+    /// from "something new/different just happened." Real gap found live: an offline destination
+    /// (a network share down overnight) got retried every single poll, and every one of those
+    /// retries logged at Error severity - which, combined with the "don't keep an empty/error-free
+    /// pass's log" cleanup, meant a KEPT log file every poll for as long as the outage lasted, the
+    /// same file-proliferation problem all over again just gated on "error" instead of "empty."
+    /// Null once the entry isn't MoveFailed any more (succeeded, or removed).</summary>
+    public string? LastRetryFailureMessage { get; set; }
+
     /// <summary>User-set queue position within this lane's Pending entries, lower first - drives
     /// drag-to-reorder on the Monitor page's In Queue list. Entries without an explicit Order
     /// (existing/untouched files) sort after any that have one, in their original order.</summary>

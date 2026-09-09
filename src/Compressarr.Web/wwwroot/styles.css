@@ -213,6 +213,11 @@ body {
   font-weight: 600;
 }
 
+.toolbar-page-status.error {
+  color: var(--dot-off);
+  font-weight: 600;
+}
+
 /* A page's own action-button row, relocated here from the content area - stripped of the
    vertical spacing meant for sitting inside a form, and given a chrome that reads correctly
    against the toolbar's fixed dark background regardless of the content theme toggle (a plain
@@ -644,6 +649,10 @@ a.primary:hover { opacity: 0.9; }
   color: var(--toolbar-text);
 }
 
+/* Used only by two remaining body-level elements now (History's "no reports" empty state,
+   Settings' persistent "Last backup: ..." label) - every transient action-feedback message
+   (Saved/Testing/error) moved to the toolbar's own .toolbar-page-status, so neither of these
+   ever gets a .success/.error class applied any more. */
 .status {
   margin: 12px 0;
   font-size: 13px;
@@ -651,20 +660,18 @@ a.primary:hover { opacity: 0.9; }
   min-height: 18px;
 }
 
-.status.success {
-  color: var(--ok);
-  font-weight: 600;
-}
-
 .preset-status {
   margin: 6px 0 10px 210px;
   font-size: 13px;
+  color: var(--text-dim);
   min-height: 18px;
 }
 
-.preset-status.success {
-  color: var(--ok);
-  font-weight: 600;
+/* Red outline for a required-but-missing/invalid field, applied by nav.js's
+   applyValidationIssues - the specific reason lives in the element's own title tooltip. */
+.field-invalid {
+  border-color: var(--err) !important;
+  box-shadow: 0 0 0 1px var(--err);
 }
 
 /* Lane card - fields grouped by what they mean (Folders, then Movie/TV Content routing) rather
@@ -805,13 +812,16 @@ a.primary:hover { opacity: 0.9; }
   align-items: center;
   gap: 16px;
   margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--bg-alt);
 }
 
 .filebot-fix-text {
   flex: 1;
   margin: 0;
   font-size: 12.5px;
-  line-height: 1.5;
+  line-height: 1.6;
   color: var(--text-dim);
 }
 
@@ -970,13 +980,6 @@ a.primary:hover { opacity: 0.9; }
    Test/Save/Remove row above - since .digest-row sits in the same padded container (.lane-body /
    .card-body, both 16px), the two rows' trailing buttons land on the exact same right edge. */
 .digest-row-spacer { flex: 1; }
-
-.digest-status {
-  margin: 6px 0 0;
-  font-size: 13px;
-  min-height: 18px;
-}
-.digest-status.success { color: var(--ok); font-weight: 600; }
 
 .two-col {
   display: grid;
