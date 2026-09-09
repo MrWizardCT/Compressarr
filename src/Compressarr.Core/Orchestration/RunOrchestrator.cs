@@ -122,7 +122,8 @@ public sealed class RunOrchestrator : IRunOrchestrator
         // processing none (a misconfigured lane, a missing HandBrakeCLI, etc), still keeps its log.
         if ((result?.TotalFiles ?? 0) == 0 && !_logger.HasLoggedError)
         {
-            try { if (File.Exists(summaryLogFilePath)) File.Delete(summaryLogFilePath); } catch { }
+            try { if (File.Exists(summaryLogFilePath)) File.Delete(summaryLogFilePath); }
+            catch (Exception ex) { _logger.Log($"Unable to remove empty run log '{summaryLogFilePath}': {ex.Message}", LogSeverity.Error); }
         }
 
         return result;
@@ -235,7 +236,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 var laneIsResumed = resumeState.Any(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending);
                 _progress.LaneStarted(lane.Id, lane.DisplayName, laneIsResumed);
 
-                var context = _conversionOrchestrator.PrepareLane(lane, config, resumeState, resumeFilePath, thisLaneProblems);
+                var context = await _conversionOrchestrator.PrepareLaneAsync(lane, config, resumeState, resumeFilePath, thisLaneProblems);
                 configLaneIndex++;
                 if (context is null) continue;
 

@@ -46,21 +46,39 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
             File.Delete(detailLogFile);
         }
 
-        var args = $"-i \"{sourcePath}\" -t 1 -o \"{tempOutputPath}\" --preset-import-file \"{presetsPath}\" --preset \"{presetName}\"";
-        if (!string.IsNullOrWhiteSpace(extraOptions))
-        {
-            args += " " + extraOptions;
-        }
-
         var startInfo = new ProcessStartInfo
         {
             FileName = cliPath,
-            Arguments = args,
             RedirectStandardError = true,
             RedirectStandardOutput = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        // ArgumentList, not a manually quoted Arguments string - each element is passed to the
+        // child process exactly as given, with no shell-style re-parsing/re-quoting step that a
+        // path or preset name containing spaces (or, in principle, an embedded quote) could ever
+        // trip up.
+        startInfo.ArgumentList.Add("-i");
+        startInfo.ArgumentList.Add(sourcePath);
+        startInfo.ArgumentList.Add("-t");
+        startInfo.ArgumentList.Add("1");
+        startInfo.ArgumentList.Add("-o");
+        startInfo.ArgumentList.Add(tempOutputPath);
+        startInfo.ArgumentList.Add("--preset-import-file");
+        startInfo.ArgumentList.Add(presetsPath);
+        startInfo.ArgumentList.Add("--preset");
+        startInfo.ArgumentList.Add(presetName);
+        if (!string.IsNullOrWhiteSpace(extraOptions))
+        {
+            // extraOptions is the free-form "Extra CLI options" setting - deliberately meant to
+            // represent MULTIPLE arguments (e.g. "--two-pass --optimize"), so it needs splitting
+            // into individual tokens rather than being added as one single (and wrong) argument.
+            foreach (var arg in SplitExtraOptions(extraOptions))
+            {
+                startInfo.ArgumentList.Add(arg);
+            }
+        }
 
         var stderr = new StringBuilder();
         var cancelled = false;
@@ -140,6 +158,44 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
         var nonEmpty = new FileInfo(tempOutputPath).Length > 0;
 
         return hasFinishedLine && nonEmpty;
+    }
+
+    /// <summary>Splits a free-form "Extra CLI options" string into individual ArgumentList
+    /// entries, honoring double quotes so a quoted segment (e.g. --custom-anamorphic "16:9") stays
+    /// one argument - the same shell-style splitting a plain Arguments string used to get for free
+    /// before this moved to ArgumentList, which needs pre-split tokens instead. Not a full Win32
+    /// CommandLineToArgvW port (no backslash-escaping rules) - just enough for the flag/value
+    /// shapes HandBrakeCLI options actually use. A pure static function so it's unit-testable
+    /// without invoking a process, same pattern as DetermineSuccess above.</summary>
+    internal static IReadOnlyList<string> SplitExtraOptions(string input)
+    {
+        var result = new List<string>();
+        var current = new StringBuilder();
+        var inQuotes = false;
+
+        foreach (var c in input)
+        {
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+                continue;
+            }
+
+            if (char.IsWhiteSpace(c) && !inQuotes)
+            {
+                if (current.Length > 0)
+                {
+                    result.Add(current.ToString());
+                    current.Clear();
+                }
+                continue;
+            }
+
+            current.Append(c);
+        }
+
+        if (current.Length > 0) result.Add(current.ToString());
+        return result;
     }
 }
 

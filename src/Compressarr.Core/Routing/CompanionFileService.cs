@@ -32,16 +32,26 @@ public interface ICompanionFileService
     /// videos left, regardless of what it actually was - risking deletion of non-companion content
     /// a user had placed there themselves. companionExtensions + unmatchedCompanionAction close
     /// that gap: only recognized companion types move automatically, and what happens to anything
-    /// else is an explicit user choice, not an assumption.</summary>
+    /// else is an explicit user choice, not an assumption.
+    ///
+    /// routedVideoDestPath is the video's own ACTUAL final destination path, not just a folder -
+    /// each companion's own destination filename is derived from THIS path's stem, not the
+    /// companion's original one, so a Rename-collision that gave the video "Movie (2).mkv" moves
+    /// "Movie.en.srt" to "Movie (2).en.srt" alongside it - video and companions always stay a
+    /// matched set. collisionMode applies the SAME Overwrite/Skip/Rename policy the video itself
+    /// already gets (v2.1.3 code review finding #5 - a companion collision used to always
+    /// overwrite, independent of what was actually configured); a Skip on one companion only
+    /// leaves that one file where it is, it does not abort handling the rest.</summary>
     void MoveCompanionFiles(
         string originalFileFullName,
         string originalFileDirectory,
-        string destinationFolder,
+        string routedVideoDestPath,
         IReadOnlyList<string> vidTypes,
         DeleteAfterConvertMode deleteAfterConvert,
         string inputRoot,
         IReadOnlyList<string> companionExtensions,
-        DeleteAfterConvertMode unmatchedCompanionAction);
+        DeleteAfterConvertMode unmatchedCompanionAction,
+        DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite);
 }
 
 /// <summary>Ported from Move-CompressarrCompanionFiles; redesigned from a batch-at-the-end sweep
@@ -58,14 +68,18 @@ public sealed class CompanionFileService : ICompanionFileService
     public void MoveCompanionFiles(
         string originalFileFullName,
         string originalFileDirectory,
-        string destinationFolder,
+        string routedVideoDestPath,
         IReadOnlyList<string> vidTypes,
         DeleteAfterConvertMode deleteAfterConvert,
         string inputRoot,
         IReadOnlyList<string> companionExtensions,
-        DeleteAfterConvertMode unmatchedCompanionAction)
+        DeleteAfterConvertMode unmatchedCompanionAction,
+        DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite)
     {
         if (!Directory.Exists(originalFileDirectory)) return;
+
+        var destinationFolder = Path.GetDirectoryName(routedVideoDestPath)!;
+        var videoDestStem = Path.GetFileNameWithoutExtension(routedVideoDestPath);
 
         var extensions = vidTypes
             .Where(t => !string.IsNullOrWhiteSpace(t))
@@ -90,22 +104,49 @@ public sealed class CompanionFileService : ICompanionFileService
         {
             var isWanted = wantedExtensions.Contains(Path.GetExtension(sibling));
 
+            // The part of the companion's own name after its shared stem (e.g. "en.srt" out of
+            // "Movie.en.srt") - re-attached to the video's own ACTUAL destination stem below, not
+            // the companion's original one, so a Rename-collision on the video carries the
+            // companion along under the exact same renamed stem.
+            var companionSuffix = Path.GetFileName(sibling)[stemPrefix.Length..];
+            var desiredCompanionName = videoDestStem + "." + companionSuffix;
+
             if (deleteAfterConvert == DeleteAfterConvertMode.Maintain)
             {
                 // Maintain never touches the source, period - an unwanted stem-matched file is
-                // left exactly where it is, regardless of unmatchedCompanionAction.
+                // left exactly where it is, regardless of unmatchedCompanionAction. Collision
+                // policy still applies to the copy itself (Skip/Rename), since Maintain is only
+                // about the SOURCE never being touched, not about blindly clobbering destination.
                 if (isWanted)
                 {
-                    File.Copy(sibling, Path.Combine(destinationFolder, Path.GetFileName(sibling)), overwrite: true);
+                    var desiredDestPath = Path.Combine(destinationFolder, desiredCompanionName);
+                    try
+                    {
+                        var resolvedDestPath = FileRouter.ResolveCollision(desiredDestPath, collisionMode);
+                        File.Copy(sibling, resolvedDestPath, overwrite: true);
+                    }
+                    catch (DestinationCollisionSkippedException)
+                    {
+                        // This one companion stays uncopied - every other companion still gets
+                        // handled normally.
+                    }
                 }
                 continue;
             }
 
             if (isWanted)
             {
-                var destPath = Path.Combine(destinationFolder, Path.GetFileName(sibling));
-                if (File.Exists(destPath)) File.Delete(destPath);
-                File.Move(sibling, destPath);
+                var desiredDestPath = Path.Combine(destinationFolder, desiredCompanionName);
+                try
+                {
+                    var resolvedDestPath = FileRouter.ResolveCollision(desiredDestPath, collisionMode);
+                    File.Move(sibling, resolvedDestPath, overwrite: true);
+                }
+                catch (DestinationCollisionSkippedException)
+                {
+                    // Configured to skip - this one companion just stays where it is; every other
+                    // companion (and the folder-cleanup logic below) still gets handled normally.
+                }
             }
             else if (unmatchedCompanionAction != DeleteAfterConvertMode.Maintain)
             {

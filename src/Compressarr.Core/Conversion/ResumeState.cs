@@ -23,8 +23,18 @@ public sealed class ResumeEntry
 
     /// <summary>Only set (and only meaningful) when Status is MoveFailed - where the already-
     /// encoded file actually sits (in the lane's Output folder, not FullName's original Input
-    /// location) so a later retry can find and route it without re-encoding.</summary>
+    /// location) so a later retry can find and route it without re-encoding. Deliberately a
+    /// collision-safe staging name (not a human-readable one) for as long as MoveFailed persists -
+    /// see ConversionOrchestrator's own notes on why a deterministic name is never left sitting in
+    /// Output unrouted.</summary>
     public string? EncodedFilePath { get; set; }
+
+    /// <summary>Only set (and only meaningful) when Status is MoveFailed - the clean, human-
+    /// readable filename (e.g. "Movie.mkv") EncodedFilePath's own file should be classified and
+    /// renamed/routed under once the retry succeeds. Kept separate from EncodedFilePath itself
+    /// because that path stays under a collision-safe staging name while MoveFailed persists, so
+    /// nothing downstream can derive the real title/episode info from it any more.</summary>
+    public string? EncodedFileDesiredName { get; set; }
 
     /// <summary>The exception message from this entry's most recent failed move-retry attempt -
     /// lets ConversionOrchestrator tell "still the same unresolved problem as last poll" apart

@@ -24,7 +24,25 @@ public class FileRouterTests : IDisposable
         var source = CreateSourceFile("MASH.S04E09.mkv");
         var outputBase = Path.Combine(_tempDir, "TV");
 
-        var dest = router.MoveTvFile(source, outputBase)!;
+        var dest = router.MoveTvFile(source, "MASH.S04E09.mkv", outputBase)!;
+
+        Assert.Equal(Path.Combine(outputBase, "MASH", "Season 04", "MASH.S04E09.mkv"), dest);
+        Assert.True(File.Exists(dest));
+        Assert.False(File.Exists(source));
+    }
+
+    [Fact]
+    public void MoveTvFile_SourcePathDiffersFromDesiredFileName_ClassifiesByDesiredNameOnly()
+    {
+        // Pins the v2.1.3 code review's finding #4 fix: the physical file being moved (sourcePath)
+        // can carry a collision-safe staging name unrelated to the show/episode it actually is -
+        // classification and the destination leaf name must come from desiredFileName alone, never
+        // from sourcePath's own name.
+        var router = new FileRouter();
+        var source = CreateSourceFile("MASH.S04E09.compressarr-a1b2c3d4.mkv");
+        var outputBase = Path.Combine(_tempDir, "TV");
+
+        var dest = router.MoveTvFile(source, "MASH.S04E09.mkv", outputBase)!;
 
         Assert.Equal(Path.Combine(outputBase, "MASH", "Season 04", "MASH.S04E09.mkv"), dest);
         Assert.True(File.Exists(dest));
@@ -39,7 +57,7 @@ public class FileRouterTests : IDisposable
         var router = new FileRouter();
         var source = CreateSourceFile("MASH.S04E09.mkv");
 
-        var ex = Assert.ThrowsAny<Exception>(() => router.MoveTvFile(source, @"Z:\Unavailable\TV"));
+        var ex = Assert.ThrowsAny<Exception>(() => router.MoveTvFile(source, "MASH.S04E09.mkv", @"Z:\Unavailable\TV"));
 
         // ConversionOrchestrator relies on this being catchable and the source file being
         // untouched afterward - RouteFile itself has no try/catch, so both matter here.
@@ -53,7 +71,7 @@ public class FileRouterTests : IDisposable
         var router = new FileRouter();
         var source = CreateSourceFile("Caddyshack (1980).mkv");
 
-        var ex = Assert.ThrowsAny<Exception>(() => router.MoveMovieFile(source, @"Z:\Unavailable\Movies"));
+        var ex = Assert.ThrowsAny<Exception>(() => router.MoveMovieFile(source, "Caddyshack (1980).mkv", @"Z:\Unavailable\Movies"));
 
         Assert.IsNotType<InvalidOperationException>(ex);
         Assert.True(File.Exists(source));
@@ -65,7 +83,7 @@ public class FileRouterTests : IDisposable
         var router = new FileRouter();
         var source = CreateSourceFile("Not A TV Episode.mkv");
 
-        var dest = router.MoveTvFile(source, Path.Combine(_tempDir, "TV"));
+        var dest = router.MoveTvFile(source, "Not A TV Episode.mkv", Path.Combine(_tempDir, "TV"));
 
         Assert.Null(dest);
         Assert.True(File.Exists(source));
@@ -78,7 +96,7 @@ public class FileRouterTests : IDisposable
         var source = CreateSourceFile("Caddyshack (1980).mkv");
         var outputBase = Path.Combine(_tempDir, "Movies");
 
-        var dest = router.MoveMovieFile(source, outputBase)!;
+        var dest = router.MoveMovieFile(source, "Caddyshack (1980).mkv", outputBase)!;
 
         Assert.Equal(Path.Combine(outputBase, "Caddyshack (1980)", "Caddyshack (1980).mkv"), dest);
     }
@@ -97,7 +115,7 @@ public class FileRouterTests : IDisposable
         var outputBase = Path.Combine(_tempDir, "Movies");
         Directory.CreateDirectory(Path.Combine(outputBase, "Scary Movie (2026)"));
 
-        var dest = router.MoveMovieFile(source, outputBase)!;
+        var dest = router.MoveMovieFile(source, "The Runner (2026).mkv", outputBase)!;
 
         Assert.Equal(Path.Combine(outputBase, "The Runner (2026)", "The Runner (2026).mkv"), dest);
     }
@@ -117,7 +135,7 @@ public class FileRouterTests : IDisposable
         var existingDestPath = Path.Combine(existingDestFolder, "Caddyshack (1980).mkv");
         File.WriteAllText(existingDestPath, "OLD CONTENT");
 
-        var dest = router.MoveMovieFile(source, outputBase)!;
+        var dest = router.MoveMovieFile(source, "Caddyshack (1980).mkv", outputBase)!;
 
         Assert.Equal(existingDestPath, dest);
         Assert.False(File.Exists(source));
@@ -137,7 +155,7 @@ public class FileRouterTests : IDisposable
         var existingDestPath = Path.Combine(existingDestFolder, "MASH.S04E09.mkv");
         File.WriteAllText(existingDestPath, "OLD CONTENT");
 
-        var dest = router.MoveTvFile(source, outputBase)!;
+        var dest = router.MoveTvFile(source, "MASH.S04E09.mkv", outputBase)!;
 
         Assert.Equal(existingDestPath, dest);
         Assert.False(File.Exists(source));
@@ -150,7 +168,7 @@ public class FileRouterTests : IDisposable
         var router = new FileRouter();
         var source = CreateSourceFile("Show.S01E01.mkv");
 
-        var result = router.RouteFile(source, isTv: true, Path.Combine(_tempDir, "TV"), Path.Combine(_tempDir, "Movies"), moveFiles: false);
+        var result = router.RouteFile(source, "Show.S01E01.mkv", isTv: true, Path.Combine(_tempDir, "TV"), Path.Combine(_tempDir, "Movies"), moveFiles: false);
 
         Assert.Null(result);
         Assert.True(File.Exists(source));
@@ -169,7 +187,7 @@ public class FileRouterTests : IDisposable
         File.WriteAllText(existingDestPath, "OLD CONTENT");
 
         var ex = Assert.Throws<DestinationCollisionSkippedException>(
-            () => router.MoveMovieFile(source, outputBase, DestinationCollisionMode.Skip));
+            () => router.MoveMovieFile(source, "Caddyshack (1980).mkv", outputBase, DestinationCollisionMode.Skip));
 
         Assert.Contains(existingDestPath, ex.Message);
         Assert.True(File.Exists(source));
@@ -189,7 +207,7 @@ public class FileRouterTests : IDisposable
         File.WriteAllText(existingDestPath, "OLD CONTENT");
 
         Assert.Throws<DestinationCollisionSkippedException>(
-            () => router.MoveTvFile(source, outputBase, DestinationCollisionMode.Skip));
+            () => router.MoveTvFile(source, "MASH.S04E09.mkv", outputBase, DestinationCollisionMode.Skip));
 
         Assert.True(File.Exists(source));
         Assert.True(File.Exists(existingDestPath));
@@ -208,7 +226,7 @@ public class FileRouterTests : IDisposable
         var existingDestPath = Path.Combine(existingDestFolder, "Caddyshack (1980).mkv");
         File.WriteAllText(existingDestPath, "OLD CONTENT");
 
-        var dest = router.MoveMovieFile(source, outputBase, DestinationCollisionMode.Rename)!;
+        var dest = router.MoveMovieFile(source, "Caddyshack (1980).mkv", outputBase, DestinationCollisionMode.Rename)!;
 
         Assert.Equal(Path.Combine(existingDestFolder, "Caddyshack (1980) (2).mkv"), dest);
         Assert.False(File.Exists(source));
@@ -228,7 +246,7 @@ public class FileRouterTests : IDisposable
         File.WriteAllText(Path.Combine(existingDestFolder, "Caddyshack (1980) (2).mkv"), "2");
         File.WriteAllText(Path.Combine(existingDestFolder, "Caddyshack (1980) (3).mkv"), "3");
 
-        var dest = router.MoveMovieFile(source, outputBase, DestinationCollisionMode.Rename)!;
+        var dest = router.MoveMovieFile(source, "Caddyshack (1980).mkv", outputBase, DestinationCollisionMode.Rename)!;
 
         Assert.Equal(Path.Combine(existingDestFolder, "Caddyshack (1980) (4).mkv"), dest);
     }
@@ -245,7 +263,7 @@ public class FileRouterTests : IDisposable
         var existingDestPath = Path.Combine(existingDestFolder, "Caddyshack (1980).mkv");
         File.WriteAllText(existingDestPath, "OLD CONTENT");
 
-        var dest = router.MoveMovieFile(source, outputBase, DestinationCollisionMode.Overwrite)!;
+        var dest = router.MoveMovieFile(source, "Caddyshack (1980).mkv", outputBase, DestinationCollisionMode.Overwrite)!;
 
         Assert.Equal(existingDestPath, dest);
         Assert.Equal("NEW CONTENT", File.ReadAllText(dest));
@@ -258,7 +276,7 @@ public class FileRouterTests : IDisposable
         var source = CreateSourceFile("Caddyshack (1980).mkv");
         var outputBase = Path.Combine(_tempDir, "Movies");
 
-        var dest = router.MoveMovieFile(source, outputBase, DestinationCollisionMode.Rename)!;
+        var dest = router.MoveMovieFile(source, "Caddyshack (1980).mkv", outputBase, DestinationCollisionMode.Rename)!;
 
         Assert.Equal(Path.Combine(outputBase, "Caddyshack (1980)", "Caddyshack (1980).mkv"), dest);
     }

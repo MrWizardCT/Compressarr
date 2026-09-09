@@ -41,6 +41,14 @@ public sealed class VideoFileScanner : IVideoFileScanner
         // subdirectories mid-walk rather than aborting the whole scan; Directory.EnumerateFiles
         // throws on the first one, so this walks the tree manually to match that behavior.
         var stack = new Stack<string>();
+
+        // Guards against a junction/symlink pointing back upward into the tree it's inside (an
+        // infinite loop) or a legitimate non-reparse-point path alias resolving to the same real
+        // directory twice - belt-and-suspenders alongside the reparse-point check below, which
+        // handles the far more common case directly.
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var rootCanonical = TryGetCanonicalPath(root);
+        if (rootCanonical is not null) visited.Add(rootCanonical);
         stack.Push(root);
 
         while (stack.Count > 0)
@@ -65,7 +73,33 @@ public sealed class VideoFileScanner : IVideoFileScanner
             catch (UnauthorizedAccessException) { continue; }
             catch (IOException) { continue; }
 
-            foreach (var subDir in subDirs) stack.Push(subDir);
+            foreach (var subDir in subDirs)
+            {
+                // A junction/symlink can point completely outside the lane's Input tree, or loop
+                // back upward into it - Compressarr later moves and deletes whatever it finds
+                // here, so unlike a purely read-only listing this needs to actively refuse to
+                // follow one, not just tolerate whatever's there.
+                FileAttributes attrs;
+                try
+                {
+                    attrs = File.GetAttributes(subDir);
+                }
+                catch (UnauthorizedAccessException) { continue; }
+                catch (IOException) { continue; }
+
+                if (attrs.HasFlag(FileAttributes.ReparsePoint)) continue;
+
+                var canonical = TryGetCanonicalPath(subDir);
+                if (canonical is not null && !visited.Add(canonical)) continue;
+
+                stack.Push(subDir);
+            }
         }
+    }
+
+    private static string? TryGetCanonicalPath(string path)
+    {
+        try { return new DirectoryInfo(path).FullName; }
+        catch { return null; }
     }
 }

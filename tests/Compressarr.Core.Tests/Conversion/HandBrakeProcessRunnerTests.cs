@@ -78,4 +78,30 @@ public class HandBrakeProcessRunnerTests : IDisposable
 
         Assert.False(HandBrakeProcessRunner.DetermineSuccess(output, log, exitCode: 4));
     }
+
+    [Fact]
+    public void SplitExtraOptions_PlainFlags_SplitsOnWhitespace()
+    {
+        Assert.Equal(new[] { "--two-pass", "--optimize" }, HandBrakeProcessRunner.SplitExtraOptions("--two-pass --optimize"));
+    }
+
+    [Fact]
+    public void SplitExtraOptions_QuotedValueWithSpace_StaysOneArgument()
+    {
+        // Same shell-style behavior a plain Arguments string used to get for free - a quoted
+        // segment's own internal space must not split it into two arguments.
+        Assert.Equal(new[] { "--custom-anamorphic", "16:9 storage" }, HandBrakeProcessRunner.SplitExtraOptions("--custom-anamorphic \"16:9 storage\""));
+    }
+
+    [Fact]
+    public void SplitExtraOptions_ExtraWhitespace_IsIgnored()
+    {
+        Assert.Equal(new[] { "--two-pass" }, HandBrakeProcessRunner.SplitExtraOptions("   --two-pass   "));
+    }
+
+    [Fact]
+    public void SplitExtraOptions_Empty_ReturnsNoArguments()
+    {
+        Assert.Empty(HandBrakeProcessRunner.SplitExtraOptions(""));
+    }
 }

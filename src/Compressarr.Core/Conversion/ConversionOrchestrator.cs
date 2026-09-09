@@ -59,7 +59,7 @@ public interface IConversionOrchestrator
     /// list so it can merge these with whatever it already found itself (e.g. RunOrchestrator's
     /// own no-preset-configured/preset-not-found checks) into one combined per-lane list for the
     /// report. Optional and simply not populated if the caller doesn't care.</summary>
-    LaneProcessingContext? PrepareLane(
+    Task<LaneProcessingContext?> PrepareLaneAsync(
         LaneConfig lane,
         CompressarrConfig config,
         List<ResumeEntry> resumeState,
@@ -150,7 +150,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         _configStore = configStore;
     }
 
-    public LaneProcessingContext? PrepareLane(
+    public async Task<LaneProcessingContext?> PrepareLaneAsync(
         LaneConfig lane,
         CompressarrConfig config,
         List<ResumeEntry> resumeState,
@@ -229,15 +229,61 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 continue;
             }
 
-            var retryFileName = Path.GetFileName(entry.EncodedFilePath);
-            var retryIsTv = ContentClassifier.IsTvFile(retryFileName);
+            // Captured before entry.EncodedFilePath gets nulled out below on success. Falls back
+            // to parsing EncodedFilePath's own name for a resume.json entry written before
+            // EncodedFileDesiredName existed - stale staging names from that era were still
+            // deterministic (pre-fix), so the fallback is exactly as good as this field always was.
+            var encodedFilePath = entry.EncodedFilePath;
+            var desiredFileName = entry.EncodedFileDesiredName ?? Path.GetFileName(encodedFilePath);
+            var retryIsTv = ContentClassifier.IsTvFile(desiredFileName);
+            var retrySucceeded = false;
+            var currentPath = encodedFilePath;
+
+            // MoveFiles may have been turned off (or a collision Skip hit) since this entry first
+            // failed - in either case routing has nothing further to do with it, but unlike a
+            // still-failing retry, this outcome is final (Completed, never revisited), so it needs
+            // its clean human-readable name now rather than staying under its GUID staging one
+            // forever. Same "resting in Output" treatment ProcessOneFileAsync's own first-attempt
+            // path uses.
+            string RestInPlace(string physicalPath)
+            {
+                var restingPath = Path.Combine(Path.GetDirectoryName(physicalPath)!, desiredFileName);
+                File.Move(physicalPath, restingPath, overwrite: true);
+                return restingPath;
+            }
+
+            // Only once this retry has genuinely reached its final resting place - either
+            // routed, or deliberately left in place via a configured Skip - does the original
+            // source get cleaned up, same "only once disposition is final" rule
+            // ProcessOneFileAsync's own first-attempt path follows. Called BEFORE
+            // MoveCompanionFiles below (not after): its own "is this folder now empty of video"
+            // cascade-delete check needs the source video already gone to correctly detect an
+            // otherwise-empty single-item folder and clean it up in that same call.
+            void CleanUpRetriedSource()
+            {
+                if (string.Equals(entry.FullName, currentPath, StringComparison.OrdinalIgnoreCase)) return;
+                if (!File.Exists(entry.FullName) || config.Processing.DeleteAfterConvert == DeleteAfterConvertMode.Maintain) return;
+
+                var attrs = File.GetAttributes(entry.FullName);
+                if (attrs.HasFlag(FileAttributes.ReadOnly))
+                {
+                    File.SetAttributes(entry.FullName, attrs & ~FileAttributes.ReadOnly);
+                }
+                _trash.DeleteFile(entry.FullName, config.Processing.DeleteAfterConvert);
+            }
+
             try
             {
-                var retryDestPath = _fileRouter.RouteFile(entry.EncodedFilePath, retryIsTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
+                var retryDestPath = _fileRouter.RouteFile(encodedFilePath, desiredFileName, retryIsTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
                 entry.Status = ResumeStatus.Completed;
                 entry.EncodedFilePath = null;
+                entry.EncodedFileDesiredName = null;
                 entry.LastRetryFailureMessage = null;
-                _logger.Log($"  Retried move for '{retryFileName}' - succeeded.");
+                retrySucceeded = true;
+                _logger.Log($"  Retried move for '{desiredFileName}' - succeeded.");
+
+                currentPath = retryDestPath ?? RestInPlace(encodedFilePath);
+                CleanUpRetriedSource();
 
                 if (retryDestPath is not null)
                 {
@@ -252,7 +298,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                         // since the empty-folder cascade-delete below only ever looked at the
                         // staging folder.
                         var originalSourceDirectory = Path.GetDirectoryName(entry.FullName)!;
-                        _companionFiles.MoveCompanionFiles(entry.FullName, originalSourceDirectory, Path.GetDirectoryName(retryDestPath)!, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath, config.Processing.CompanionExtensions, config.Processing.UnmatchedCompanionAction);
+                        _companionFiles.MoveCompanionFiles(entry.FullName, originalSourceDirectory, retryDestPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath, config.Processing.CompanionExtensions, config.Processing.UnmatchedCompanionAction, config.Processing.OnDestinationCollision);
                     }
                     catch (Exception ex)
                     {
@@ -266,8 +312,12 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 // retry, so this is as resolved as it's going to get.
                 entry.Status = ResumeStatus.Completed;
                 entry.EncodedFilePath = null;
+                entry.EncodedFileDesiredName = null;
                 entry.LastRetryFailureMessage = null;
+                retrySucceeded = true;
                 _logger.Log($"  {ex.Message}");
+                currentPath = RestInPlace(encodedFilePath);
+                CleanUpRetriedSource();
             }
             catch (Exception ex)
             {
@@ -283,8 +333,25 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 var isSameFailureAsLastPoll = entry.LastRetryFailureMessage == ex.Message;
                 var severity = isSameFailureAsLastPoll ? LogSeverity.Info : LogSeverity.Error;
                 var suffix = isSameFailureAsLastPoll ? " (still failing, same as last check)" : "";
-                _logger.Log($"  Retried move for '{retryFileName}' failed again: {ex.Message}{suffix}", severity);
+                _logger.Log($"  Retried move for '{desiredFileName}' failed again: {ex.Message}{suffix}", severity);
                 entry.LastRetryFailureMessage = ex.Message;
+            }
+
+            // *arr is told to stop monitoring only once disposition is final, same rule as
+            // source cleanup above - position relative to the companion-file move above doesn't
+            // matter (a pure network call, no filesystem interaction). A still-failing retry
+            // leaves this untouched too - nothing to finalize yet.
+            if (retrySucceeded)
+            {
+                try
+                {
+                    var arrResult = await _arrUnmonitor.UnmonitorAsync(config, desiredFileName, retryIsTv);
+                    if (arrResult is not null) _logger.Log($"  {arrResult}");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Log($"  Arr unmonitor skipped on move retry: {ex.Message}", LogSeverity.Error);
+                }
             }
 
             _resumeStore.Save(resumeState, resumeFilePath);
@@ -365,7 +432,18 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 var existing = resumeState.FirstOrDefault(e => e.LaneId == lane.Id && e.FullName == f.FullName);
                 if (existing is not null)
                 {
-                    existing.Status = ResumeStatus.Pending;
+                    // A MoveFailed entry's source is legitimately still here now that a real move
+                    // failure no longer deletes it (finding #1's fix) - it's already being handled
+                    // by the retry loop above (move retry only, no re-encode), so this routine
+                    // rescan finding it again must NOT silently flip it back to Pending. Real
+                    // regression caught live: without this guard, an extended destination outage
+                    // re-encoded the same file from scratch on every single poll instead of just
+                    // cheaply retrying the move, discarding a perfectly good already-finished encode
+                    // each time.
+                    if (existing.Status != ResumeStatus.MoveFailed)
+                    {
+                        existing.Status = ResumeStatus.Pending;
+                    }
                 }
                 else
                 {
@@ -467,6 +545,16 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         Directory.CreateDirectory(destFolder);
 
         var baseName = Path.GetFileNameWithoutExtension(file.Name);
+        // Nominal/display path only, NOT an actual staging target any more - HandBrake writes
+        // directly to tempFileName's own collision-safe GUID name below, which stays the file's
+        // real on-disk location until routing (or resting in Output) actually resolves it to this
+        // deterministic name. Used only for its own leaf (desiredFileName, see the success branch
+        // below) and as a nominal fallback for the encode-failure case, where nothing was ever
+        // physically written here. A deterministic Output filename that gets silently overwritten
+        // by File.Move(..., overwrite: true) before routing even knows whether it will succeed was
+        // itself a real bug (v2.1.3 code review finding #4) - a still-pending MoveFailed entry from
+        // an earlier attempt could be clobbered by a later, unrelated conversion landing on the
+        // exact same name while both were sitting in Output.
         var newFileName = Path.Combine(destFolder, baseName + extension);
         var tempFileName = Path.Combine(destFolder, baseName + ".compressarr-" + Guid.NewGuid().ToString("N")[..8] + extension);
 
@@ -527,7 +615,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
         if (runResult.Cancelled)
         {
-            try { File.Delete(tempFileName); } catch { }
+            try { File.Delete(tempFileName); }
+            catch (Exception ex) { _logger.Log($"  Unable to remove temporary file '{tempFileName}': {ex.Message}", LogSeverity.Error); }
             _logger.Log($"  Conversion of '{file.Name}' aborted by user.", LogSeverity.Error);
             resumeEntry.Status = ResumeStatus.Error;
             _resumeStore.Save(resumeState, resumeFilePath);
@@ -548,46 +637,60 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         if (success)
         {
             _metadata.ClearTitle(tempFileName);
-            File.Move(tempFileName, newFileName, overwrite: true);
-            endSizeGb = Math.Round(new FileInfo(newFileName).Length / (double)BytesPerGb, 3);
+            endSizeGb = Math.Round(new FileInfo(tempFileName).Length / (double)BytesPerGb, 3);
 
-            // If source and final destination are the same path (in-place conversion), the rename
-            // above already replaced the original with the converted result - there is nothing left
-            // to separately delete.
-            var sameAsSource = string.Equals(file.FullName, newFileName, StringComparison.OrdinalIgnoreCase);
-            if (!sameAsSource && config.Processing.DeleteAfterConvert != DeleteAfterConvertMode.Maintain)
+            // The human-readable name content classification (season/episode, movie title) and
+            // this file's own eventual resting/routed leaf name are derived FROM - independent of
+            // wherever the file's bytes physically live right now (tempFileName's own
+            // collision-safe GUID name). See the "moveFailed" branch below for why the two must
+            // stay independent for as long as this file's final disposition is still unresolved.
+            var desiredFileName = Path.GetFileName(newFileName);
+
+            string RestInPlace(string physicalPath, string folder)
             {
-                if (File.Exists(file.FullName))
-                {
-                    var attrs = File.GetAttributes(file.FullName);
-                    if (attrs.HasFlag(FileAttributes.ReadOnly))
-                    {
-                        File.SetAttributes(file.FullName, attrs & ~FileAttributes.ReadOnly);
-                    }
-                }
-                _trash.DeleteFile(file.FullName, config.Processing.DeleteAfterConvert);
+                var restingPath = Path.Combine(folder, desiredFileName);
+                File.Move(physicalPath, restingPath, overwrite: true);
+                return restingPath;
             }
 
+            var currentPath = tempFileName;
             string? routedDestPath = null;
             try
             {
-                routedDestPath = _fileRouter.RouteFile(newFileName, isTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
+                routedDestPath = _fileRouter.RouteFile(tempFileName, desiredFileName, isTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
+                currentPath = routedDestPath is not null
+                    ? routedDestPath
+                    // MoveFiles is false - nothing further to route to, so unlike the moveFailed
+                    // branch below, this already IS the file's final resting place and needs its
+                    // proper human-readable name now, not the collision-safe staging one.
+                    : RestInPlace(tempFileName, destFolder);
             }
             catch (DestinationCollisionSkippedException ex)
             {
                 // Configured to skip on collision, not an error - the encode succeeded and the
-                // result is sitting in Output exactly as configured, so this stays a warning
-                // (postProcessWarning), not moveFailed/overallSuccess=false.
+                // result is exactly where it's meant to end up (Output). Same "final disposition
+                // reached" treatment as the MoveFiles=false case above - nothing will ever revisit
+                // this entry again, so it needs its clean resting name now too.
                 postProcessWarning = AppendWarning(postProcessWarning, ex.Message);
                 _logger.Log($"  {ex.Message}");
+                currentPath = RestInPlace(tempFileName, destFolder);
             }
             catch (Exception ex)
             {
                 // The conversion itself already succeeded - a bad/unreachable base path (e.g. an
                 // offline network drive) shouldn't take down the whole run, just leave the file
-                // where HandBrake wrote it. Still flagged as an error on this file's own result (see
-                // moveFailed below) so it doesn't quietly report "OK" while sitting unfiled in the
-                // Output folder - the log line alone is too easy to miss.
+                // where it currently is. Still flagged as an error on this file's own result (see
+                // moveFailed below) so it doesn't quietly report "OK" while sitting unrouted.
+                //
+                // Deliberately NOT renamed to its human-readable name here, unlike every other
+                // branch above - this is the one outcome PrepareLaneAsync's MoveFailed handling
+                // will revisit later, possibly after a long wait for the destination to come back.
+                // Two different attempts for the same title (a stuck retry sitting alongside a
+                // fresh encode of the same source re-added to the queue, e.g.) must never be able
+                // to collide on the same deterministic Output filename in the meantime -
+                // tempFileName's own GUID suffix already guarantees that, for as long as it takes.
+                // currentPath stays at tempFileName; only the earlier (fixed) bug used to rename it
+                // to its deterministic, collidable name unconditionally before routing even ran.
                 moveFailed = true;
                 if (LooksLikeDiskFull(ex.Message))
                 {
@@ -608,39 +711,83 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     // wrong for this cause, but the report still gets its own numbered code.
                     errorCode = ReportErrorCode.MoveFailedOther;
                 }
-                _logger.Log($"  Move skipped: {ex.Message} - file remains at '{newFileName}'.", LogSeverity.Error);
+                _logger.Log($"  Move skipped: {ex.Message} - file remains at '{tempFileName}'.", LogSeverity.Error);
             }
 
-            // Deliberately before companion-file/folder cleanup below: the rescan should see the
-            // source folder still on disk rather than already gone.
-            try
+            finalFileName = currentPath;
+
+            // If source and final resting place are the same path (in-place conversion, only
+            // possible when writing output back into the Input folder with no further routing),
+            // the move above already replaced the original with the converted result - there is
+            // nothing left to separately delete.
+            var sameAsSource = string.Equals(file.FullName, currentPath, StringComparison.OrdinalIgnoreCase);
+
+            // Only clean up the original source once the encoded file has genuinely reached its
+            // final resting place - either successfully routed, or resting in Output under its own
+            // clean name (MoveFiles off, or a configured Skip). A real routing failure (moveFailed)
+            // leaves the source untouched: if the destination is offline or unreachable, the
+            // original is what you're left with until routing succeeds - not gone before anyone
+            // knows whether the move will ever work. A later successful retry (PrepareLaneAsync's
+            // MoveFailed handling) cleans it up once it actually succeeds.
+            //
+            // Deliberately BEFORE the companion-file move below, not after: MoveCompanionFiles'
+            // own "is this folder now empty of video" cascade-delete check needs the source video
+            // already gone to correctly detect an otherwise-empty single-item folder and clean it
+            // up in that same call - real regression caught by
+            // ProcessLaneAsync_MoveFailedEntry_RetriedAndSucceeds_RemovesOrphanedSourceFolder when
+            // this was ordered the other way around.
+            if (!moveFailed && !sameAsSource && config.Processing.DeleteAfterConvert != DeleteAfterConvertMode.Maintain)
             {
-                var arrResult = await _arrUnmonitor.UnmonitorAsync(config, file.Name, isTv);
-                if (arrResult is not null)
+                if (File.Exists(file.FullName))
                 {
-                    _logger.Log($"  {arrResult}");
-                    arrStatus = arrResult;
+                    var attrs = File.GetAttributes(file.FullName);
+                    if (attrs.HasFlag(FileAttributes.ReadOnly))
+                    {
+                        File.SetAttributes(file.FullName, attrs & ~FileAttributes.ReadOnly);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.Log($"  Arr unmonitor skipped: {ex.Message}", LogSeverity.Error);
-                arrStatus = $"Failed: {ex.Message}";
-                postProcessWarning = AppendWarning(postProcessWarning, $"Sonarr/Radarr unmonitor failed: {ex.Message}");
+                _trash.DeleteFile(file.FullName, config.Processing.DeleteAfterConvert);
             }
 
+            // Only attempted when the video actually reached a routed (TV/Movie library)
+            // destination - a file just resting in Output has no separate "companions folder" to
+            // move anything alongside, and if moveFailed, there's nothing to move companions
+            // alongside yet; they'll go together once a later retry (PrepareLaneAsync's MoveFailed
+            // handling) actually succeeds.
             if (routedDestPath is not null)
             {
-                finalFileName = routedDestPath;
                 try
                 {
-                    var routedDestFolder = Path.GetDirectoryName(routedDestPath)!;
-                    _companionFiles.MoveCompanionFiles(file.FullName, file.DirectoryName!, routedDestFolder, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath, config.Processing.CompanionExtensions, config.Processing.UnmatchedCompanionAction);
+                    _companionFiles.MoveCompanionFiles(file.FullName, file.DirectoryName!, routedDestPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath, config.Processing.CompanionExtensions, config.Processing.UnmatchedCompanionAction, config.Processing.OnDestinationCollision);
                 }
                 catch (Exception ex)
                 {
                     _logger.Log($"  Companion file handling skipped: {ex.Message}", LogSeverity.Error);
                     postProcessWarning = AppendWarning(postProcessWarning, $"Companion files not moved: {ex.Message}");
+                }
+            }
+
+            // Tell Sonarr/Radarr to stop monitoring this file only once its final disposition is
+            // settled (same !moveFailed rule as source cleanup above) - not silently dropped from
+            // *arr's tracking for a file that never actually finished landing anywhere. Position
+            // relative to the companion-file move above doesn't matter (a pure network call, no
+            // filesystem interaction), so it runs last, once everything else has settled.
+            if (!moveFailed)
+            {
+                try
+                {
+                    var arrResult = await _arrUnmonitor.UnmonitorAsync(config, file.Name, isTv);
+                    if (arrResult is not null)
+                    {
+                        _logger.Log($"  {arrResult}");
+                        arrStatus = arrResult;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Log($"  Arr unmonitor skipped: {ex.Message}", LogSeverity.Error);
+                    arrStatus = $"Failed: {ex.Message}";
+                    postProcessWarning = AppendWarning(postProcessWarning, $"Sonarr/Radarr unmonitor failed: {ex.Message}");
                 }
             }
 
@@ -651,7 +798,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             if (moveFailed)
             {
                 resumeEntry.Status = ResumeStatus.MoveFailed;
-                resumeEntry.EncodedFilePath = newFileName;
+                resumeEntry.EncodedFilePath = currentPath;
+                resumeEntry.EncodedFileDesiredName = desiredFileName;
             }
             else
             {
@@ -660,7 +808,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         }
         else
         {
-            try { File.Delete(tempFileName); } catch { }
+            try { File.Delete(tempFileName); }
+            catch (Exception ex) { _logger.Log($"  Unable to remove temporary file '{tempFileName}': {ex.Message}", LogSeverity.Error); }
             resumeEntry.Status = ResumeStatus.Error;
             // HandBrake's own detail log is genuinely the relevant diagnostic for an encode
             // failure (unlike a move failure, where it's irrelevant) - stays linked from the
@@ -689,7 +838,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         // (an antivirus scan, etc.) shouldn't fail an otherwise-successful file's processing.
         if (success && !config.Logging.KeepSuccessfulHandBrakeLogs)
         {
-            try { if (File.Exists(detailLogFile)) File.Delete(detailLogFile); } catch { }
+            try { if (File.Exists(detailLogFile)) File.Delete(detailLogFile); }
+            catch (Exception ex) { _logger.Log($"  Unable to remove HandBrake detail log '{detailLogFile}': {ex.Message}", LogSeverity.Error); }
         }
 
         var duration = endTime - startTime;

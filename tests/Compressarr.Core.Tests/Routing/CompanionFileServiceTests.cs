@@ -30,6 +30,13 @@ public class CompanionFileServiceTests : IDisposable
 
     public void Dispose() => Directory.Delete(_tempDir, recursive: true);
 
+    // The video's own routed destination path - companions always take their destination
+    // filename from THIS path's stem, never from their own original name (confirmed: companion
+    // filenames must always match the video's own filename). Most tests route to a name that
+    // equals the source video's own name, matching the pre-fix tests' original behavior; a few
+    // deliberately route to a DIFFERENT name to prove the new stem-following behavior itself.
+    private static string RoutedPath(string destDir, string fileName) => Path.Combine(destDir, fileName);
+
     [Fact]
     public void MoveCompanionFiles_OtherVideoStillInFolder_StillMovesThisFilesOwnCompanion()
     {
@@ -51,7 +58,7 @@ public class CompanionFileServiceTests : IDisposable
         var destDir = Path.Combine(_tempDir, "Output");
         Directory.CreateDirectory(destDir);
 
-        _service.MoveCompanionFiles(converted, sourceDir, destDir, VidTypes, DeleteAfterConvertMode.Delete, Path.Combine(_tempDir, "Input"), CompanionExtensions, DeleteAfterConvertMode.Recycle);
+        _service.MoveCompanionFiles(converted, sourceDir, RoutedPath(destDir, "episode1.mkv"), VidTypes, DeleteAfterConvertMode.Delete, Path.Combine(_tempDir, "Input"), CompanionExtensions, DeleteAfterConvertMode.Recycle);
 
         Assert.True(File.Exists(Path.Combine(destDir, "episode1.srt")), "this file's own subtitle must move even while another video is still here");
         Assert.True(File.Exists(otherVideo), "the other, still-untouched video must survive");
@@ -77,7 +84,7 @@ public class CompanionFileServiceTests : IDisposable
         var destDir = Path.Combine(_tempDir, "Output");
         Directory.CreateDirectory(destDir);
 
-        _service.MoveCompanionFiles(converted, sourceDir, destDir, VidTypes, DeleteAfterConvertMode.Delete, sourceDir, CompanionExtensions, DeleteAfterConvertMode.Recycle);
+        _service.MoveCompanionFiles(converted, sourceDir, RoutedPath(destDir, "episode1.mkv"), VidTypes, DeleteAfterConvertMode.Delete, sourceDir, CompanionExtensions, DeleteAfterConvertMode.Recycle);
 
         Assert.True(File.Exists(Path.Combine(destDir, "episode1.eng.srt")), "the processed file's own subtitle must move");
         Assert.True(File.Exists(otherVideo), "the other video must survive");
@@ -100,7 +107,7 @@ public class CompanionFileServiceTests : IDisposable
         var destDir = Path.Combine(_tempDir, "Output", "Show", "Season 01");
         Directory.CreateDirectory(destDir);
 
-        _service.MoveCompanionFiles(converted, seasonDir, destDir, VidTypes, DeleteAfterConvertMode.Delete, inputRoot, CompanionExtensions, DeleteAfterConvertMode.Recycle);
+        _service.MoveCompanionFiles(converted, seasonDir, RoutedPath(destDir, "episode1.mkv"), VidTypes, DeleteAfterConvertMode.Delete, inputRoot, CompanionExtensions, DeleteAfterConvertMode.Recycle);
 
         Assert.True(File.Exists(otherVideo), "the other, still-untouched video must survive");
         Assert.True(Directory.Exists(seasonDir), "a folder still holding another video is not really empty");
@@ -119,7 +126,7 @@ public class CompanionFileServiceTests : IDisposable
         var destDir = Path.Combine(_tempDir, "Output", "Movie");
         Directory.CreateDirectory(destDir);
 
-        _service.MoveCompanionFiles(converted, sourceDir, destDir, VidTypes, DeleteAfterConvertMode.Maintain, Path.Combine(_tempDir, "Input"), CompanionExtensions, DeleteAfterConvertMode.Recycle);
+        _service.MoveCompanionFiles(converted, sourceDir, RoutedPath(destDir, "movie.mkv"), VidTypes, DeleteAfterConvertMode.Maintain, Path.Combine(_tempDir, "Input"), CompanionExtensions, DeleteAfterConvertMode.Recycle);
 
         Assert.True(File.Exists(subtitle), "source sibling must survive Maintain mode");
         Assert.True(File.Exists(Path.Combine(destDir, "movie.srt")), "sibling must be copied to destination");
@@ -141,7 +148,7 @@ public class CompanionFileServiceTests : IDisposable
         var destDir = Path.Combine(_tempDir, "Output", "Movie");
         Directory.CreateDirectory(destDir);
 
-        _service.MoveCompanionFiles(converted, sourceDir, destDir, VidTypes, DeleteAfterConvertMode.Delete, inputRoot, CompanionExtensions, DeleteAfterConvertMode.Recycle);
+        _service.MoveCompanionFiles(converted, sourceDir, RoutedPath(destDir, "movie.mkv"), VidTypes, DeleteAfterConvertMode.Delete, inputRoot, CompanionExtensions, DeleteAfterConvertMode.Recycle);
 
         Assert.True(File.Exists(Path.Combine(destDir, "movie.srt")));
         Assert.False(Directory.Exists(sourceDir), "now-empty source folder must be removed");
@@ -162,7 +169,7 @@ public class CompanionFileServiceTests : IDisposable
         var destDir = Path.Combine(_tempDir, "Output", "Show", "Season 01");
         Directory.CreateDirectory(destDir);
 
-        _service.MoveCompanionFiles(converted, seasonDir, destDir, VidTypes, DeleteAfterConvertMode.Recycle, inputRoot, CompanionExtensions, DeleteAfterConvertMode.Recycle);
+        _service.MoveCompanionFiles(converted, seasonDir, RoutedPath(destDir, "episode1.mkv"), VidTypes, DeleteAfterConvertMode.Recycle, inputRoot, CompanionExtensions, DeleteAfterConvertMode.Recycle);
 
         Assert.False(Directory.Exists(seasonDir));
         Assert.False(Directory.Exists(showDir), "empty parent (Show\\) must cascade-remove once Season 01 was its only content");
@@ -186,7 +193,7 @@ public class CompanionFileServiceTests : IDisposable
         var destDir = Path.Combine(_tempDir, "Output", "Show", "Season 01");
         Directory.CreateDirectory(destDir);
 
-        _service.MoveCompanionFiles(converted, seasonDir, destDir, VidTypes, DeleteAfterConvertMode.Delete, inputRoot, CompanionExtensions, DeleteAfterConvertMode.Recycle);
+        _service.MoveCompanionFiles(converted, seasonDir, RoutedPath(destDir, "episode1.mkv"), VidTypes, DeleteAfterConvertMode.Delete, inputRoot, CompanionExtensions, DeleteAfterConvertMode.Recycle);
 
         Assert.False(Directory.Exists(seasonDir));
         Assert.True(Directory.Exists(showDir), "must not remove a parent that still has other content");
@@ -212,7 +219,7 @@ public class CompanionFileServiceTests : IDisposable
         var destDir = Path.Combine(_tempDir, "Output", "Movie");
         Directory.CreateDirectory(destDir);
 
-        _service.MoveCompanionFiles(converted, sourceDir, destDir, VidTypes, DeleteAfterConvertMode.Delete, inputRoot, CompanionExtensions, DeleteAfterConvertMode.Recycle);
+        _service.MoveCompanionFiles(converted, sourceDir, RoutedPath(destDir, "movie.mkv"), VidTypes, DeleteAfterConvertMode.Delete, inputRoot, CompanionExtensions, DeleteAfterConvertMode.Recycle);
 
         Assert.True(File.Exists(Path.Combine(destDir, "movie.srt")), "a recognized companion type must still move");
         Assert.False(File.Exists(unwantedStemMatch), "a stem-matched file not on the companion list must be removed per unmatchedCompanionAction");
@@ -237,9 +244,143 @@ public class CompanionFileServiceTests : IDisposable
         var destDir = Path.Combine(_tempDir, "Output", "Movie");
         Directory.CreateDirectory(destDir);
 
-        _service.MoveCompanionFiles(converted, sourceDir, destDir, VidTypes, DeleteAfterConvertMode.Delete, inputRoot, CompanionExtensions, DeleteAfterConvertMode.Maintain);
+        _service.MoveCompanionFiles(converted, sourceDir, RoutedPath(destDir, "movie.mkv"), VidTypes, DeleteAfterConvertMode.Delete, inputRoot, CompanionExtensions, DeleteAfterConvertMode.Maintain);
 
         Assert.True(File.Exists(unrelated), "unmatchedCompanionAction=Maintain must leave unrecognized content untouched");
         Assert.True(Directory.Exists(sourceDir), "the folder must not be deleted while it still holds content left in place on purpose");
+    }
+
+    // ---- v2.1.3 code review finding #5: companion collision handling ----
+
+    [Fact]
+    public void MoveCompanionFiles_VideoWasRenamedOnCollision_CompanionFollowsTheSameRenamedStem()
+    {
+        // The exact scenario the code review called out: "Movie (2).mkv could be created while
+        // Movie.en.srt is overwritten." A companion's destination filename must always be derived
+        // from the VIDEO's own actual routed name, not its own original one - confirmed as the
+        // required behavior, not just a nice-to-have.
+        var sourceDir = Path.Combine(_tempDir, "Input", "Movie");
+        Directory.CreateDirectory(sourceDir);
+        var converted = Path.Combine(sourceDir, "movie.mkv");
+        var subtitle = Path.Combine(sourceDir, "movie.en.srt");
+        File.WriteAllText(converted, "x");
+        File.WriteAllText(subtitle, "x");
+
+        var destDir = Path.Combine(_tempDir, "Output", "Movie");
+        Directory.CreateDirectory(destDir);
+
+        // Simulates FileRouter having already resolved a video-level collision via Rename -
+        // "movie.mkv" landed as "movie (2).mkv", not its own original name.
+        var routedVideoPath = Path.Combine(destDir, "movie (2).mkv");
+
+        _service.MoveCompanionFiles(converted, sourceDir, routedVideoPath, VidTypes, DeleteAfterConvertMode.Delete, Path.Combine(_tempDir, "Input"), CompanionExtensions, DeleteAfterConvertMode.Recycle, DestinationCollisionMode.Rename);
+
+        Assert.True(File.Exists(Path.Combine(destDir, "movie (2).en.srt")), "companion must land under the video's own renamed stem");
+        Assert.False(File.Exists(Path.Combine(destDir, "movie.en.srt")), "companion must not use its own original stem once the video was renamed");
+        Assert.False(File.Exists(subtitle), "source companion must have been moved, not left behind");
+    }
+
+    [Fact]
+    public void MoveCompanionFiles_CollisionModeSkip_LeavesTheCollidingCompanionInPlaceButStillHandlesOthers()
+    {
+        var sourceDir = Path.Combine(_tempDir, "Input", "Movie");
+        Directory.CreateDirectory(sourceDir);
+        var converted = Path.Combine(sourceDir, "movie.mkv");
+        var subtitle = Path.Combine(sourceDir, "movie.en.srt");
+        var nfo = Path.Combine(sourceDir, "movie.nfo");
+        File.WriteAllText(converted, "x");
+        File.WriteAllText(subtitle, "NEW SUBTITLE");
+        File.WriteAllText(nfo, "x");
+
+        var destDir = Path.Combine(_tempDir, "Output", "Movie");
+        Directory.CreateDirectory(destDir);
+        // An existing subtitle already sits at the destination - the fresh one must be skipped,
+        // not silently overwritten, when the user has configured Skip.
+        var existingDestSubtitle = Path.Combine(destDir, "movie.en.srt");
+        File.WriteAllText(existingDestSubtitle, "OLD SUBTITLE");
+
+        _service.MoveCompanionFiles(converted, sourceDir, RoutedPath(destDir, "movie.mkv"), VidTypes, DeleteAfterConvertMode.Delete, Path.Combine(_tempDir, "Input"), new[] { "srt", "nfo" }, DeleteAfterConvertMode.Recycle, DestinationCollisionMode.Skip);
+
+        // The colliding companion: left exactly as configured, neither side touched.
+        Assert.True(File.Exists(subtitle), "the new subtitle must stay in source when its destination collision is configured to Skip");
+        Assert.Equal("NEW SUBTITLE", File.ReadAllText(subtitle));
+        Assert.Equal("OLD SUBTITLE", File.ReadAllText(existingDestSubtitle));
+        // A DIFFERENT companion with no collision at all must still move normally - one Skip must
+        // not abort handling of the rest.
+        Assert.True(File.Exists(Path.Combine(destDir, "movie.nfo")), "an unrelated, non-colliding companion must still move");
+        Assert.False(File.Exists(nfo), "...and be gone from the source");
+    }
+
+    [Fact]
+    public void MoveCompanionFiles_TwoCompanionsShareAnExtension_BothMoveWithoutCollidingWithEachOther()
+    {
+        // Companions are matched (and their destination name derived) from their FULL filename,
+        // not just their extension - "movie.eng.srt" and "movie.eng.SDH.srt" are two independent
+        // companions that happen to share the .srt extension. Each keeps its own distinguishing
+        // middle segment when its destination name is built from the video's own stem, so neither
+        // one collides with the other even though both are "movie.<something>.srt".
+        var sourceDir = Path.Combine(_tempDir, "Input", "Movie");
+        Directory.CreateDirectory(sourceDir);
+        var converted = Path.Combine(sourceDir, "movie.mkv");
+        var standardSubtitle = Path.Combine(sourceDir, "movie.eng.srt");
+        var sdhSubtitle = Path.Combine(sourceDir, "movie.eng.SDH.srt");
+        File.WriteAllText(converted, "x");
+        File.WriteAllText(standardSubtitle, "standard");
+        File.WriteAllText(sdhSubtitle, "sdh");
+
+        var destDir = Path.Combine(_tempDir, "Output", "Movie");
+        Directory.CreateDirectory(destDir);
+
+        _service.MoveCompanionFiles(converted, sourceDir, RoutedPath(destDir, "movie.mkv"), VidTypes, DeleteAfterConvertMode.Delete, Path.Combine(_tempDir, "Input"), CompanionExtensions, DeleteAfterConvertMode.Recycle, DestinationCollisionMode.Overwrite);
+
+        Assert.True(File.Exists(Path.Combine(destDir, "movie.eng.srt")));
+        Assert.True(File.Exists(Path.Combine(destDir, "movie.eng.SDH.srt")));
+        Assert.Equal("standard", File.ReadAllText(Path.Combine(destDir, "movie.eng.srt")));
+        Assert.Equal("sdh", File.ReadAllText(Path.Combine(destDir, "movie.eng.SDH.srt")));
+    }
+
+    [Fact]
+    public void MoveCompanionFiles_TwoCompanionsShareAnExtension_VideoRenamedOnCollision_BothFollowSameStem()
+    {
+        // Same scenario, but combined with the video itself being renamed on collision - both
+        // companions must follow the SAME renamed stem, and still not collide with each other.
+        var sourceDir = Path.Combine(_tempDir, "Input", "Movie");
+        Directory.CreateDirectory(sourceDir);
+        var converted = Path.Combine(sourceDir, "movie.mkv");
+        var standardSubtitle = Path.Combine(sourceDir, "movie.eng.srt");
+        var sdhSubtitle = Path.Combine(sourceDir, "movie.eng.SDH.srt");
+        File.WriteAllText(converted, "x");
+        File.WriteAllText(standardSubtitle, "standard");
+        File.WriteAllText(sdhSubtitle, "sdh");
+
+        var destDir = Path.Combine(_tempDir, "Output", "Movie");
+        Directory.CreateDirectory(destDir);
+        var routedVideoPath = Path.Combine(destDir, "movie (2).mkv"); // simulates a video-level Rename collision
+
+        _service.MoveCompanionFiles(converted, sourceDir, routedVideoPath, VidTypes, DeleteAfterConvertMode.Delete, Path.Combine(_tempDir, "Input"), CompanionExtensions, DeleteAfterConvertMode.Recycle, DestinationCollisionMode.Rename);
+
+        Assert.True(File.Exists(Path.Combine(destDir, "movie (2).eng.srt")));
+        Assert.True(File.Exists(Path.Combine(destDir, "movie (2).eng.SDH.srt")));
+    }
+
+    [Fact]
+    public void MoveCompanionFiles_CollisionModeOverwrite_MatchesPreExistingBehavior()
+    {
+        var sourceDir = Path.Combine(_tempDir, "Input", "Movie");
+        Directory.CreateDirectory(sourceDir);
+        var converted = Path.Combine(sourceDir, "movie.mkv");
+        var subtitle = Path.Combine(sourceDir, "movie.en.srt");
+        File.WriteAllText(converted, "x");
+        File.WriteAllText(subtitle, "NEW SUBTITLE");
+
+        var destDir = Path.Combine(_tempDir, "Output", "Movie");
+        Directory.CreateDirectory(destDir);
+        var existingDestSubtitle = Path.Combine(destDir, "movie.en.srt");
+        File.WriteAllText(existingDestSubtitle, "OLD SUBTITLE");
+
+        _service.MoveCompanionFiles(converted, sourceDir, RoutedPath(destDir, "movie.mkv"), VidTypes, DeleteAfterConvertMode.Delete, Path.Combine(_tempDir, "Input"), CompanionExtensions, DeleteAfterConvertMode.Recycle, DestinationCollisionMode.Overwrite);
+
+        Assert.False(File.Exists(subtitle));
+        Assert.Equal("NEW SUBTITLE", File.ReadAllText(existingDestSubtitle));
     }
 }

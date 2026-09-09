@@ -40,7 +40,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IResumeStateStore, JsonResumeStateStore>();
         services.AddSingleton<IFileRouter, FileRouter>();
         services.AddSingleton<ICompanionFileService, CompanionFileService>();
-        services.AddSingleton<ITrashService>(_ => TrashServiceFactory.CreateForCurrentPlatform());
+        services.AddSingleton<ITrashService>(sp => TrashServiceFactory.CreateForCurrentPlatform(new RunLoggerTrashWarningSink(sp.GetRequiredService<IRunLogger>())));
 
         services.AddSingleton<IArrClient, ArrClient>();
         services.AddSingleton<IArrUnmonitorService, ArrUnmonitorService>();

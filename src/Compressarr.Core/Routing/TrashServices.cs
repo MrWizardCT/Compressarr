@@ -1,4 +1,5 @@
 using Compressarr.Core.Config;
+using Compressarr.Core.Logging;
 
 namespace Compressarr.Core.Routing;
 
@@ -11,6 +12,23 @@ public interface ITrashWarningSink
 public sealed class NullTrashWarningSink : ITrashWarningSink
 {
     public void Warn(string message) { }
+}
+
+/// <summary>Routes trash-fallback warnings into the current run's own log (Error - IRunLogger has
+/// no separate Warning level) rather than dropping them - what TrashServiceFactory's real DI
+/// registration uses, so a recycle-then-delete fallback or an outright delete failure actually
+/// shows up somewhere instead of only ever reaching whichever caller happened to pass its own
+/// sink explicitly.</summary>
+public sealed class RunLoggerTrashWarningSink : ITrashWarningSink
+{
+    private readonly IRunLogger _logger;
+
+    public RunLoggerTrashWarningSink(IRunLogger logger)
+    {
+        _logger = logger;
+    }
+
+    public void Warn(string message) => _logger.Log(message, LogSeverity.Error);
 }
 
 public abstract class TrashServiceBase : ITrashService
@@ -39,7 +57,8 @@ public abstract class TrashServiceBase : ITrashService
             }
         }
 
-        try { File.Delete(path); } catch { /* best-effort, matches v1's -ErrorAction SilentlyContinue */ }
+        try { File.Delete(path); }
+        catch (Exception ex) { _warnings.Warn($"Compressarr: unable to remove '{path}': {ex.Message}"); }
     }
 
     public void DeleteFolder(string path, DeleteAfterConvertMode mode)
@@ -60,7 +79,8 @@ public abstract class TrashServiceBase : ITrashService
             }
         }
 
-        try { Directory.Delete(path, recursive: true); } catch { }
+        try { Directory.Delete(path, recursive: true); }
+        catch (Exception ex) { _warnings.Warn($"Compressarr: unable to remove folder '{path}': {ex.Message}"); }
     }
 
     protected abstract void MoveFileToTrash(string path);
