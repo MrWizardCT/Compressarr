@@ -9,6 +9,76 @@ for that full history.
 > and renaming all run on plain, inspectable regex pattern matching - the same deterministic
 > logic every time, nothing generative involved.
 
+## [2.1.4] - 2026-09-09
+
+> [!TIP]
+> **What's new in 2.1.4:** configuration validation with red-outlined fields and a consolidated
+> toolbar status message across Settings, Lanes, and Notifications, numbered error-code badges on
+> the HTML run report, a "Launch Monitor at Startup" option, and an important data-safety fix so a
+> failed file move can no longer lose the source file. Destination-collision handling (Rename/Skip)
+> now actually applies instead of silently behaving like Overwrite, and companion files follow the
+> same setting as their video. Everything else below carries forward from 2.1.3 for context - new
+> changes are in **bold**.
+
+### Added
+- **A "Launch Monitor at Startup" option (Settings > Monitoring): opens the Monitor page in your
+  default browser as soon as Compressarr launches, independent of whether monitoring itself
+  auto-starts.**
+- **Configuration validation: required fields on Settings and Lanes (HandBrake/FileBot paths,
+  video extensions, a lane's preset or Output folder) are checked on load and on save, with
+  invalid fields outlined in red and a toolbar error message pointing you to them. Notifications
+  validates its own required fields (e.g. a channel's webhook URL) the same way before you save.
+  Saving still succeeds either way - this is a warning, not a gate - matching how Test Connection
+  and other checks already behave in this app.**
+- **Numbered error-code badges (101-110) on the HTML run report, with a hover tooltip explaining
+  each one - covers missing HandBrake/presets, a misconfigured lane, and FileBot path problems, so
+  a problem is identifiable from the report itself, not just the log.**
+- **A "Keep Logs of successful HandBrake Encodes" setting (Settings > Maintenance, off by default),
+  so successful-encode detail logs don't accumulate forever - failed-encode logs are always kept
+  since the report links to them.**
+
+### Changed
+- **Every page's status/save messages now show in the toolbar, replacing each page's own scattered
+  status element(s) - the same consistent place across Settings, Lanes, and Notifications.**
+- **The toolbar shows elapsed time for the run currently in progress ("Monitoring is ON: Running
+  (Time Elapsed: 2 hrs, 5 min 10 sec)"), ticking up live instead of only updating once per poll.**
+- **Checking for updates now happens immediately when Compressarr starts, instead of only relying
+  on a browser cache that could keep showing "update available" for up to a day after you'd
+  already upgraded.**
+- Donate page crypto address cards are more compact and show a truncated address (full address on
+  hover, copy, and in the QR modal) so all six currencies fit in a single row.
+
+### Fixed
+- **A failed file move (offline network drive, permissions, etc.) no longer deletes the source
+  file before the move is retried - the source is preserved until the move actually succeeds, and
+  a failed move is retried automatically on the lane's next pass without re-encoding. A related
+  bug this fix exposed - a rescan could mistake that pending retry for a fresh file and force a
+  full re-encode instead of just retrying the move - is fixed alongside it.**
+- **Sonarr/Radarr are no longer unmonitored for a file whose move to its destination failed - only
+  once the move actually succeeds.**
+- **The destination-collision setting (Rename/Skip) now actually applies - previously the staged
+  output file was always given a fresh temporary name before the collision check ran, so Rename
+  and Skip both behaved like Overwrite in practice.**
+- **Companion files (subtitles, .nfo, artwork) now follow the same "On destination collision"
+  setting as their video, and always take the video's own resulting filename (including any
+  Rename-mode suffix), so a renamed video and its companions stay matched.**
+- **The library scanner now skips reparse points (junctions/symlinks) and tracks visited folders,
+  preventing runaway or duplicate scanning through a symlink loop.**
+- **HandBrakeCLI's arguments are now passed individually instead of built into one manually-quoted
+  string, removing a class of quoting problems from paths or preset names with spaces or special
+  characters.**
+- **Several cleanup steps (removing temp files, HandBrake detail logs, and trash-fallback
+  warnings) that used to fail silently are now logged instead of swallowed.**
+- **A source folder could be left behind, empty, after all its files successfully moved out.**
+- **A monitor pass that keeps failing the same way (e.g. a lane with no usable preset) no longer
+  writes a fresh log entry and report on every single pass.**
+- **Installing or merging a new HandBrake preset didn't refresh the cached preset list, so it
+  didn't show up in the Lanes page's preset dropdowns until a separate manual reload.**
+- **The Lanes page's own save confirmation never turned green like it does on Settings and
+  Notifications.**
+- **Several other save/action confirmations across the app were missing their green success
+  styling.**
+
 ## [2.1.3] - 2026-09-07
 
 > [!TIP]
