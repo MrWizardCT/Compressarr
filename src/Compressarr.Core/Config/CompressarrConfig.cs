@@ -41,6 +41,19 @@ public sealed class CompressarrConfig
     public BackupSettings Backup { get; set; } = new();
     public NotificationSettings Notifications { get; set; } = new();
     public FileBotSettings FileBot { get; set; } = new();
+    public UiStateSettings UiState { get; set; } = new();
+}
+
+/// <summary>Small, purely client-driven UI state that happens to need server-side persistence
+/// (so it survives across browser sessions/devices) - not a user-facing setting, never shown on
+/// the Settings page.</summary>
+public sealed class UiStateSettings
+{
+    /// <summary>The highest IRunHistoryStore.GetRunCount value that existed the last time the
+    /// History page was opened - drives the sidebar's error/warning badges, which only count runs
+    /// newer than this. 0 before the History page has ever been visited, in which case the badges
+    /// count every run in the retention window (same as before this field existed).</summary>
+    public int HistoryViewedThroughRunNumber { get; set; }
 }
 
 public sealed class HandBrakeSettings

@@ -49,6 +49,9 @@ for that full history.
   hover, copy, and in the QR modal) so all six currencies fit in a single row.
 
 ### Fixed
+- **The sidebar's red History error/warning badges had no way to clear - they now go away once
+  you've opened the History page and its Reports list has loaded, and stay cleared until a new run
+  has an error or warning.**
 - **A failed file move (offline network drive, permissions, etc.) no longer deletes the source
   file before the move is retried - the source is preserved until the move actually succeeds, and
   a failed move is retried automatically on the lane's next pass without re-encoding. A related

@@ -53,6 +53,25 @@ public static class HistoryEndpoints
             return Results.Json(entries);
         });
 
+        // The sidebar's error/warning badges only count runs newer than this watermark.
+        app.MapGet("/api/history/viewed-through", (IConfigStore configStore) =>
+        {
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+            return Results.Json(new { runNumber = config.UiState.HistoryViewedThroughRunNumber });
+        });
+
+        // Called once the History page has actually rendered its Reports list - advances the
+        // watermark above to "every run that exists right now", clearing the sidebar badges.
+        app.MapPost("/api/history/mark-viewed", (IConfigStore configStore, IRunHistoryStore historyStore) =>
+        {
+            var runNumber = configStore.Update(AppPaths.GetConfigFilePath(), config =>
+            {
+                config.UiState.HistoryViewedThroughRunNumber = historyStore.GetRunCount(AppPaths.GetRunCountFilePath());
+                return config.UiState.HistoryViewedThroughRunNumber;
+            });
+            return Results.Json(new { runNumber });
+        });
+
         // Serves a report HTML file by name only (never a full/relative path) resolved against
         // the *current* Report.ReportPath, so a later change to that setting doesn't strand
         // already-generated links - Path.GetFileName strips any directory component an attacker

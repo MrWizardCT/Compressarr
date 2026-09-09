@@ -179,22 +179,26 @@ function checkForUpdate() {
     .catch(() => {}); // best-effort - server unreachable just means the indicator stays whatever it already was
 }
 
-// Counts runs (within the History page's own retention window) that had at least one error or
-// at least one post-process warning - same data /api/history/reports already exposes, just
-// aggregated here since every page (not only History) shows the sidebar. Best-effort: if this
-// fails, the badges just don't appear rather than breaking the rest of the nav.
+// Counts runs (within the History page's own retention window, and not yet seen - see
+// /api/history/viewed-through) that had at least one error or at least one post-process warning -
+// same data /api/history/reports already exposes, just aggregated here since every page (not only
+// History) shows the sidebar. Best-effort: if this fails, the badges just don't appear rather than
+// breaking the rest of the nav.
 function renderHistoryBadges() {
   const holder = document.getElementById('historyBadges');
   if (!holder) return;
 
-  fetch('/api/history/reports')
-    .then(res => res.json())
-    .then(entries => {
-      const errorRuns = entries.filter(e => e.errorCount > 0).length;
-      const warningRuns = entries.filter(e => e.warningCount > 0).length;
+  Promise.all([
+    fetch('/api/history/reports').then(res => res.json()),
+    fetch('/api/history/viewed-through').then(res => res.json())
+  ])
+    .then(([entries, viewed]) => {
+      const unseen = entries.filter(e => e.runNumber > viewed.runNumber);
+      const errorRuns = unseen.filter(e => e.errorCount > 0).length;
+      const warningRuns = unseen.filter(e => e.warningCount > 0).length;
       const parts = [];
-      if (errorRuns > 0) parts.push(`<span class="sidebar-badge err" title="${errorRuns} run(s) with errors">${errorRuns}</span>`);
-      if (warningRuns > 0) parts.push(`<span class="sidebar-badge warn" title="${warningRuns} run(s) with warnings">${warningRuns}</span>`);
+      if (errorRuns > 0) parts.push(`<span class="sidebar-badge err" title="${errorRuns} unseen run(s) with errors">${errorRuns}</span>`);
+      if (warningRuns > 0) parts.push(`<span class="sidebar-badge warn" title="${warningRuns} unseen run(s) with warnings">${warningRuns}</span>`);
       holder.innerHTML = parts.join('');
     })
     .catch(() => {});

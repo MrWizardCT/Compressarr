@@ -92,5 +92,15 @@ async function loadReports() {
   document.getElementById('reportsRows').innerHTML = entries.map(reportRow).join('');
 }
 
+// Having actually rendered the Reports list above counts as "seen" - clears the sidebar's
+// error/warning badges (here and on every other page) until a new problem run happens. Best-effort
+// and fire-and-forget: a failure here just leaves the badges as they were, nothing on this page
+// depends on it succeeding.
+function markHistoryViewed() {
+  fetch('/api/history/mark-viewed', { method: 'POST' })
+    .then(() => renderHistoryBadges())
+    .catch(() => {});
+}
+
 loadHistory();
-loadReports();
+loadReports().then(markHistoryViewed);
