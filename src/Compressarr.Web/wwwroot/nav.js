@@ -220,6 +220,17 @@ function renderGlobalCountdown() {
   el.textContent = `Next Pass in: ${secondsLeft} Seconds`;
 }
 
+// "N hrs M min" (or just "N min" under an hour) - the same "started" instant the log's own "run
+// started <timestamp>" line is derived from, tracked server-side (CurrentRunStateService) across
+// the queue's current pass and reset each time a new one begins - not per-file, so a lane
+// processing 10 files back to back keeps counting the whole time, not restarting per file.
+function formatElapsedTime(startedAtMs) {
+  const totalMinutes = Math.max(0, Math.floor((Date.now() - startedAtMs) / 60000));
+  const hrs = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
+  return hrs > 0 ? `${hrs} hrs ${mins} min` : `${mins} min`;
+}
+
 async function pollGlobalStatus() {
   const dot = document.getElementById('statusDot');
   const stateEl = document.getElementById('monitoringState');
@@ -240,9 +251,12 @@ async function pollGlobalStatus() {
   dot.classList.toggle('off', !isActive);
   dot.classList.toggle('paused', isPaused);
 
+  const runningSuffix = s.isRunning && s.runStartedUtc
+    ? `: Running (Time Elapsed: ${formatElapsedTime(new Date(s.runStartedUtc).getTime())})`
+    : (s.isRunning ? ': Running' : '');
   stateEl.textContent = s.isStopping
     ? GLOBAL_STOPPING_MESSAGE
-    : (s.isMonitoring ? `Monitoring is ON${isPaused ? ': Paused' : (s.isRunning ? ': Running' : '')}` : 'Monitoring is OFF');
+    : (s.isMonitoring ? `Monitoring is ON${isPaused ? ': Paused' : runningSuffix}` : 'Monitoring is OFF');
 
   globalNextRunAtMs = (s.isMonitoring && s.secondsUntilNextRun !== null && s.secondsUntilNextRun !== undefined)
     ? Date.now() + s.secondsUntilNextRun * 1000

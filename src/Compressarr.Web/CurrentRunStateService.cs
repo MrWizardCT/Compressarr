@@ -15,6 +15,7 @@ public sealed record LogLineEntry(string Text, string Severity);
 public sealed record RunStateSnapshot(
     bool IsRunning,
     bool IsRenaming,
+    DateTime? RunStartedUtc,
     string? LaneDisplayName,
     IReadOnlyDictionary<string, bool> LaneIsResumedById,
     string? FileName,
@@ -59,6 +60,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
 
     private bool _isRunning;
     private bool _isRenaming;
+    private DateTime? _runStartedUtc;
     private string? _laneId;
     private string? _laneDisplayName;
     private string? _fileName;
@@ -104,6 +106,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
         {
             _isRunning = true;
             _isRenaming = false;
+            _runStartedUtc = DateTime.UtcNow;
             _laneId = null;
             _laneDisplayName = null;
             _fileName = null;
@@ -202,6 +205,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
         {
             _isRunning = false;
             _isRenaming = false;
+            _runStartedUtc = null;
             _fileName = null;
             _presetName = null;
             _fileIndex = 0;
@@ -292,7 +296,7 @@ public sealed class CurrentRunStateService : IRunProgressReporter
     {
         lock (_lock)
         {
-            return new RunStateSnapshot(_isRunning, _isRenaming, _laneDisplayName, new Dictionary<string, bool>(_laneIsResumedById), _fileName, _presetName, _fileIndex, _fileTotal, _progressPercent, _progressFps, _progressEta, _recentLines.ToList());
+            return new RunStateSnapshot(_isRunning, _isRenaming, _runStartedUtc, _laneDisplayName, new Dictionary<string, bool>(_laneIsResumedById), _fileName, _presetName, _fileIndex, _fileTotal, _progressPercent, _progressFps, _progressEta, _recentLines.ToList());
         }
     }
 }

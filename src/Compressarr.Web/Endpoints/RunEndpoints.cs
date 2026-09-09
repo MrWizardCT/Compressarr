@@ -380,6 +380,7 @@ public static class RunEndpoints
                 isStopping = loopController.IsStopping,
                 isRunning = snapshot.IsRunning,
                 isRenaming = snapshot.IsRenaming,
+                runStartedUtc = snapshot.RunStartedUtc,
                 isPaused = activeProcess.IsPaused,
                 laneDisplayName = snapshot.LaneDisplayName,
                 fileName = snapshot.FileName,
