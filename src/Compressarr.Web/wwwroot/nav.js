@@ -220,22 +220,47 @@ function renderGlobalCountdown() {
   el.textContent = `Next Pass in: ${secondsLeft} Seconds`;
 }
 
-// "N hrs M min" (or just "N min" under an hour) - the same "started" instant the log's own "run
-// started <timestamp>" line is derived from, tracked server-side (CurrentRunStateService) across
-// the queue's current pass and reset each time a new one begins - not per-file, so a lane
-// processing 10 files back to back keeps counting the whole time, not restarting per file.
+// "H hrs, M min S sec" - drops the leading unit(s) once they're zero (matches
+// formatCompletionDuration's own adaptive-unit-dropping on the Monitor page's Queue Completion
+// stat), down to just "S sec". The comma sits only after "hrs" (Settings/User's own spec), never
+// after "min". Ticks every second (see renderMonitoringState below), not just once per ~1.5s
+// poll, so the seconds actually count up smoothly instead of jumping unevenly.
 function formatElapsedTime(startedAtMs) {
-  const totalMinutes = Math.max(0, Math.floor((Date.now() - startedAtMs) / 60000));
-  const hrs = Math.floor(totalMinutes / 60);
-  const mins = totalMinutes % 60;
-  return hrs > 0 ? `${hrs} hrs ${mins} min` : `${mins} min`;
+  const totalSeconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+  const hrs = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+
+  if (hrs > 0) return `${hrs} hrs, ${mins} min ${secs} sec`;
+  if (mins > 0) return `${mins} min ${secs} sec`;
+  return `${secs} sec`;
+}
+
+// Raw fields from the last successful poll - rendered on every poll AND on the same 1-second
+// ticker renderGlobalCountdown already uses, so the elapsed-time seconds count up smoothly
+// between polls instead of only updating (and visibly jumping) once every ~1.5s.
+let globalIsStopping = false;
+let globalIsMonitoring = false;
+let globalIsPaused = false;
+let globalIsRunning = false;
+let globalRunStartedAtMs = null;
+
+function renderMonitoringState() {
+  const stateEl = document.getElementById('monitoringState');
+  if (!stateEl) return;
+
+  const runningSuffix = globalIsRunning && globalRunStartedAtMs !== null
+    ? `: Running (Time Elapsed: ${formatElapsedTime(globalRunStartedAtMs)})`
+    : (globalIsRunning ? ': Running' : '');
+  stateEl.textContent = globalIsStopping
+    ? GLOBAL_STOPPING_MESSAGE
+    : (globalIsMonitoring ? `Monitoring is ON${globalIsPaused ? ': Paused' : runningSuffix}` : 'Monitoring is OFF');
 }
 
 async function pollGlobalStatus() {
   const dot = document.getElementById('statusDot');
-  const stateEl = document.getElementById('monitoringState');
   const cpuEl = document.getElementById('cpuValue');
-  if (!dot || !stateEl || !cpuEl) return; // toolbar not built yet, or this tick raced a navigation
+  if (!dot || !document.getElementById('monitoringState') || !cpuEl) return; // toolbar not built yet, or this tick raced a navigation
 
   let s;
   try {
@@ -251,12 +276,12 @@ async function pollGlobalStatus() {
   dot.classList.toggle('off', !isActive);
   dot.classList.toggle('paused', isPaused);
 
-  const runningSuffix = s.isRunning && s.runStartedUtc
-    ? `: Running (Time Elapsed: ${formatElapsedTime(new Date(s.runStartedUtc).getTime())})`
-    : (s.isRunning ? ': Running' : '');
-  stateEl.textContent = s.isStopping
-    ? GLOBAL_STOPPING_MESSAGE
-    : (s.isMonitoring ? `Monitoring is ON${isPaused ? ': Paused' : runningSuffix}` : 'Monitoring is OFF');
+  globalIsStopping = s.isStopping;
+  globalIsMonitoring = s.isMonitoring;
+  globalIsPaused = isPaused;
+  globalIsRunning = s.isRunning;
+  globalRunStartedAtMs = s.isRunning && s.runStartedUtc ? new Date(s.runStartedUtc).getTime() : null;
+  renderMonitoringState();
 
   globalNextRunAtMs = (s.isMonitoring && s.secondsUntilNextRun !== null && s.secondsUntilNextRun !== undefined)
     ? Date.now() + s.secondsUntilNextRun * 1000
@@ -270,6 +295,7 @@ function startGlobalStatusPoll() {
   pollGlobalStatus();
   setInterval(pollGlobalStatus, 1500);
   setInterval(renderGlobalCountdown, 1000);
+  setInterval(renderMonitoringState, 1000);
 }
 
 // Applied immediately (before renderNav runs) so the page never flashes the wrong theme.
