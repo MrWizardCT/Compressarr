@@ -272,9 +272,20 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 _trash.DeleteFile(entry.FullName, config.Processing.DeleteAfterConvert);
             }
 
+            // originalFileFullName/originalFileDirectory must be the TRUE original source location
+            // (entry.FullName), not entry.EncodedFilePath - that's the already-converted file
+            // sitting in the processing/staging area, a completely different folder. Passing the
+            // wrong one here (a real bug found live) made companion-file matching search the wrong
+            // directory and left the actual source folder behind as an orphan even after a
+            // successful retried move. Declared outside the try block so the source-folder cleanup
+            // after the arr-unmonitor call below (which must run AFTER it, not inside this try) can
+            // still reach it.
+            var originalSourceDirectory = Path.GetDirectoryName(entry.FullName)!;
+            string? retryDestPath = null;
+
             try
             {
-                var retryDestPath = _fileRouter.RouteFile(encodedFilePath, desiredFileName, retryIsTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
+                retryDestPath = _fileRouter.RouteFile(encodedFilePath, desiredFileName, retryIsTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
                 entry.Status = ResumeStatus.Completed;
                 entry.EncodedFilePath = null;
                 entry.EncodedFileDesiredName = null;
@@ -289,16 +300,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 {
                     try
                     {
-                        // originalFileFullName/originalFileDirectory must be the TRUE original
-                        // source location (entry.FullName), not entry.EncodedFilePath - that's the
-                        // already-converted file sitting in the processing/staging area, a
-                        // completely different folder. Passing it here (a real bug found live) made
-                        // companion-file matching search the wrong directory and left the actual
-                        // source folder behind as an orphan even after a successful retried move,
-                        // since the empty-folder cascade-delete below only ever looked at the
-                        // staging folder.
-                        var originalSourceDirectory = Path.GetDirectoryName(entry.FullName)!;
-                        _companionFiles.MoveCompanionFiles(entry.FullName, originalSourceDirectory, retryDestPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath, config.Processing.CompanionExtensions, config.Processing.UnmatchedCompanionAction, config.Processing.OnDestinationCollision);
+                        _companionFiles.MoveCompanionFiles(entry.FullName, originalSourceDirectory, retryDestPath, config.Processing.DeleteAfterConvert, config.Processing.CompanionExtensions, config.Processing.UnmatchedCompanionAction, config.Processing.OnDestinationCollision);
                     }
                     catch (Exception ex)
                     {
@@ -338,9 +340,11 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             }
 
             // *arr is told to stop monitoring only once disposition is final, same rule as
-            // source cleanup above - position relative to the companion-file move above doesn't
-            // matter (a pure network call, no filesystem interaction). A still-failing retry
-            // leaves this untouched too - nothing to finalize yet.
+            // source cleanup above. This call also triggers Sonarr/Radarr's own library rescan and
+            // waits for it to likely finish (see IArrUnmonitorService.UnmonitorAsync) - it must run
+            // BEFORE the source folder is actually removed below, same reasoning as
+            // ProcessOneFileAsync's own call site. A still-failing retry leaves this untouched too
+            // - nothing to finalize yet.
             if (retrySucceeded)
             {
                 try
@@ -351,6 +355,23 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 catch (Exception ex)
                 {
                     _logger.Log($"  Arr unmonitor skipped on move retry: {ex.Message}", LogSeverity.Error);
+                }
+
+                // Only now, after Sonarr/Radarr has had the chance to rescan the source folder
+                // while it still physically existed, is it actually safe to remove it if it's now
+                // empty - same ordering ProcessOneFileAsync's own call site follows, and for the
+                // same reason (a folder already gone at rescan time reads as disconnected, not
+                // empty, to Sonarr/Radarr).
+                if (retryDestPath is not null)
+                {
+                    try
+                    {
+                        _companionFiles.CleanUpEmptySourceFolder(originalSourceDirectory, inputPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Log($"  Source folder cleanup skipped on move retry: {ex.Message}", LogSeverity.Error);
+                    }
                 }
             }
 
@@ -538,8 +559,6 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
         var extension = _presets.GetOutputExtension(presetName, presetsPath, out var extensionWarning);
         if (extensionWarning is not null) _logger.Log(extensionWarning, LogSeverity.Error);
-
-        _metadata.ClearTitle(file.FullName);
 
         var destFolder = config.Processing.OutSameAsIn ? file.DirectoryName! : outputBase;
         Directory.CreateDirectory(destFolder);
@@ -730,12 +749,10 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             // knows whether the move will ever work. A later successful retry (PrepareLaneAsync's
             // MoveFailed handling) cleans it up once it actually succeeds.
             //
-            // Deliberately BEFORE the companion-file move below, not after: MoveCompanionFiles'
-            // own "is this folder now empty of video" cascade-delete check needs the source video
-            // already gone to correctly detect an otherwise-empty single-item folder and clean it
-            // up in that same call - real regression caught by
-            // ProcessLaneAsync_MoveFailedEntry_RetriedAndSucceeds_RemovesOrphanedSourceFolder when
-            // this was ordered the other way around.
+            // Deliberately BEFORE the companion-file move below, not after: a companion belongs
+            // alongside its video, and the video's own source copy needs to already be gone for
+            // the folder-emptiness check further below (CleanUpEmptySourceFolder, called much
+            // later - see there for why) to eventually find this folder truly empty.
             if (!moveFailed && !sameAsSource && config.Processing.DeleteAfterConvert != DeleteAfterConvertMode.Maintain)
             {
                 if (File.Exists(file.FullName))
@@ -758,7 +775,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             {
                 try
                 {
-                    _companionFiles.MoveCompanionFiles(file.FullName, file.DirectoryName!, routedDestPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, inputPath, config.Processing.CompanionExtensions, config.Processing.UnmatchedCompanionAction, config.Processing.OnDestinationCollision);
+                    _companionFiles.MoveCompanionFiles(file.FullName, file.DirectoryName!, routedDestPath, config.Processing.DeleteAfterConvert, config.Processing.CompanionExtensions, config.Processing.UnmatchedCompanionAction, config.Processing.OnDestinationCollision);
                 }
                 catch (Exception ex)
                 {
@@ -769,9 +786,12 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
             // Tell Sonarr/Radarr to stop monitoring this file only once its final disposition is
             // settled (same !moveFailed rule as source cleanup above) - not silently dropped from
-            // *arr's tracking for a file that never actually finished landing anywhere. Position
-            // relative to the companion-file move above doesn't matter (a pure network call, no
-            // filesystem interaction), so it runs last, once everything else has settled.
+            // *arr's tracking for a file that never actually finished landing anywhere. This call
+            // also triggers Sonarr/Radarr's own library rescan and waits for it to likely finish
+            // (see IArrUnmonitorService.UnmonitorAsync) - it must run BEFORE the source folder is
+            // actually removed below: reported live, if the folder is already gone when the rescan
+            // runs, Sonarr/Radarr reads it as a disconnected root and never clears the episode; if
+            // the folder is still there but empty, it correctly treats the episode as missing.
             if (!moveFailed)
             {
                 try
@@ -788,6 +808,23 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     _logger.Log($"  Arr unmonitor skipped: {ex.Message}", LogSeverity.Error);
                     arrStatus = $"Failed: {ex.Message}";
                     postProcessWarning = AppendWarning(postProcessWarning, $"Sonarr/Radarr unmonitor failed: {ex.Message}");
+                }
+            }
+
+            // Only now, after Sonarr/Radarr has been given the chance to rescan the source folder
+            // WHILE it still physically exists (see the comment above), is it actually safe to
+            // remove it if it's now empty - real regression this whole split guards against:
+            // deleting the folder any earlier made a subsequent rescan see a disconnected root
+            // instead of a genuinely-empty one, and Sonarr/Radarr would never clear the episode.
+            if (routedDestPath is not null)
+            {
+                try
+                {
+                    _companionFiles.CleanUpEmptySourceFolder(file.DirectoryName!, inputPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Log($"  Source folder cleanup skipped: {ex.Message}", LogSeverity.Error);
                 }
             }
 

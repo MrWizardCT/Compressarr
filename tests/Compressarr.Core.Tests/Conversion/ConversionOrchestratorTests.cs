@@ -277,13 +277,17 @@ file sealed class RecordingArrUnmonitorService : IArrUnmonitorService
 
 file sealed class ThrowingCompanionFileService : ICompanionFileService
 {
-    public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string routedVideoDestPath, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, string inputRoot, IReadOnlyList<string> companionExtensions, DeleteAfterConvertMode unmatchedCompanionAction, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite) =>
+    public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string routedVideoDestPath, DeleteAfterConvertMode deleteAfterConvert, IReadOnlyList<string> companionExtensions, DeleteAfterConvertMode unmatchedCompanionAction, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite) =>
+        throw new IOException("Access to the path is denied.");
+
+    public void CleanUpEmptySourceFolder(string originalFileDirectory, string inputRoot, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, DeleteAfterConvertMode unmatchedCompanionAction) =>
         throw new IOException("Access to the path is denied.");
 }
 
 file sealed class NoOpCompanionFileService : ICompanionFileService
 {
-    public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string routedVideoDestPath, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, string inputRoot, IReadOnlyList<string> companionExtensions, DeleteAfterConvertMode unmatchedCompanionAction, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite) { }
+    public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string routedVideoDestPath, DeleteAfterConvertMode deleteAfterConvert, IReadOnlyList<string> companionExtensions, DeleteAfterConvertMode unmatchedCompanionAction, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite) { }
+    public void CleanUpEmptySourceFolder(string originalFileDirectory, string inputRoot, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, DeleteAfterConvertMode unmatchedCompanionAction) { }
 }
 
 file sealed class NoOpResumeStateStore : IResumeStateStore

@@ -12,27 +12,24 @@ public interface ICompanionFileService
     ///
     /// Of the stem-matched candidates, only ones whose extension is in companionExtensions are
     /// treated as wanted and actually moved/copied alongside the video. A stem-matched file whose
-    /// extension ISN'T in that list, and anything left over once a folder's last video is gone
-    /// (an orphaned companion, or genuinely unrelated content a user placed there), is disposed of
-    /// per unmatchedCompanionAction - Maintain leaves it exactly where it is, Delete/Recycle
-    /// removes it. deleteAfterConvert==Maintain overrides all of this and guarantees the source is
-    /// never touched destructively at all, regardless of unmatchedCompanionAction - that's a
-    /// stronger, absolute "hands off source" contract, same as it's always been for the video
-    /// itself. The source folder (and now-empty ancestors, up to but not including inputRoot) is
-    /// only removed once it's genuinely empty - if unmatchedCompanionAction leaves something
-    /// behind on purpose, the folder is left alone rather than deleted out from under it.
+    /// extension ISN'T in that list (an orphaned companion, or genuinely unrelated content a user
+    /// placed there under a matching name) is disposed of per unmatchedCompanionAction - Maintain
+    /// leaves it exactly where it is, Delete/Recycle removes it. deleteAfterConvert==Maintain
+    /// overrides all of this and guarantees the source is never touched destructively at all,
+    /// regardless of unmatchedCompanionAction - that's a stronger, absolute "hands off source"
+    /// contract, same as it's always been for the video itself.
+    ///
+    /// Deliberately does NOT touch the source folder itself - see CleanUpEmptySourceFolder for
+    /// that, called separately once it's safe to (after Sonarr/Radarr's own rescan, if any, has
+    /// had a chance to see the folder still present but empty of video - see its own doc comment
+    /// for why the two are split).
     ///
     /// Confirmed live: an earlier "wait until this is the only video left in the folder, then
     /// sweep everything at once" design meant a file's own companions didn't move until the WHOLE
     /// shared batch finished - or never, if a sibling was permanently skipped/removed from the
     /// queue - and even Stop Monitoring landing right after one file finished (before the next
     /// started) left that file's own companions stranded. Moving per-file, immediately, by name
-    /// match rather than by "am I the last one" sidesteps all of that. A later version of the
-    /// final-sweep step also unconditionally deleted every remaining file once a folder had no
-    /// videos left, regardless of what it actually was - risking deletion of non-companion content
-    /// a user had placed there themselves. companionExtensions + unmatchedCompanionAction close
-    /// that gap: only recognized companion types move automatically, and what happens to anything
-    /// else is an explicit user choice, not an assumption.
+    /// match rather than by "am I the last one" sidesteps all of that.
     ///
     /// routedVideoDestPath is the video's own ACTUAL final destination path, not just a folder -
     /// each companion's own destination filename is derived from THIS path's stem, not the
@@ -46,16 +43,38 @@ public interface ICompanionFileService
         string originalFileFullName,
         string originalFileDirectory,
         string routedVideoDestPath,
-        IReadOnlyList<string> vidTypes,
         DeleteAfterConvertMode deleteAfterConvert,
-        string inputRoot,
         IReadOnlyList<string> companionExtensions,
         DeleteAfterConvertMode unmatchedCompanionAction,
         DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite);
+
+    /// <summary>Checks whether originalFileDirectory is now empty of video (every video that was
+    /// ever in it has since been routed/deleted) and, if so, disposes of whatever's left per
+    /// unmatchedCompanionAction and removes the folder itself, cascading upward through now-empty
+    /// ancestor folders - up to but not including inputRoot, which is never removed.
+    ///
+    /// Deliberately a SEPARATE call from MoveCompanionFiles, made only once it's actually safe to
+    /// remove the folder - specifically, only after Sonarr/Radarr has been told to rescan (see
+    /// IArrUnmonitorService.UnmonitorAsync) and given time to actually do it. Real behavior
+    /// reported live: if the source folder is already GONE by the time Sonarr/Radarr rescans, it
+    /// reads as a disconnected/unreachable root and does NOT clear the episode from its tracking;
+    /// if the folder is still there but genuinely empty of video, Sonarr/Radarr correctly treats
+    /// the episode as missing and clears it. So the folder must still physically exist (even if
+    /// empty) at the moment the rescan runs - only once that's had time to finish is it actually
+    /// safe to remove. Callers must call this AFTER the arr-unmonitor/rescan step, never before -
+    /// see ConversionOrchestrator for the call ordering this depends on.</summary>
+    void CleanUpEmptySourceFolder(
+        string originalFileDirectory,
+        string inputRoot,
+        IReadOnlyList<string> vidTypes,
+        DeleteAfterConvertMode deleteAfterConvert,
+        DeleteAfterConvertMode unmatchedCompanionAction);
 }
 
 /// <summary>Ported from Move-CompressarrCompanionFiles; redesigned from a batch-at-the-end sweep
-/// to an immediate per-file move (see ICompanionFileService's doc comment for why).</summary>
+/// to an immediate per-file move (see ICompanionFileService's doc comment for why), then further
+/// split so the "is the folder empty, safe to remove" step could move to run after Sonarr/Radarr's
+/// own rescan (see CleanUpEmptySourceFolder's doc comment).</summary>
 public sealed class CompanionFileService : ICompanionFileService
 {
     private readonly ITrashService _trash;
@@ -69,9 +88,7 @@ public sealed class CompanionFileService : ICompanionFileService
         string originalFileFullName,
         string originalFileDirectory,
         string routedVideoDestPath,
-        IReadOnlyList<string> vidTypes,
         DeleteAfterConvertMode deleteAfterConvert,
-        string inputRoot,
         IReadOnlyList<string> companionExtensions,
         DeleteAfterConvertMode unmatchedCompanionAction,
         DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite)
@@ -80,11 +97,6 @@ public sealed class CompanionFileService : ICompanionFileService
 
         var destinationFolder = Path.GetDirectoryName(routedVideoDestPath)!;
         var videoDestStem = Path.GetFileNameWithoutExtension(routedVideoDestPath);
-
-        var extensions = vidTypes
-            .Where(t => !string.IsNullOrWhiteSpace(t))
-            .Select(t => "." + t.Trim().TrimStart('.'))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var wantedExtensions = companionExtensions
             .Where(t => !string.IsNullOrWhiteSpace(t))
@@ -154,18 +166,32 @@ public sealed class CompanionFileService : ICompanionFileService
             }
             // else: unmatchedCompanionAction == Maintain means "leave in place" - do nothing.
         }
+    }
 
+    public void CleanUpEmptySourceFolder(
+        string originalFileDirectory,
+        string inputRoot,
+        IReadOnlyList<string> vidTypes,
+        DeleteAfterConvertMode deleteAfterConvert,
+        DeleteAfterConvertMode unmatchedCompanionAction)
+    {
         if (deleteAfterConvert == DeleteAfterConvertMode.Maintain) return;
+        if (!Directory.Exists(originalFileDirectory)) return;
 
         // Never sweep or remove the lane's Input root itself - it's the lane's persistent watch
         // folder for the next run, and may still hold other unrelated content this function never
-        // inspected (only originalFileFullName's own companions were considered above).
+        // inspected.
         var inputRootFull = SafeFullPath(inputRoot);
         var originalDirFull = SafeFullPath(originalFileDirectory);
         if (inputRootFull is not null && string.Equals(originalDirFull, inputRootFull, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
+
+        var extensions = vidTypes
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => "." + t.Trim().TrimStart('.'))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         // A shared/flat folder still holding another video (still queued, skipped, whatever) isn't
         // really empty yet - leave it, and whatever's still sitting alongside that other video,
@@ -176,7 +202,8 @@ public sealed class CompanionFileService : ICompanionFileService
 
         // Whatever's left (an orphaned companion from an earlier call, or genuinely unrelated
         // content) is disposed of per unmatchedCompanionAction, same policy as an unwanted
-        // stem-matched sibling above - Maintain leaves it in place, Delete/Recycle removes it.
+        // stem-matched sibling in MoveCompanionFiles - Maintain leaves it in place, Delete/Recycle
+        // removes it.
         if (unmatchedCompanionAction != DeleteAfterConvertMode.Maintain)
         {
             var remaining = Directory.EnumerateFileSystemEntries(originalFileDirectory).ToList();

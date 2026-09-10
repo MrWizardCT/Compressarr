@@ -83,7 +83,7 @@ public class ArrUnmonitorServiceTests
                 }
                 """)
         };
-        var service = new ArrUnmonitorService(client);
+        var service = new ArrUnmonitorService(client, TimeSpan.Zero);
         var config = ConfigWith(new ArrServiceSettings { Enabled = true, Url = "http://sonarr:8989", ApiKey = "key" });
 
         var result = await service.UnmonitorAsync(config, "Show.S01E01.mkv", isTv: true);
@@ -105,7 +105,7 @@ public class ArrUnmonitorServiceTests
                 }
                 """)
         };
-        var service = new ArrUnmonitorService(client);
+        var service = new ArrUnmonitorService(client, TimeSpan.Zero);
         var config = ConfigWith(new ArrServiceSettings { Enabled = true, Url = "http://sonarr:8989", ApiKey = "key" });
 
         var result = await service.UnmonitorAsync(config, "Show.S01E01.mkv", isTv: true);
@@ -113,5 +113,24 @@ public class ArrUnmonitorServiceTests
         Assert.Contains("unmonitored the matching episode", result);
         Assert.Contains(client.Calls, c => c.Method == "PUT" && c.Path == "/api/v3/episode/7");
         Assert.Contains(client.Calls, c => c.Method == "POST" && c.Path == "/api/v3/command");
+    }
+
+    [Fact]
+    public async Task UnmonitorAsync_MatchedRadarr_WaitsForConfiguredRescanSettleDelay()
+    {
+        var client = new FakeArrClient
+        {
+            ParseResponse = JsonNode.Parse("""{ "movie": { "id": 99, "monitored": true } }""")
+        };
+        var delay = TimeSpan.FromMilliseconds(50);
+        var service = new ArrUnmonitorService(client, delay);
+        var config = ConfigWith(new ArrServiceSettings());
+        config.Arrs.Radarr = new ArrServiceSettings { Enabled = true, Url = "http://radarr:7878", ApiKey = "key" };
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await service.UnmonitorAsync(config, "Movie (2026).mkv", isTv: false);
+        sw.Stop();
+
+        Assert.True(sw.Elapsed >= delay, $"Expected to wait at least {delay}, only waited {sw.Elapsed}");
     }
 }

@@ -8,10 +8,15 @@ public interface IArrUnmonitorService
     /// <summary>Dispatches to Sonarr (TV) or Radarr (Movie) based on isTv, only if that service
     /// is enabled. Returns null (no-op, not an error) if the matching service isn't enabled;
     /// otherwise a short human-readable status string describing the outcome (unmonitored +
-    /// rescanned / already unmonitored, rescanned anyway / no match found). Throws if the service
-    /// is enabled but not configured (blank URL/API key), or if the request itself fails —
-    /// callers are expected to wrap this in their own try/catch (a broken/unreachable arr
-    /// instance must never fail an otherwise-successful conversion).</summary>
+    /// rescanned / already unmonitored, rescanned anyway / no match found). On a real match, this
+    /// call doesn't return until roughly 30 seconds after issuing the rescan command - enough time
+    /// for Sonarr/Radarr's own library scan to actually finish before Compressarr moves on to the
+    /// next file, matching the order the original source file is expected to already be gone by
+    /// (unmonitor, then rescan, then wait) - see the caller for exactly when the source is
+    /// deleted relative to this call. Throws if the service is enabled but not configured (blank
+    /// URL/API key), or if the request itself fails — callers are expected to wrap this in their
+    /// own try/catch (a broken/unreachable arr instance must never fail an otherwise-successful
+    /// conversion).</summary>
     Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv);
 }
 
@@ -24,9 +29,20 @@ public sealed class ArrUnmonitorService : IArrUnmonitorService
 {
     private readonly IArrClient _client;
 
-    public ArrUnmonitorService(IArrClient client)
+    // Gives Sonarr/Radarr's own rescan (triggered right after unmonitoring, below) time to
+    // actually finish before Compressarr moves on - a rescan that's still running when the next
+    // file's own unmonitor/rescan fires for the same library could race against it. Internal
+    // setter only so tests can use a near-instant delay instead of a real 30-second wait per case.
+    private readonly TimeSpan _rescanSettleDelay;
+
+    public ArrUnmonitorService(IArrClient client) : this(client, TimeSpan.FromSeconds(30))
+    {
+    }
+
+    internal ArrUnmonitorService(IArrClient client, TimeSpan rescanSettleDelay)
     {
         _client = client;
+        _rescanSettleDelay = rescanSettleDelay;
     }
 
     public async Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv)
@@ -83,6 +99,7 @@ public sealed class ArrUnmonitorService : IArrUnmonitorService
         var seriesId = parsed!["series"]!["id"]!.GetValue<int>();
         var command = new JsonObject { ["name"] = "RescanSeries", ["seriesId"] = seriesId };
         await _client.PostAsync(baseUrl, apiKey, "/api/v3/command", command);
+        await Task.Delay(_rescanSettleDelay);
 
         return (true, changedAny);
     }
@@ -109,6 +126,7 @@ public sealed class ArrUnmonitorService : IArrUnmonitorService
         var movieIdForCommand = movie["id"]!.GetValue<int>();
         var command = new JsonObject { ["name"] = "RescanMovie", ["movieId"] = movieIdForCommand };
         await _client.PostAsync(baseUrl, apiKey, "/api/v3/command", command);
+        await Task.Delay(_rescanSettleDelay);
 
         return (true, changed);
     }

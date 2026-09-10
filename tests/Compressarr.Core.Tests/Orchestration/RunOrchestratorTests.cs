@@ -62,7 +62,8 @@ file sealed class RecordingProcessRunner : IHandBrakeProcessRunner
 
 file sealed class NoOpCompanionFileService : ICompanionFileService
 {
-    public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string routedVideoDestPath, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, string inputRoot, IReadOnlyList<string> companionExtensions, DeleteAfterConvertMode unmatchedCompanionAction, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite) { }
+    public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string routedVideoDestPath, DeleteAfterConvertMode deleteAfterConvert, IReadOnlyList<string> companionExtensions, DeleteAfterConvertMode unmatchedCompanionAction, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite) { }
+    public void CleanUpEmptySourceFolder(string originalFileDirectory, string inputRoot, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, DeleteAfterConvertMode unmatchedCompanionAction) { }
 }
 
 file sealed class NoOpArrUnmonitorService : IArrUnmonitorService
