@@ -14,6 +14,16 @@ public sealed class RunResult
     public required string ReportFilePath { get; init; }
     public required int TotalFiles { get; init; }
 
+    /// <summary>Count of MoveFailed/CompanionMoveFailed/CleanupPending entries this pass's own
+    /// per-lane retry loops resolved (see LaneProcessingContext.RetriesSucceeded) - distinct from TotalFiles,
+    /// which only counts files that went through ProcessOneFileAsync this pass. A pass whose only
+    /// activity was a successful retry has TotalFiles == 0 but this greater than zero, and is
+    /// treated the same as a pass that processed real files for the "don't discard this pass's own
+    /// record of what happened" gates in RunOnceAsync/RunOnceCoreAsync - a real gap found via code
+    /// review: without this, a purely-retry pass left literally no durable trace (log pruned,
+    /// report never written) that anything happened at all.</summary>
+    public required int RetriesSucceeded { get; init; }
+
     /// <summary>True if any file in this pass failed in a way that looked like the volume being
     /// out of space. The monitoring loop stops itself when this is true, rather than retrying the
     /// same doomed encode again on the next poll interval.</summary>
@@ -118,9 +128,10 @@ public sealed class RunOrchestrator : IRunOrchestrator
         // near-empty file behind forever - confirmed live: with a normal polling interval this is
         // by far the most common outcome of a pass, and it was generating thousands of
         // essentially-content-free log files (one per idle poll) that made the genuinely useful
-        // ones hard to find. A pass that processed real files, or hit a real error even while
-        // processing none (a misconfigured lane, a missing HandBrakeCLI, etc), still keeps its log.
-        if ((result?.TotalFiles ?? 0) == 0 && !_logger.HasLoggedError)
+        // ones hard to find. A pass that processed real files, resolved a stranded retry (see
+        // RunResult.RetriesSucceeded), or hit a real error even while processing none (a
+        // misconfigured lane, a missing HandBrakeCLI, etc), still keeps its log.
+        if ((result?.TotalFiles ?? 0) == 0 && (result?.RetriesSucceeded ?? 0) == 0 && !_logger.HasLoggedError)
         {
             try { if (File.Exists(summaryLogFilePath)) File.Delete(summaryLogFilePath); }
             catch (Exception ex) { _logger.Log($"Unable to remove empty run log '{summaryLogFilePath}': {ex.Message}", LogSeverity.Error); }
@@ -164,6 +175,11 @@ public sealed class RunOrchestrator : IRunOrchestrator
         // a lane/run-level issue (a missing preset, a missing Output folder, FileBot's path not
         // found) is visible on the report itself, not just log-only. See ReportErrorCode 106+.
         var laneProblems = new Dictionary<string, List<ReportErrorCode>>();
+        // Accumulated across every lane's own PrepareLaneAsync call (see
+        // LaneProcessingContext.RetriesSucceeded) - declared outside the try block below so a
+        // mid-pass Abort/Stop (caught further down) doesn't discard whatever retries this pass
+        // already resolved before it was interrupted.
+        var totalRetriesSucceeded = 0;
         try
         {
             // Phase 1: per-lane prep, unchanged validation/logging - every enabled, valid lane gets
@@ -243,6 +259,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 laneContexts[lane.Id] = context;
                 laneOrderIndex[lane.Id] = configLaneIndex - 1;
                 laneResults[lane.Id] = new List<ConversionResult>();
+                totalRetriesSucceeded += context.RetriesSucceeded;
             }
 
             // Phase 2: one global loop across every prepared lane, picking whichever eligible entry
@@ -365,7 +382,8 @@ public sealed class RunOrchestrator : IRunOrchestrator
             Today = today,
             ThisMonth = thisMonth,
             ThisYear = thisYear,
-            SummaryLogFilePath = summaryLogFilePath
+            SummaryLogFilePath = summaryLogFilePath,
+            RetriesSucceeded = totalRetriesSucceeded
         };
 
         var reportFilePath = Path.Combine(reportPath, reportFileName);
@@ -396,8 +414,11 @@ public sealed class RunOrchestrator : IRunOrchestrator
         // problem(s) as the pass that already wrote the last report (real gap found live: this
         // gate had no memory of its own, so a persistently misconfigured lane could force a fresh
         // report on literally every single poll forever, even though the matching log line was
-        // already correctly downgraded to Info by LogProblem).
-        if (totalFiles > 0 || (reportModel.HasAnyLaneProblems && anyLaneProblemsChanged))
+        // already correctly downgraded to Info by LogProblem). A pass whose only activity was a
+        // successful MoveFailed/CompanionMoveFailed/CleanupPending retry also gets a report - see
+        // RunResult.RetriesSucceeded - so that activity has a durable, visible record too, not
+        // just a log line.
+        if (totalFiles > 0 || (reportModel.HasAnyLaneProblems && anyLaneProblemsChanged) || totalRetriesSucceeded > 0)
         {
             Directory.CreateDirectory(reportPath);
             var html = _reportGenerator.Generate(reportModel);
@@ -455,6 +476,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
             Report = reportModel,
             ReportFilePath = reportFilePath,
             TotalFiles = totalFiles,
+            RetriesSucceeded = totalRetriesSucceeded,
             DiskFull = allResults.Any(r => r.DiskFull)
         };
     }

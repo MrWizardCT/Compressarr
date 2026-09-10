@@ -40,6 +40,15 @@ public sealed class LaneProcessingContext
     /// (RunEndpoints.ComputeUpNext) so the two can never disagree about "what's next" for a file
     /// nobody has ever dragged.</summary>
     public required IReadOnlyDictionary<string, int> NaturalOrderIndex { get; init; }
+
+    /// <summary>Count of MoveFailed/CompanionMoveFailed/CleanupPending resume entries this call's
+    /// own retry loops (run before any of the above) successfully resolved this pass - zero for the overwhelmingly
+    /// common case where there was nothing to retry. Read by RunOrchestrator so a pass whose ONLY
+    /// activity was a successful retry (no new file ever reached ProcessOneFileAsync, so
+    /// TotalFiles stays 0) still keeps its own log and gets a report/history entry, instead of
+    /// looking indistinguishable from a genuinely idle poll and having that real activity silently
+    /// discarded - a real gap found via code review.</summary>
+    public int RetriesSucceeded { get; set; }
 }
 
 public interface IConversionOrchestrator
@@ -193,6 +202,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         _logger.ClearProblem($"lane-no-output:{lane.Id}");
 
         List<FileInfo> videoFiles;
+        var retriesSucceeded = 0;
 
         // A Pending or Error entry whose source file is gone (e.g. removed by hand, or already
         // handled by Sonarr/Radarr, between runs) can never be resumed or retried - drop it rather
@@ -212,6 +222,24 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             foreach (var dead in deadEntries)
             {
                 _logger.Log($"Resume entry for '{dead.FullName}' no longer exists - removing it.", LogSeverity.Error);
+                resumeState.Remove(dead);
+            }
+            _resumeStore.Save(resumeState, resumeFilePath);
+        }
+
+        // A CompanionMoveFailed entry whose companions' own source folder is gone (removed by
+        // hand, or the whole thing cleaned up some other way between runs) has nothing left to
+        // retry - same reasoning as deadEntries above, checked against
+        // PendingCompanionSourceDirectory rather than FullName since the video itself is already
+        // long gone from there by the time this status applies.
+        var deadCompanionEntries = resumeState.Where(e => e.LaneId == lane.Id
+            && e.Status == ResumeStatus.CompanionMoveFailed
+            && !Directory.Exists(e.PendingCompanionSourceDirectory)).ToList();
+        if (deadCompanionEntries.Count > 0)
+        {
+            foreach (var dead in deadCompanionEntries)
+            {
+                _logger.Log($"Resume entry for '{dead.FullName}' (awaiting companion retry) no longer has its source folder - removing it.", LogSeverity.Error);
                 resumeState.Remove(dead);
             }
             _resumeStore.Save(resumeState, resumeFilePath);
@@ -302,6 +330,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             var originalSourceDirectory = Path.GetDirectoryName(entry.FullName)!;
             string? retryDestPath = null;
             var companionMoveFailed = false;
+            var arrCleanupSafe = true;
+            var cleanupFailed = false;
 
             try
             {
@@ -311,6 +341,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 entry.EncodedFileDesiredName = null;
                 entry.LastRetryFailureMessage = null;
                 retrySucceeded = true;
+                retriesSucceeded++;
                 _logger.Log($"  Retried move for '{desiredFileName}' - succeeded.");
 
                 currentPath = retryDestPath ?? RestInPlace(encodedFilePath) ?? encodedFilePath;
@@ -326,9 +357,15 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     {
                         // Same reasoning as ProcessOneFileAsync's own call site: a companion left
                         // stranded by a real move failure must not be swept up as an "unmatched
-                        // leftover" by the folder cleanup below.
+                        // leftover" by the folder cleanup below. Overrides the Completed status set
+                        // above - the video itself is done, but the companions aren't, so this
+                        // entry needs to come back around through the companion-retry loop on this
+                        // lane's next pass rather than being reported as fully finished.
                         companionMoveFailed = true;
                         _logger.Log($"  Companion file handling skipped on move retry: {ex.Message}", LogSeverity.Error);
+                        entry.Status = ResumeStatus.CompanionMoveFailed;
+                        entry.PendingCompanionSourceDirectory = originalSourceDirectory;
+                        entry.PendingCompanionVideoDestPath = retryDestPath;
                     }
                 }
             }
@@ -341,6 +378,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 entry.EncodedFileDesiredName = null;
                 entry.LastRetryFailureMessage = null;
                 retrySucceeded = true;
+                retriesSucceeded++;
                 _logger.Log($"  {ex.Message}");
                 currentPath = RestInPlace(encodedFilePath) ?? encodedFilePath;
                 CleanUpRetriedSource();
@@ -374,20 +412,25 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 try
                 {
                     var arrResult = await _arrUnmonitor.UnmonitorAsync(config, desiredFileName, retryIsTv, cancellationToken);
-                    if (arrResult is not null) _logger.Log($"  {arrResult}");
+                    if (arrResult.Message is not null) _logger.Log($"  {arrResult.Message}");
+                    arrCleanupSafe = arrResult.SafeToCleanUp;
+                    if (!arrCleanupSafe) _logger.Log($"  Source folder cleanup deferred - rescan was not positively confirmed complete ({arrResult.Outcome}).");
                 }
                 catch (Exception ex)
                 {
                     _logger.Log($"  Arr unmonitor skipped on move retry: {ex.Message}", LogSeverity.Error);
+                    arrCleanupSafe = false;
                 }
 
                 // Only now, after Sonarr/Radarr has had the chance to rescan the source folder
-                // while it still physically existed, is it actually safe to remove it if it's now
-                // empty - same ordering ProcessOneFileAsync's own call site follows, and for the
-                // same reason (a folder already gone at rescan time reads as disconnected, not
-                // empty, to Sonarr/Radarr). Skipped if the companion move itself failed - see
-                // ProcessOneFileAsync's own call site for why.
-                if (retryDestPath is not null && !companionMoveFailed)
+                // while it still physically existed AND that rescan was positively confirmed to
+                // finish, is it actually safe to remove it if it's now empty - same ordering
+                // ProcessOneFileAsync's own call site follows, and for the same reason (a folder
+                // already gone at rescan time reads as disconnected, not empty, to Sonarr/Radarr;
+                // a rescan that never confirmed finishing can't prove it ever saw the folder at
+                // all). Skipped if the companion move itself failed - see ProcessOneFileAsync's
+                // own call site for why.
+                if (retryDestPath is not null && !companionMoveFailed && arrCleanupSafe)
                 {
                     try
                     {
@@ -395,9 +438,218 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     }
                     catch (Exception ex)
                     {
+                        // Code-review finding: a filesystem-level cleanup failure (locked file,
+                        // permission, antivirus interference, etc) was logged here but otherwise
+                        // ignored - the entry still ended up Completed below regardless, so a
+                        // transient cleanup error was just as permanently forgotten as an
+                        // unconfirmed rescan used to be. Treated the same way now: falls through
+                        // to CleanupPending just like arrCleanupSafe == false does.
                         _logger.Log($"  Source folder cleanup skipped on move retry: {ex.Message}", LogSeverity.Error);
+                        cleanupFailed = true;
                     }
                 }
+            }
+
+            // Code-review finding: entry.Status was set to Completed unconditionally above the
+            // moment the move itself succeeded, even when the *arr rescan was never confirmed and
+            // cleanup was correctly deferred - leaving nothing to ever retry that deferred cleanup.
+            // Overrides that guess now that the real outcome is known, same "not actually done yet"
+            // treatment as CompanionMoveFailed above - just for the narrower remaining case where
+            // the video AND its companions are both genuinely finished and only the folder cleanup
+            // itself is still outstanding (whether because the rescan wasn't confirmed, or because
+            // the cleanup call itself threw once it was).
+            if (retrySucceeded && !companionMoveFailed && retryDestPath is not null && (!arrCleanupSafe || cleanupFailed))
+            {
+                entry.Status = ResumeStatus.CleanupPending;
+                entry.PendingCompanionSourceDirectory = originalSourceDirectory;
+                entry.PendingCompanionVideoDestPath = retryDestPath;
+            }
+
+            _resumeStore.Save(resumeState, resumeFilePath);
+        }
+
+        // CompanionMoveFailed entries from a prior pass: the video itself is fully done, only its
+        // stranded companions need retrying (and, once that succeeds, the folder-emptiness cleanup
+        // that was skipped the first time around) - same "resolve leftover work before scanning for
+        // anything new" ordering as the MoveFailed retry loop above, and re-running MoveCompanionFiles
+        // is safe to repeat: it re-enumerates the source folder each time, so a companion already
+        // moved by an earlier partial attempt simply isn't found again, only genuinely still-stranded
+        // ones are retried.
+        var companionRetryEntries = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.CompanionMoveFailed).ToList();
+        foreach (var entry in companionRetryEntries)
+        {
+            var sourceDirectory = entry.PendingCompanionSourceDirectory!;
+            var videoDestPath = entry.PendingCompanionVideoDestPath!;
+
+            try
+            {
+                _companionFiles.MoveCompanionFiles(entry.FullName, sourceDirectory, videoDestPath, config.Processing.DeleteAfterConvert, config.Processing.CompanionExtensions, config.Processing.UnmatchedCompanionAction, config.Processing.OnDestinationCollision);
+                _logger.Log($"  Retried companion file move for '{Path.GetFileName(videoDestPath)}' - succeeded.");
+
+                var desiredFileName = Path.GetFileName(videoDestPath);
+                var companionRetryIsTv = ContentClassifier.IsTvFile(desiredFileName);
+
+                // Re-triggers the same unmonitor+rescan call the video's own first pass already
+                // made - deliberately, not a bug: Sonarr/Radarr's own API already treats a repeat
+                // call as a no-op ("already unmonitored - rescanned anyway"), and this is the only
+                // way this retry can get a FRESH, positively-confirmed signal that it's now safe
+                // to remove the source folder, without needing to persist the original pass's
+                // rescan outcome across a run boundary.
+                var arrCleanupSafe = true;
+                try
+                {
+                    var arrResult = await _arrUnmonitor.UnmonitorAsync(config, desiredFileName, companionRetryIsTv, cancellationToken);
+                    if (arrResult.Message is not null) _logger.Log($"  {arrResult.Message}");
+                    arrCleanupSafe = arrResult.SafeToCleanUp;
+                    if (!arrCleanupSafe) _logger.Log($"  Source folder cleanup deferred - rescan was not positively confirmed complete ({arrResult.Outcome}).");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Log($"  Arr unmonitor skipped on companion retry: {ex.Message}", LogSeverity.Error);
+                    arrCleanupSafe = false;
+                }
+
+                if (arrCleanupSafe)
+                {
+                    try
+                    {
+                        _companionFiles.CleanUpEmptySourceFolder(sourceDirectory, inputPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
+                        entry.Status = ResumeStatus.Completed;
+                        entry.PendingCompanionSourceDirectory = null;
+                        entry.PendingCompanionVideoDestPath = null;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Code-review finding: a filesystem-level cleanup failure here used to be
+                        // logged and then ignored - the entry still ended up Completed regardless,
+                        // permanently forgetting the still-outstanding folder. PendingCompanion*
+                        // fields are already correct (unchanged from the CompanionMoveFailed values
+                        // above), so no need to re-set them - just stay in the cleanup lifecycle.
+                        _logger.Log($"  Source folder cleanup skipped on companion retry: {ex.Message}", LogSeverity.Error);
+                        entry.Status = ResumeStatus.CleanupPending;
+                    }
+                }
+                else
+                {
+                    // Code-review finding: this used to fall through to Completed even when the
+                    // fresh *arr rescan just triggered above wasn't confirmed - the companions ARE
+                    // genuinely done now, but marking Completed here would still lose track of the
+                    // still-outstanding folder cleanup. CleanupPending picks up exactly that
+                    // narrower remaining work on this lane's next pass (see the cleanup-retry loop
+                    // below) - PendingCompanionSourceDirectory/VideoDestPath are already correct
+                    // for it, no change needed there.
+                    entry.Status = ResumeStatus.CleanupPending;
+                }
+
+                entry.LastRetryFailureMessage = null;
+                retriesSucceeded++;
+            }
+            catch (Exception ex)
+            {
+                // Still failing - leave it as CompanionMoveFailed, tried again on the next pass.
+                // Same "only flag as Error the first time / when it changes" dedup as the
+                // MoveFailed retry loop above, for the same reason (an extended outage shouldn't
+                // force a kept log file on every single poll).
+                var isSameFailureAsLastPoll = entry.LastRetryFailureMessage == ex.Message;
+                var severity = isSameFailureAsLastPoll ? LogSeverity.Info : LogSeverity.Error;
+                var suffix = isSameFailureAsLastPoll ? " (still failing, same as last check)" : "";
+                _logger.Log($"  Retried companion file move for '{Path.GetFileName(videoDestPath)}' failed again: {ex.Message}{suffix}", severity);
+                entry.LastRetryFailureMessage = ex.Message;
+            }
+
+            _resumeStore.Save(resumeState, resumeFilePath);
+        }
+
+        // CleanupPending entries from a prior pass: the video and its companions (if any) are both
+        // fully done and correctly filed - only the *arr-confirmed source folder cleanup itself
+        // remains, deferred because that pass's own rescan was never positively confirmed complete
+        // (see ArrRescanOutcome/SafeToCleanUp). Re-triggers a FRESH unmonitor+rescan (same
+        // idempotent-repeat reasoning as the companion-retry loop above - Sonarr/Radarr's own API
+        // already treats a repeat call as a no-op) and only removes the folder once THIS pass's
+        // rescan is confirmed safe, rather than assuming the earlier attempt eventually finished on
+        // its own. Code-review finding: without this loop, a deferred cleanup had no path back to
+        // ever being retried - the entry was marked Completed and could vanish from resume.json
+        // entirely, leaving an empty source folder behind forever.
+        var cleanupPendingEntries = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.CleanupPending).ToList();
+        foreach (var entry in cleanupPendingEntries)
+        {
+            var sourceDirectory = entry.PendingCompanionSourceDirectory!;
+            var videoDestPath = entry.PendingCompanionVideoDestPath!;
+
+            // Already gone - by hand, or some other process - since the deferral. Unlike a dead
+            // CompanionMoveFailed entry (companions genuinely lost), this is the actual goal
+            // already achieved: no folder left to clean up, and no need to spend an *arr API call
+            // confirming a rescan for cleanup that's already moot.
+            if (!Directory.Exists(sourceDirectory))
+            {
+                entry.Status = ResumeStatus.Completed;
+                entry.PendingCompanionSourceDirectory = null;
+                entry.PendingCompanionVideoDestPath = null;
+                entry.LastRetryFailureMessage = null;
+                _resumeStore.Save(resumeState, resumeFilePath);
+                continue;
+            }
+
+            var desiredFileName = Path.GetFileName(videoDestPath);
+            var cleanupRetryIsTv = ContentClassifier.IsTvFile(desiredFileName);
+
+            var arrCleanupSafe = false;
+            string reasonKey;
+            try
+            {
+                var arrResult = await _arrUnmonitor.UnmonitorAsync(config, desiredFileName, cleanupRetryIsTv, cancellationToken);
+                if (arrResult.Message is not null) _logger.Log($"  {arrResult.Message}");
+                arrCleanupSafe = arrResult.SafeToCleanUp;
+                reasonKey = arrResult.Outcome.ToString();
+            }
+            catch (Exception ex)
+            {
+                _logger.Log($"  Arr unmonitor skipped on cleanup retry: {ex.Message}", LogSeverity.Error);
+                reasonKey = ex.Message;
+            }
+
+            if (arrCleanupSafe)
+            {
+                try
+                {
+                    _companionFiles.CleanUpEmptySourceFolder(sourceDirectory, inputPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
+                    _logger.Log($"  Retried source folder cleanup for '{desiredFileName}' - succeeded.");
+                    entry.Status = ResumeStatus.Completed;
+                    entry.PendingCompanionSourceDirectory = null;
+                    entry.PendingCompanionVideoDestPath = null;
+                    entry.LastRetryFailureMessage = null;
+                    retriesSucceeded++;
+                }
+                catch (Exception ex)
+                {
+                    // Code-review finding: this used to be a "best-effort, log and move on"
+                    // failure like every other cleanup call site - but for THIS status, the *arr
+                    // confirmation is the only piece being tracked, so treating the whole entry as
+                    // Completed the moment CleanUpEmptySourceFolder merely THREW (rather than
+                    // actually succeeding) permanently forgot a transient filesystem problem
+                    // (locked file, permission, antivirus interference, network share hiccup) with
+                    // no path back to retrying it. Stays CleanupPending instead - same Error-once/
+                    // Info-on-repeat dedup as the "not confirmed" branch below, keyed off the same
+                    // LastRetryFailureMessage field (only one of the two branches runs per pass, so
+                    // there's no ambiguity about which kind of failure it's tracking at any time).
+                    var isSameAsLastPoll = entry.LastRetryFailureMessage == ex.Message;
+                    var severity = isSameAsLastPoll ? LogSeverity.Info : LogSeverity.Error;
+                    var suffix = isSameAsLastPoll ? " (still failing, same as last check)" : "";
+                    _logger.Log($"  Source folder cleanup failed on cleanup retry: {ex.Message}{suffix}", severity);
+                    entry.LastRetryFailureMessage = ex.Message;
+                }
+            }
+            else
+            {
+                // Still not confirmed - leave it as CleanupPending, tried again on the next pass.
+                // Same "only flag as Error the first time / when it changes" dedup as the other
+                // retry loops above, for the same reason (a persistently-unreachable arr instance
+                // shouldn't force a kept log file on every single poll).
+                var isSameAsLastPoll = entry.LastRetryFailureMessage == reasonKey;
+                var severity = isSameAsLastPoll ? LogSeverity.Info : LogSeverity.Error;
+                var suffix = isSameAsLastPoll ? " (still not confirmed, same as last check)" : "";
+                _logger.Log($"  Source folder cleanup still deferred for '{desiredFileName}' - rescan not positively confirmed complete{suffix}.", severity);
+                entry.LastRetryFailureMessage = reasonKey;
             }
 
             _resumeStore.Save(resumeState, resumeFilePath);
@@ -486,7 +738,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     // re-encoded the same file from scratch on every single poll instead of just
                     // cheaply retrying the move, discarding a perfectly good already-finished encode
                     // each time.
-                    if (existing.Status != ResumeStatus.MoveFailed)
+                    if (existing.Status is not ResumeStatus.MoveFailed and not ResumeStatus.CompanionMoveFailed and not ResumeStatus.CleanupPending)
                     {
                         existing.Status = ResumeStatus.Pending;
                     }
@@ -515,7 +767,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             FileIndex = 0,
             FileTotal = fileCount,
             PadSize = padSize,
-            NaturalOrderIndex = naturalOrderIndex
+            NaturalOrderIndex = naturalOrderIndex,
+            RetriesSucceeded = retriesSucceeded
         };
     }
 
@@ -845,15 +1098,23 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             // actually removed below: reported live, if the folder is already gone when the rescan
             // runs, Sonarr/Radarr reads it as a disconnected root and never clears the episode; if
             // the folder is still there but empty, it correctly treats the episode as missing.
+            var arrCleanupSafe = true;
+            var cleanupFailed = false;
             if (!moveFailed)
             {
                 try
                 {
                     var arrResult = await _arrUnmonitor.UnmonitorAsync(config, file.Name, isTv, cancellationToken);
-                    if (arrResult is not null)
+                    if (arrResult.Message is not null)
                     {
-                        _logger.Log($"  {arrResult}");
-                        arrStatus = arrResult;
+                        _logger.Log($"  {arrResult.Message}");
+                        arrStatus = arrResult.Message;
+                    }
+                    arrCleanupSafe = arrResult.SafeToCleanUp;
+                    if (!arrCleanupSafe)
+                    {
+                        _logger.Log($"  Source folder cleanup deferred - rescan was not positively confirmed complete ({arrResult.Outcome}).");
+                        postProcessWarning = AppendWarning(postProcessWarning, "Source folder cleanup deferred until the next pass (rescan not confirmed complete)");
                     }
                 }
                 catch (Exception ex)
@@ -861,18 +1122,22 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     _logger.Log($"  Arr unmonitor skipped: {ex.Message}", LogSeverity.Error);
                     arrStatus = $"Failed: {ex.Message}";
                     postProcessWarning = AppendWarning(postProcessWarning, $"Sonarr/Radarr unmonitor failed: {ex.Message}");
+                    arrCleanupSafe = false;
                 }
             }
 
             // Only now, after Sonarr/Radarr has been given the chance to rescan the source folder
-            // WHILE it still physically exists (see the comment above), is it actually safe to
+            // WHILE it still physically exists AND that rescan was positively confirmed to finish
+            // (see the comment above and ArrRescanOutcome/SafeToCleanUp), is it actually safe to
             // remove it if it's now empty - real regression this whole split guards against:
             // deleting the folder any earlier made a subsequent rescan see a disconnected root
-            // instead of a genuinely-empty one, and Sonarr/Radarr would never clear the episode.
+            // instead of a genuinely-empty one, and Sonarr/Radarr would never clear the episode. A
+            // rescan that failed, timed out, or was cancelled mid-wait can't prove it ever saw the
+            // folder while it existed, so cleanup is left for a later pass instead of guessing.
             // Skipped entirely if the companion move itself failed above - the folder isn't
             // actually empty of "belongs here" content in that case, it's got a stranded
             // companion still waiting to be moved, not a genuine orphan to sweep.
-            if (routedDestPath is not null && !companionMoveFailed)
+            if (routedDestPath is not null && !companionMoveFailed && arrCleanupSafe)
             {
                 try
                 {
@@ -880,19 +1145,52 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 }
                 catch (Exception ex)
                 {
+                    // Code-review finding: a filesystem-level cleanup failure (locked file,
+                    // permission, antivirus interference, etc) was logged here but otherwise
+                    // ignored - the entry still ended up Completed below regardless, so a
+                    // transient cleanup error was just as permanently forgotten as an unconfirmed
+                    // rescan used to be. Treated the same way now: falls through to CleanupPending
+                    // just like arrCleanupSafe == false does. Code-review follow-up finding: unlike
+                    // the sibling !arrCleanupSafe branch above, this didn't append a
+                    // PostProcessWarning - the report could show a plain, unqualified "OK" for a
+                    // file whose folder cleanup actually failed and is still pending retry.
                     _logger.Log($"  Source folder cleanup skipped: {ex.Message}", LogSeverity.Error);
+                    postProcessWarning = AppendWarning(postProcessWarning, $"Source folder cleanup deferred: {ex.Message}");
+                    cleanupFailed = true;
                 }
             }
 
             // moveFailed here means the real-error branch above (not the Skip case, which never
             // sets moveFailed) - the file is genuinely stuck unrouted in Output. MoveFailed (not
             // Completed) so the retry logic in this lane's next PrepareLane call picks it back up
-            // instead of a resume entry silently lying that this file is fully done.
+            // instead of a resume entry silently lying that this file is fully done. A companion
+            // move failure gets the same "not actually done" treatment via CompanionMoveFailed -
+            // the video itself IS filed correctly, only its companions are stranded, so this lane's
+            // next PrepareLane call retries just the companion move (see the companion-retry loop
+            // there), not a full re-route. Code-review finding: a deferred cleanup (arrCleanupSafe
+            // false, but nothing else wrong) used to fall straight through to Completed here too -
+            // accurate about the video/companions, but it meant NOTHING ever came back to retry
+            // the *arr confirmation and finish the cleanup, so an unconfirmed rescan could leave an
+            // empty source folder behind forever. CleanupPending tracks exactly that remaining
+            // work, retried by its own loop in PrepareLaneAsync (whether the rescan wasn't
+            // confirmed, or the cleanup call itself threw once it was - see cleanupFailed above).
             if (moveFailed)
             {
                 resumeEntry.Status = ResumeStatus.MoveFailed;
                 resumeEntry.EncodedFilePath = currentPath;
                 resumeEntry.EncodedFileDesiredName = desiredFileName;
+            }
+            else if (companionMoveFailed)
+            {
+                resumeEntry.Status = ResumeStatus.CompanionMoveFailed;
+                resumeEntry.PendingCompanionSourceDirectory = file.DirectoryName;
+                resumeEntry.PendingCompanionVideoDestPath = routedDestPath;
+            }
+            else if (routedDestPath is not null && (!arrCleanupSafe || cleanupFailed))
+            {
+                resumeEntry.Status = ResumeStatus.CleanupPending;
+                resumeEntry.PendingCompanionSourceDirectory = file.DirectoryName;
+                resumeEntry.PendingCompanionVideoDestPath = routedDestPath;
             }
             else
             {

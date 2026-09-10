@@ -53,6 +53,10 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
             statusBanner = "<div class=\"banner ok\">Run completed with no errors.</div>";
         }
 
+        var retryBanner = model.RetriesSucceeded > 0
+            ? $"<div class=\"banner info\">{model.RetriesSucceeded} previously deferred/stranded file(s) (a failed move, a failed companion-file move, or a deferred Sonarr/Radarr rescan or source-folder cleanup) were retried successfully this pass.</div>"
+            : "";
+
         var sb = new StringBuilder();
         sb.Append($@"<!DOCTYPE html>
 <html>
@@ -70,6 +74,7 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
   .banner {{ padding: 0.75rem 1rem; border-radius: 6px; margin: 1rem 0; font-weight: 600; }}
   .banner.ok {{ background: #e3f7e8; color: #16693a; }}
   .banner.err {{ background: #fdeaea; color: #a1231e; }}
+  .banner.info {{ background: #e8f1fb; color: #205081; }}
   .table-wrap {{ overflow-x: auto; margin: 0.5rem 0 1.5rem 0; }}
   table {{ border-collapse: collapse; width: 100%; min-width: 640px; margin: 0; background: #fff; }}
   th, td {{ border: 1px solid #ddd; padding: 6px 10px; text-align: left; font-size: 0.9em; }}
@@ -92,6 +97,7 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
 </div>
 <p class=""muted"">{WebUtility.HtmlEncode(runLabel)} {WebUtility.HtmlEncode(timestamp)} &nbsp;|&nbsp; Duration: {model.RunTime.Hours}h {model.RunTime.Minutes}m {model.RunTime.Seconds}s</p>
 {statusBanner}
+{retryBanner}
 <div class=""summary-grid"">
   <div class=""stat""><div class=""label"">Files processed</div><div class=""value"">{totalFiles}</div></div>
   <div class=""stat""><div class=""label"">Before</div><div class=""value"">{totalBeg} GB</div></div>

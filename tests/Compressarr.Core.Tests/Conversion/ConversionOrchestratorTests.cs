@@ -264,12 +264,13 @@ file sealed class NoOpProgressReporter : IRunProgressReporter
 
 file sealed class NoOpArrUnmonitorService : IArrUnmonitorService
 {
-    public Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
+    public Task<ArrUnmonitorResult> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ArrUnmonitorResult(null, ArrRescanOutcome.NotEnabled));
 }
 
 file sealed class ThrowingArrUnmonitorService : IArrUnmonitorService
 {
-    public Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default) =>
+    public Task<ArrUnmonitorResult> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default) =>
         throw new InvalidOperationException("Sonarr API unreachable");
 }
 
@@ -277,10 +278,41 @@ file sealed class RecordingArrUnmonitorService : IArrUnmonitorService
 {
     public int CallCount { get; private set; }
 
-    public Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default)
+    public Task<ArrUnmonitorResult> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default)
     {
         CallCount++;
-        return Task.FromResult<string?>("Unmonitored");
+        return Task.FromResult(new ArrUnmonitorResult("Unmonitored", ArrRescanOutcome.Completed));
+    }
+}
+
+/// <summary>Returns whatever ArrRescanOutcome the test asks for, without a throw - lets a test
+/// exercise the SafeToCleanUp gating in ConversionOrchestrator directly (a Failed/TimedOut/
+/// Cancelled outcome is a normal, non-throwing return, not an exception - see
+/// IArrUnmonitorService.UnmonitorAsync's own doc comment for why).</summary>
+file sealed class FixedOutcomeArrUnmonitorService : IArrUnmonitorService
+{
+    private readonly ArrRescanOutcome _outcome;
+    public FixedOutcomeArrUnmonitorService(ArrRescanOutcome outcome) => _outcome = outcome;
+
+    public Task<ArrUnmonitorResult> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ArrUnmonitorResult("Radarr: unmonitored the matching movie and rescanned the library.", _outcome));
+}
+
+/// <summary>Returns a different outcome each call, in order - lets a test drive a multi-pass
+/// scenario (e.g. TimedOut on the first pass's rescan, Completed on a later retry's fresh one)
+/// against the SAME ConversionOrchestrator instance, matching how a real Sonarr/Radarr rescan that
+/// eventually catches up across polls would behave. Repeats the last outcome once the list is
+/// exhausted, so a test doesn't need to provide one entry per call it makes.</summary>
+file sealed class SequencedOutcomeArrUnmonitorService : IArrUnmonitorService
+{
+    private readonly Queue<ArrRescanOutcome> _outcomes;
+    private ArrRescanOutcome _last;
+    public SequencedOutcomeArrUnmonitorService(params ArrRescanOutcome[] outcomes) => _outcomes = new Queue<ArrRescanOutcome>(outcomes);
+
+    public Task<ArrUnmonitorResult> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default)
+    {
+        _last = _outcomes.Count > 0 ? _outcomes.Dequeue() : _last;
+        return Task.FromResult(new ArrUnmonitorResult("Radarr: unmonitored the matching movie and rescanned the library.", _last));
     }
 }
 
@@ -313,6 +345,18 @@ file sealed class ThrowOnMoveCompanionFileService : ICompanionFileService
 
     public void CleanUpEmptySourceFolder(string originalFileDirectory, string inputRoot, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, DeleteAfterConvertMode unmatchedCompanionAction) =>
         CleanUpCalled = true;
+}
+
+/// <summary>Inverse of ThrowOnMoveCompanionFileService - succeeds on MoveCompanionFiles, throws on
+/// CleanUpEmptySourceFolder (simulating a locked file, permission error, antivirus interference,
+/// etc during the actual folder removal, AFTER the *arr rescan has already been positively
+/// confirmed complete).</summary>
+file sealed class ThrowOnCleanupCompanionFileService : ICompanionFileService
+{
+    public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string routedVideoDestPath, DeleteAfterConvertMode deleteAfterConvert, IReadOnlyList<string> companionExtensions, DeleteAfterConvertMode unmatchedCompanionAction, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite) { }
+
+    public void CleanUpEmptySourceFolder(string originalFileDirectory, string inputRoot, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, DeleteAfterConvertMode unmatchedCompanionAction) =>
+        throw new IOException("Access to the path is denied.");
 }
 
 file sealed class NoOpResumeStateStore : IResumeStateStore
@@ -1955,6 +1999,627 @@ public class ConversionOrchestratorTests : IDisposable
         Assert.True(result.Success);
         Assert.Contains("Companion files not moved", result.PostProcessWarning);
         Assert.False(companionService.CleanUpCalled, "a companion left stranded by a failed move must not have its folder swept as if genuinely empty");
+    }
+
+    // Code-review finding (pre-release review, HIGH): the source folder cleanup used to run
+    // whenever the arr-unmonitor CALL didn't throw, regardless of whether the rescan it triggered
+    // actually confirmed finishing - a timeout, a "failed" status, or a cancelled wait all left the
+    // folder deleted anyway, which is exactly the bug the whole unmonitor-before-cleanup ordering
+    // was meant to prevent (Sonarr/Radarr reads an already-gone folder as disconnected, not empty,
+    // and never clears the episode/movie). Fixed via ArrRescanOutcome/SafeToCleanUp - cleanup now
+    // only proceeds once the rescan is POSITIVELY confirmed complete, not just "the call returned."
+    [Theory]
+    [InlineData(ArrRescanOutcome.TimedOut)]
+    [InlineData(ArrRescanOutcome.Failed)]
+    [InlineData(ArrRescanOutcome.Cancelled)]
+    public async Task ProcessLaneAsync_ArrRescanNotConfirmedComplete_DoesNotRunSourceFolderCleanup(ArrRescanOutcome outcome)
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        // Nested subfolder, same shape as the orphaned-source-folder regression test - this is
+        // exactly what CleanUpEmptySourceFolder would remove if it ran.
+        var sourceSubfolder = Path.Combine(inputDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(sourceSubfolder);
+        var sourcePath = Path.Combine(sourceSubfolder, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = movieBaseDir
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        // Real CompanionFileService (not a NoOp) so CleanUpEmptySourceFolder's actual behavior is
+        // exercised - a test using a NoOp fake couldn't distinguish "correctly skipped" from
+        // "would have thrown anyway."
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RecursiveFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new CompanionFileService(new DeletingTrashService()), new FixedOutcomeArrUnmonitorService(outcome),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>();
+        var results = await RunLaneAsync(orchestrator,
+            lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        // The video itself converted and routed successfully - only the folder cleanup is
+        // deferred, not the file's own disposition.
+        Assert.True(result.Success);
+        Assert.Contains("cleanup deferred", result.PostProcessWarning);
+        Assert.True(File.Exists(Path.Combine(movieBaseDir, "Caddyshack (1980)", "Caddyshack (1980).mkv")));
+
+        // The real assertion: an unconfirmed rescan must leave the source folder alone.
+        Assert.False(File.Exists(sourcePath), "the video's own source file should still be moved/deleted as normal");
+        Assert.True(Directory.Exists(sourceSubfolder), "the now-empty source folder must survive until the rescan is confirmed complete");
+
+        // Code-review follow-up finding: a deferred cleanup used to be reported as Completed with
+        // no persistent state, so nothing ever came back to finish it. It must be tracked instead.
+        var entry = Assert.Single(resumeState);
+        Assert.Equal(ResumeStatus.CleanupPending, entry.Status);
+        Assert.Equal(sourceSubfolder, entry.PendingCompanionSourceDirectory);
+        Assert.Equal(Path.Combine(movieBaseDir, "Caddyshack (1980)", "Caddyshack (1980).mkv"), entry.PendingCompanionVideoDestPath);
+    }
+
+    // The other half of the same fix, proven end-to-end: a CleanupPending entry left by a first
+    // pass whose rescan never confirmed must actually get retried (not just remembered) once a
+    // later pass's fresh rescan DOES confirm complete.
+    [Fact]
+    public async Task PrepareLaneAsync_CleanupPendingEntry_RetriesTheRescanAndRemovesTheFolderOnceConfirmed()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourceSubfolder = Path.Combine(inputDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(sourceSubfolder);
+        var sourcePath = Path.Combine(sourceSubfolder, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = movieBaseDir
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        // First call (the video's own first pass) times out; every call after (the cleanup-retry
+        // loop's fresh rescan) confirms complete.
+        var arrService = new SequencedOutcomeArrUnmonitorService(ArrRescanOutcome.TimedOut, ArrRescanOutcome.Completed);
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RecursiveFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new CompanionFileService(new DeletingTrashService()), arrService,
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+        var resumeState = new List<ResumeEntry>();
+
+        // Pass 1: encode + route succeeds, rescan times out - cleanup deferred.
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", resumeState, resumeFilePath, CancellationToken.None);
+
+        var afterFirstPass = Assert.Single(resumeState);
+        Assert.Equal(ResumeStatus.CleanupPending, afterFirstPass.Status);
+        Assert.True(Directory.Exists(sourceSubfolder), "cleanup must stay deferred after an unconfirmed rescan");
+
+        // Pass 2: nothing new to encode (Input has no video left) - only the cleanup retry runs,
+        // and this time the rescan is confirmed complete.
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000100", resumeState, resumeFilePath, CancellationToken.None);
+
+        var afterSecondPass = Assert.Single(resumeState);
+        Assert.Equal(ResumeStatus.Completed, afterSecondPass.Status);
+        Assert.Null(afterSecondPass.PendingCompanionSourceDirectory);
+        Assert.Null(afterSecondPass.PendingCompanionVideoDestPath);
+        Assert.False(Directory.Exists(sourceSubfolder), "the now-confirmed-safe folder should finally be removed");
+    }
+
+    // Reviewer's explicit "also test" cases: the SAME state gap existed at the tail of both retry
+    // loops, not just the first pass - a retry that itself succeeds but whose own fresh rescan
+    // isn't confirmed must land on CleanupPending too, not Completed.
+    [Fact]
+    public async Task PrepareLaneAsync_MoveFailedRetrySucceeds_ArrRescanNotConfirmed_LandsOnCleanupPending()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = @"Z:\Unavailable\Movies" // first pass: unreachable, forces MoveFailed
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new FixedOutcomeArrUnmonitorService(ArrRescanOutcome.TimedOut),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>();
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", resumeState, resumeFilePath, CancellationToken.None);
+        Assert.Equal(ResumeStatus.MoveFailed, Assert.Single(resumeState).Status);
+
+        // Second pass: base path is reachable now, so the move retry itself succeeds - but the
+        // arr service always times out, so the entry must land on CleanupPending, not Completed.
+        lane.MovieBasePath = movieBaseDir;
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000100", resumeState, resumeFilePath, CancellationToken.None);
+
+        var entry = Assert.Single(resumeState);
+        Assert.Equal(ResumeStatus.CleanupPending, entry.Status);
+        Assert.True(File.Exists(Path.Combine(movieBaseDir, "Caddyshack (1980)", "Caddyshack (1980).mkv")), "the move retry itself should still have succeeded");
+    }
+
+    [Fact]
+    public async Task PrepareLaneAsync_CompanionMoveFailedRetrySucceeds_ArrRescanNotConfirmed_LandsOnCleanupPending()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourceSubfolder = Path.Combine(inputDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(sourceSubfolder);
+        var strandedCompanionPath = Path.Combine(sourceSubfolder, "Caddyshack (1980).en.srt");
+        File.WriteAllText(strandedCompanionPath, "subtitle");
+
+        var videoDestFolder = Path.Combine(movieBaseDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(videoDestFolder);
+        var videoDestPath = Path.Combine(videoDestFolder, "Caddyshack (1980).mkv");
+        File.WriteAllText(videoDestPath, "already routed");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = movieBaseDir
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RecursiveFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new CompanionFileService(new DeletingTrashService()), new FixedOutcomeArrUnmonitorService(ArrRescanOutcome.TimedOut),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>
+        {
+            new()
+            {
+                LaneId = "lane1",
+                FullName = Path.Combine(sourceSubfolder, "Caddyshack (1980).mkv"),
+                Status = ResumeStatus.CompanionMoveFailed,
+                PendingCompanionSourceDirectory = sourceSubfolder,
+                PendingCompanionVideoDestPath = videoDestPath
+            }
+        };
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+        new JsonResumeStateStore().Save(resumeState, resumeFilePath);
+
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", resumeState, resumeFilePath, CancellationToken.None);
+
+        var entry = Assert.Single(resumeState);
+        // The companion retry itself succeeded (it moved) - only the fresh rescan wasn't confirmed.
+        Assert.Equal(ResumeStatus.CleanupPending, entry.Status);
+        Assert.True(File.Exists(Path.Combine(videoDestFolder, "Caddyshack (1980).en.srt")));
+        Assert.False(File.Exists(strandedCompanionPath));
+        // Cleanup itself must still be deferred, same as the first-pass case.
+        Assert.True(Directory.Exists(sourceSubfolder));
+    }
+
+    // Code-review finding (follow-up review, MEDIUM): once the *arr rescan WAS positively
+    // confirmed, CleanUpEmptySourceFolder was still called inside a "log and move on" try/catch -
+    // if the filesystem cleanup itself threw (locked file, permission, antivirus interference,
+    // etc), the entry was marked Completed anyway, permanently forgetting a transient problem that
+    // should have gotten another chance. All four call sites (first-pass, MoveFailed retry,
+    // CompanionMoveFailed retry, and the CleanupPending retry loop itself) now land on
+    // CleanupPending instead when the cleanup call throws, not just when the rescan isn't confirmed.
+    [Fact]
+    public async Task ProcessLaneAsync_ArrConfirmedButCleanupThrows_LandsOnCleanupPendingNotCompleted()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourceSubfolder = Path.Combine(inputDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(sourceSubfolder);
+        File.WriteAllText(Path.Combine(sourceSubfolder, "Caddyshack (1980).mkv"), "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = movieBaseDir
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RecursiveFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new ThrowOnCleanupCompanionFileService(), new FixedOutcomeArrUnmonitorService(ArrRescanOutcome.Completed),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>();
+        var results = await RunLaneAsync(orchestrator,
+            lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.True(result.Success); // the video itself is fine - only cleanup is outstanding
+        // Code-review follow-up finding: unlike the sibling "rescan not confirmed" case, a
+        // filesystem cleanup exception used to leave PostProcessWarning null - the report could
+        // show a plain, unqualified "OK" for a file whose cleanup actually failed and is pending.
+        Assert.Contains("Source folder cleanup deferred", result.PostProcessWarning);
+
+        var entry = Assert.Single(resumeState);
+        Assert.Equal(ResumeStatus.CleanupPending, entry.Status);
+        Assert.Equal(sourceSubfolder, entry.PendingCompanionSourceDirectory);
+    }
+
+    [Fact]
+    public async Task PrepareLaneAsync_CleanupPendingEntry_ArrConfirmedButCleanupThrows_StaysCleanupPending()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourceSubfolder = Path.Combine(inputDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(sourceSubfolder);
+        var videoDestFolder = Path.Combine(movieBaseDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(videoDestFolder);
+        var videoDestPath = Path.Combine(videoDestFolder, "Caddyshack (1980).mkv");
+        File.WriteAllText(videoDestPath, "already routed");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = movieBaseDir
+        };
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RecursiveFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new ThrowOnCleanupCompanionFileService(), new FixedOutcomeArrUnmonitorService(ArrRescanOutcome.Completed),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>
+        {
+            new()
+            {
+                LaneId = "lane1",
+                FullName = Path.Combine(sourceSubfolder, "Caddyshack (1980).mkv"),
+                Status = ResumeStatus.CleanupPending,
+                PendingCompanionSourceDirectory = sourceSubfolder,
+                PendingCompanionVideoDestPath = videoDestPath
+            }
+        };
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+        new JsonResumeStateStore().Save(resumeState, resumeFilePath);
+
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", resumeState, resumeFilePath, CancellationToken.None);
+
+        var entry = Assert.Single(resumeState);
+        Assert.Equal(ResumeStatus.CleanupPending, entry.Status);
+        Assert.NotNull(entry.LastRetryFailureMessage);
+        Assert.True(Directory.Exists(sourceSubfolder), "the folder cleanup threw, so the folder must still be there to retry");
+    }
+
+    [Fact]
+    public async Task PrepareLaneAsync_MoveFailedRetrySucceeds_ArrConfirmedButCleanupThrows_LandsOnCleanupPending()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = @"Z:\Unavailable\Movies" // first pass: unreachable, forces MoveFailed
+        };
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new ThrowOnCleanupCompanionFileService(), new FixedOutcomeArrUnmonitorService(ArrRescanOutcome.Completed),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>();
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", resumeState, resumeFilePath, CancellationToken.None);
+        Assert.Equal(ResumeStatus.MoveFailed, Assert.Single(resumeState).Status);
+
+        // Second pass: base path is reachable now - the move retry succeeds, the arr rescan
+        // confirms complete, but the folder cleanup itself throws.
+        lane.MovieBasePath = movieBaseDir;
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000100", resumeState, resumeFilePath, CancellationToken.None);
+
+        var entry = Assert.Single(resumeState);
+        Assert.Equal(ResumeStatus.CleanupPending, entry.Status);
+        Assert.True(File.Exists(Path.Combine(movieBaseDir, "Caddyshack (1980)", "Caddyshack (1980).mkv")), "the move retry itself should still have succeeded");
+    }
+
+    [Fact]
+    public async Task PrepareLaneAsync_CompanionMoveFailedRetrySucceeds_ArrConfirmedButCleanupThrows_LandsOnCleanupPending()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        // Deliberately no physical companion file left in sourceSubfolder - the test fake's
+        // RecursiveFolderScanner (unlike the real VideoFileScanner) doesn't filter by extension,
+        // so a leftover file there would get picked up as a spurious "new video" on the scan phase
+        // that runs later in the same PrepareLaneAsync call, polluting resumeState with an unrelated
+        // second entry. This test only needs to isolate the CleanUpEmptySourceFolder exception path,
+        // not re-prove the companion move itself (already covered by the sibling test above).
+        var sourceSubfolder = Path.Combine(inputDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(sourceSubfolder);
+
+        var videoDestFolder = Path.Combine(movieBaseDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(videoDestFolder);
+        var videoDestPath = Path.Combine(videoDestFolder, "Caddyshack (1980).mkv");
+        File.WriteAllText(videoDestPath, "already routed");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = movieBaseDir
+        };
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RecursiveFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new ThrowOnCleanupCompanionFileService(), new FixedOutcomeArrUnmonitorService(ArrRescanOutcome.Completed),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>
+        {
+            new()
+            {
+                LaneId = "lane1",
+                FullName = Path.Combine(sourceSubfolder, "Caddyshack (1980).mkv"),
+                Status = ResumeStatus.CompanionMoveFailed,
+                PendingCompanionSourceDirectory = sourceSubfolder,
+                PendingCompanionVideoDestPath = videoDestPath
+            }
+        };
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+        new JsonResumeStateStore().Save(resumeState, resumeFilePath);
+
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", resumeState, resumeFilePath, CancellationToken.None);
+
+        var entry = Assert.Single(resumeState);
+        Assert.Equal(ResumeStatus.CleanupPending, entry.Status);
+    }
+
+    // Code-review finding (pre-release review, MEDIUM): a companion-file move failure was logged
+    // and warned about, but the resume entry was still marked Completed - nothing ever came back
+    // around to retry the stranded companion, so it just sat there forever unless a human noticed
+    // the warning and moved it by hand. Fixed via the new CompanionMoveFailed status: the video
+    // itself IS done (this is NOT the same as a real move failure), only its companions need a
+    // retry, which happens automatically on this lane's next pass (PrepareLaneAsync's own
+    // companion-retry loop - see the sibling test below).
+    [Fact]
+    public async Task ProcessLaneAsync_CompanionFileMoveFails_MarksResumeEntryCompanionMoveFailedForRetry()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourceSubfolder = Path.Combine(inputDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(sourceSubfolder);
+        var sourcePath = Path.Combine(sourceSubfolder, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = movieBaseDir
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var resumeState = new List<ResumeEntry>();
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RecursiveFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new ThrowOnMoveCompanionFileService(), new NoOpArrUnmonitorService(),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var entry = Assert.Single(resumeState);
+        var expectedDestPath = Path.Combine(movieBaseDir, "Caddyshack (1980)", "Caddyshack (1980).mkv");
+        Assert.Equal(ResumeStatus.CompanionMoveFailed, entry.Status);
+        Assert.Equal(sourceSubfolder, entry.PendingCompanionSourceDirectory);
+        Assert.Equal(expectedDestPath, entry.PendingCompanionVideoDestPath);
+        // The video itself still landed correctly - only its companions are stranded.
+        Assert.True(File.Exists(expectedDestPath));
+    }
+
+    [Fact]
+    public async Task PrepareLaneAsync_CompanionMoveFailedEntry_RetriesTheStrandedCompanionAndCleansUpTheFolder()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        // The stranded companion, still sitting in the video's own original source folder - the
+        // video itself is long gone from here (already routed on an earlier pass).
+        var sourceSubfolder = Path.Combine(inputDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(sourceSubfolder);
+        var strandedCompanionPath = Path.Combine(sourceSubfolder, "Caddyshack (1980).en.srt");
+        File.WriteAllText(strandedCompanionPath, "subtitle");
+
+        // Where the video already, successfully, landed on the earlier pass.
+        var videoDestFolder = Path.Combine(movieBaseDir, "Caddyshack (1980)");
+        Directory.CreateDirectory(videoDestFolder);
+        var videoDestPath = Path.Combine(videoDestFolder, "Caddyshack (1980).mkv");
+        File.WriteAllText(videoDestPath, "already routed");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = movieBaseDir
+        };
+
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RecursiveFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new CompanionFileService(new DeletingTrashService()), new NoOpArrUnmonitorService(),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>
+        {
+            new()
+            {
+                LaneId = "lane1",
+                FullName = Path.Combine(sourceSubfolder, "Caddyshack (1980).mkv"), // original video path, no longer on disk
+                Status = ResumeStatus.CompanionMoveFailed,
+                PendingCompanionSourceDirectory = sourceSubfolder,
+                PendingCompanionVideoDestPath = videoDestPath
+            }
+        };
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+        new JsonResumeStateStore().Save(resumeState, resumeFilePath);
+
+        await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", resumeState, resumeFilePath, CancellationToken.None);
+
+        var entry = Assert.Single(resumeState);
+        Assert.Equal(ResumeStatus.Completed, entry.Status);
+        Assert.Null(entry.PendingCompanionSourceDirectory);
+        Assert.Null(entry.PendingCompanionVideoDestPath);
+
+        // The companion actually moved alongside the video...
+        Assert.True(File.Exists(Path.Combine(videoDestFolder, "Caddyshack (1980).en.srt")));
+        Assert.False(File.Exists(strandedCompanionPath));
+        // ...and now that it's no longer stranded, the source folder is safe to remove too.
+        Assert.False(Directory.Exists(sourceSubfolder));
     }
 
     [Fact]

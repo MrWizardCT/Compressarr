@@ -75,7 +75,9 @@ public class ArrUnmonitorServiceTests
 
         var result = await service.UnmonitorAsync(config, "Show.S01E01.mkv", isTv: true);
 
-        Assert.Null(result);
+        Assert.Null(result.Message);
+        Assert.Equal(ArrRescanOutcome.NotEnabled, result.Outcome);
+        Assert.True(result.SafeToCleanUp);
         Assert.Empty(client.Calls);
     }
 
@@ -98,7 +100,9 @@ public class ArrUnmonitorServiceTests
 
         var result = await service.UnmonitorAsync(config, "Unmatched.mkv", isTv: true);
 
-        Assert.Contains("no matching monitored episode", result);
+        Assert.Contains("no matching monitored episode", result.Message);
+        Assert.Equal(ArrRescanOutcome.NoMatch, result.Outcome);
+        Assert.True(result.SafeToCleanUp);
         Assert.DoesNotContain(client.Calls, c => c.Method is "PUT" or "POST");
     }
 
@@ -119,7 +123,9 @@ public class ArrUnmonitorServiceTests
 
         var result = await service.UnmonitorAsync(config, "Show.S01E01.mkv", isTv: true);
 
-        Assert.Contains("already unmonitored", result);
+        Assert.Contains("already unmonitored", result.Message);
+        Assert.Equal(ArrRescanOutcome.Completed, result.Outcome);
+        Assert.True(result.SafeToCleanUp);
         Assert.DoesNotContain(client.Calls, c => c.Method == "PUT"); // episode already unmonitored, no flip needed
         Assert.Contains(client.Calls, c => c.Method == "POST" && c.Path == "/api/v3/command"); // rescan still fires
     }
@@ -141,7 +147,9 @@ public class ArrUnmonitorServiceTests
 
         var result = await service.UnmonitorAsync(config, "Show.S01E01.mkv", isTv: true);
 
-        Assert.Contains("unmonitored the matching episode", result);
+        Assert.Contains("unmonitored the matching episode", result.Message);
+        Assert.Equal(ArrRescanOutcome.Completed, result.Outcome);
+        Assert.True(result.SafeToCleanUp);
         Assert.Contains(client.Calls, c => c.Method == "PUT" && c.Path == "/api/v3/episode/7");
         Assert.Contains(client.Calls, c => c.Method == "POST" && c.Path == "/api/v3/command");
     }
@@ -169,7 +177,9 @@ public class ArrUnmonitorServiceTests
 
         var result = await service.UnmonitorAsync(config, "Movie (2026).mkv", isTv: false);
 
-        Assert.Contains("unmonitored the matching movie", result);
+        Assert.Contains("unmonitored the matching movie", result.Message);
+        Assert.Equal(ArrRescanOutcome.Completed, result.Outcome);
+        Assert.True(result.SafeToCleanUp);
         Assert.Equal(3, client.Calls.Count(c => c.Method == "GET" && c.Path == "/api/v3/command/5"));
     }
 
@@ -192,11 +202,18 @@ public class ArrUnmonitorServiceTests
         // The real assertion is that this call returns AT ALL within a sane test timeout, instead
         // of hanging indefinitely - TinyMaxWait (100ms) bounds it. Reference-compares which task
         // actually won the race, rather than type-checking the result (an async method's returned
-        // Task isn't literally typeof(Task<string?>) at the implementation level).
+        // Task isn't literally typeof(Task<ArrUnmonitorResult>) at the implementation level).
         var unmonitorTask = service.UnmonitorAsync(config, "Movie (2026).mkv", isTv: false);
         var completed = await Task.WhenAny(unmonitorTask, Task.Delay(TimeSpan.FromSeconds(5)));
 
         Assert.Same(unmonitorTask, completed);
+
+        // The whole point of tracking outcomes (see ArrRescanOutcome): a rescan that never
+        // confirmed finishing must NOT be reported as safe to clean up the source folder - giving
+        // up waiting is not the same as knowing Sonarr/Radarr actually saw it.
+        var result = await unmonitorTask;
+        Assert.Equal(ArrRescanOutcome.TimedOut, result.Outcome);
+        Assert.False(result.SafeToCleanUp);
     }
 
     [Fact]
@@ -219,7 +236,13 @@ public class ArrUnmonitorServiceTests
         // only the rescan's OWN outcome failed, which is a warning, not something that should make
         // UnmonitorAsync itself throw or report failure.
         var result = await service.UnmonitorAsync(config, "Movie (2026).mkv", isTv: false);
-        Assert.Contains("unmonitored the matching movie", result);
+        Assert.Contains("unmonitored the matching movie", result.Message);
+
+        // The rescan the unmonitor+PUT/POST call triggered did NOT positively confirm finishing -
+        // it reached "failed" - so a caller deciding whether to remove the source folder must be
+        // told this isn't safe, even though the unmonitor call itself succeeded.
+        Assert.Equal(ArrRescanOutcome.Failed, result.Outcome);
+        Assert.False(result.SafeToCleanUp);
 
         Assert.Contains(logger.Logs, l => l.Severity == LogSeverity.Error && l.Message.Contains("Movie with ID 99 does not exist"));
     }
@@ -239,11 +262,16 @@ public class ArrUnmonitorServiceTests
         config.Arrs.Radarr = new ArrServiceSettings { Enabled = true, Url = "http://radarr:7878", ApiKey = "key" };
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        await service.UnmonitorAsync(config, "Movie (2026).mkv", isTv: false);
+        var result = await service.UnmonitorAsync(config, "Movie (2026).mkv", isTv: false);
         sw.Stop();
 
         Assert.True(sw.Elapsed >= fallbackDelay, $"Expected to wait at least {fallbackDelay}, only waited {sw.Elapsed}");
         // Never even tried to poll a command status - there was no id to poll with.
         Assert.DoesNotContain(client.Calls, c => c.Method == "GET" && c.Path.StartsWith("/api/v3/command/"));
+
+        // Nothing was actually observed to finish - honestly reported as unconfirmed rather than
+        // assumed safe, same reasoning as the timeout case.
+        Assert.Equal(ArrRescanOutcome.TimedOut, result.Outcome);
+        Assert.False(result.SafeToCleanUp);
     }
 }

@@ -35,6 +35,15 @@ public sealed class ReportModel
     /// The report shows a plain "Run:" label instead of "Run #N:" when this is 0.</summary>
     public int RunNumber { get; init; }
 
+    /// <summary>Count of resume entries whose deferred/stranded work was successfully resolved
+    /// this pass without a re-encode - a failed move, a failed companion-file move, or a
+    /// CleanupPending entry whose deferred Sonarr/Radarr rescan or source-folder cleanup finally
+    /// succeeded (see ResumeStatus.CleanupPending) - see RunResult.RetriesSucceeded. Shown as its
+    /// own note on the report since these entries never went through Results (no re-encode
+    /// happened, so there's no meaningful before/after size to report alongside a real
+    /// conversion), but the recovery succeeding is still real, worth-recording activity.</summary>
+    public int RetriesSucceeded { get; init; }
+
     public HistoryRollup? Today { get; init; }
     public HistoryRollup? ThisMonth { get; init; }
     public HistoryRollup? ThisYear { get; init; }

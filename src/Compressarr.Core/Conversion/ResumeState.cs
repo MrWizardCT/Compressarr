@@ -12,7 +12,28 @@ public enum ResumeStatus
     /// failed (unreachable network drive, disk full, permission error, etc.) - the encoded file is
     /// sitting wherever HandBrake wrote it (EncodedFilePath), not lost, and ConversionOrchestrator
     /// retries just the move (no re-encode) at the start of this lane's next pass.</summary>
-    MoveFailed
+    MoveFailed,
+
+    /// <summary>The video itself finished and was routed to its final destination successfully,
+    /// but moving its companion files (subtitles, .nfo, artwork) alongside it failed - the
+    /// companions are still sitting in PendingCompanionSourceDirectory, stranded. Unlike
+    /// MoveFailed, the video is fully done; ConversionOrchestrator retries just the companion move
+    /// (and, once that succeeds, the folder-emptiness cleanup that was skipped the first time) at
+    /// the start of this lane's next pass. A real gap found via code review: without a status to
+    /// track this, the entry was left Completed and nothing ever retried the stranded companions.</summary>
+    CompanionMoveFailed,
+
+    /// <summary>The video (and, if any, its companions) are both fully done and correctly filed -
+    /// only the source folder's own cleanup remains, deferred because the Sonarr/Radarr rescan
+    /// this entry's pass triggered was never positively confirmed complete (see
+    /// ArrRescanOutcome.SafeToCleanUp - a timeout, a "failed" status, or a cancelled wait). Unlike
+    /// MoveFailed/CompanionMoveFailed, nothing about the video or its companions needs redoing;
+    /// ConversionOrchestrator retries just the *arr confirmation (and, once THAT succeeds, the
+    /// folder cleanup that was skipped the first time) at the start of this lane's next pass. A
+    /// real gap found via code review: without a status to track this, the entry was left
+    /// Completed and nothing ever came back to finish the deferred cleanup, potentially leaving an
+    /// empty source folder behind forever.</summary>
+    CleanupPending
 }
 
 public sealed class ResumeEntry
@@ -45,6 +66,22 @@ public sealed class ResumeEntry
     /// same file-proliferation problem all over again just gated on "error" instead of "empty."
     /// Null once the entry isn't MoveFailed any more (succeeded, or removed).</summary>
     public string? LastRetryFailureMessage { get; set; }
+
+    /// <summary>Only set (and only meaningful) when Status is CompanionMoveFailed or
+    /// CleanupPending - the video's own original source folder. For CompanionMoveFailed, this is
+    /// where the stranded companion files are still sitting, so a later retry can find and move
+    /// them without needing the video's own path (which may already be gone by then). For
+    /// CleanupPending, this is simply the folder a later retry's own CleanUpEmptySourceFolder call
+    /// targets, once a fresh *arr confirmation says it's actually safe to.</summary>
+    public string? PendingCompanionSourceDirectory { get; set; }
+
+    /// <summary>Only set (and only meaningful) when Status is CompanionMoveFailed or
+    /// CleanupPending - the video's own actual final destination path. For CompanionMoveFailed,
+    /// needed to derive each companion's destination filename from the video's real (possibly
+    /// collision-renamed) stem - same reasoning as ICompanionFileService.MoveCompanionFiles' own
+    /// routedVideoDestPath parameter. For CleanupPending, needed only for its filename (to
+    /// re-derive the *arr lookup name and TV/movie classification for a fresh rescan attempt).</summary>
+    public string? PendingCompanionVideoDestPath { get; set; }
 
     /// <summary>User-set queue position within this lane's Pending entries, lower first - drives
     /// drag-to-reorder on the Monitor page's In Queue list. Entries without an explicit Order
@@ -141,7 +178,7 @@ public sealed class JsonResumeStateStore : IResumeStateStore
 
     public void DeleteIfComplete(List<ResumeEntry> state, string path)
     {
-        var hasOutstanding = state.Any(e => e.Status is ResumeStatus.Pending or ResumeStatus.Error or ResumeStatus.MoveFailed);
+        var hasOutstanding = state.Any(e => e.Status is ResumeStatus.Pending or ResumeStatus.Error or ResumeStatus.MoveFailed or ResumeStatus.CompanionMoveFailed or ResumeStatus.CleanupPending);
         if (!hasOutstanding && File.Exists(path))
         {
             File.Delete(path);

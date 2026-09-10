@@ -31,6 +31,7 @@ file sealed class DiskFullRunOrchestrator : IRunOrchestrator
         Report = new ReportModel { GeneratedAt = DateTime.Now, RunTime = TimeSpan.Zero, Lanes = Array.Empty<LaneReportSection>() },
         ReportFilePath = "unused",
         TotalFiles = 1,
+        RetriesSucceeded = 0,
         DiskFull = true
     };
 

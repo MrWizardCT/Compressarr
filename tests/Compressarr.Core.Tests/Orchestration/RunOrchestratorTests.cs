@@ -68,7 +68,8 @@ file sealed class NoOpCompanionFileService : ICompanionFileService
 
 file sealed class NoOpArrUnmonitorService : IArrUnmonitorService
 {
-    public Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
+    public Task<ArrUnmonitorResult> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new ArrUnmonitorResult(null, ArrRescanOutcome.NotEnabled));
 }
 
 file sealed class NoOpTrashService : ITrashService
@@ -539,6 +540,67 @@ public class RunOrchestratorTests : IDisposable
         Assert.Equal(0, result!.TotalFiles);
         Assert.True(Directory.Exists(config.Logging.LogFilePath) && Directory.GetFiles(config.Logging.LogFilePath).Length > 0,
             "a pass that hit a real error should keep its summary log even with 0 files processed");
+    }
+
+    // Code-review finding (pre-release review, LOW-MEDIUM): a pass whose ONLY activity was a
+    // successful MoveFailed retry never went through ProcessOneFileAsync (the encode already
+    // happened on an earlier pass - only the move itself was retried), so TotalFiles stayed 0 and
+    // this pass looked identical to a genuinely idle poll to both gates above - its own summary
+    // log got deleted and no report was ever written, even though a real, previously-stranded file
+    // was just successfully filed. RunResult.RetriesSucceeded (and RunOnceCoreAsync's report-write
+    // gate/RunOnceAsync's log-keep gate both checking it) fixes this: real activity now survives
+    // even when it produced no ConversionResult of its own.
+    [Fact]
+    public async Task RunOnceAsync_OnlyActivityIsSuccessfulMoveRetry_KeepsLogAndWritesReport()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+        // Input deliberately empty - nothing new to encode this pass, only the retry below.
+
+        var lane = MakeLane("lane1", "Test Lane", inputDir, outputDir);
+        lane.MovieBasePath = movieBaseDir;
+
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = true, ClearTitleMetadata = false } };
+        config.HandBrake.CliPath = Path.Combine(_tempDir, "HandBrakeCLI.exe");
+        config.HandBrake.PresetsPath = Path.Combine(_tempDir, "presets.json");
+        config.Logging.LogFilePath = Path.Combine(_tempDir, "Logs");
+        config.Report.ReportPath = Path.Combine(_tempDir, "Reports");
+        config.Lanes.Add(lane);
+
+        var logger = new Compressarr.Core.Logging.FileRunLogger();
+        var (orchestrator, resumeFilePath) = BuildOrchestrator(config, new RecordingProcessRunner(), logger: logger);
+
+        // Simulates an already-encoded file sitting in Output from an earlier pass, still needing
+        // its move to the movie library retried (base path was unreachable back then, reachable now).
+        var encodedFilePath = Path.Combine(outputDir, "Caddyshack (1980).compressarr-aaaaaaaa.mkv");
+        File.WriteAllText(encodedFilePath, "already encoded");
+        var resumeState = new List<ResumeEntry>
+        {
+            new()
+            {
+                LaneId = "lane1",
+                FullName = Path.Combine(inputDir, "Caddyshack (1980).mkv"),
+                Status = ResumeStatus.MoveFailed,
+                EncodedFilePath = encodedFilePath,
+                EncodedFileDesiredName = "Caddyshack (1980).mkv"
+            }
+        };
+        new JsonResumeStateStore().Save(resumeState, resumeFilePath);
+
+        var result = await orchestrator.RunOnceAsync(config);
+
+        Assert.NotNull(result);
+        Assert.Equal(0, result!.TotalFiles);
+        Assert.Equal(1, result.RetriesSucceeded);
+        Assert.True(File.Exists(Path.Combine(movieBaseDir, "Caddyshack (1980)", "Caddyshack (1980).mkv")), "the retried move should have actually landed the file");
+
+        Assert.True(Directory.Exists(config.Logging.LogFilePath) && Directory.GetFiles(config.Logging.LogFilePath).Length > 0,
+            "a pass whose only activity was a successful retry should keep its summary log, same as one that processed real files");
+        Assert.True(Directory.Exists(config.Report.ReportPath) && Directory.GetFiles(config.Report.ReportPath).Length > 0,
+            "a pass whose only activity was a successful retry should still get a report written");
     }
 
     // Same file-proliferation problem the test above guards against, but for a STANDING config
