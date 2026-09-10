@@ -58,13 +58,19 @@ public interface IConversionOrchestrator
     /// appended to it (no Output configured, FileBot path not found) - the caller supplies the
     /// list so it can merge these with whatever it already found itself (e.g. RunOrchestrator's
     /// own no-preset-configured/preset-not-found checks) into one combined per-lane list for the
-    /// report. Optional and simply not populated if the caller doesn't care.</summary>
+    /// report. Optional and simply not populated if the caller doesn't care.
+    ///
+    /// cancellationToken (Abort) is passed through to any MoveFailed-retry arr-unmonitor call this
+    /// makes - it can only stop that call's own rescan-completion WAIT early, not the retry's own
+    /// filesystem work (there's no in-flight HandBrakeCLI process here to kill, unlike
+    /// ProcessOneFileAsync's own use of a cancellation token).</summary>
     Task<LaneProcessingContext?> PrepareLaneAsync(
         LaneConfig lane,
         CompressarrConfig config,
         List<ResumeEntry> resumeState,
         string resumeFilePath,
-        List<ReportErrorCode>? reportProblems = null);
+        List<ReportErrorCode>? reportProblems = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Processes exactly one already-selected file for the lane context carries - fully
     /// finished (converted, routed, arr-unmonitored, companions handled) before returning, so the
@@ -155,7 +161,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         CompressarrConfig config,
         List<ResumeEntry> resumeState,
         string resumeFilePath,
-        List<ReportErrorCode>? reportProblems = null)
+        List<ReportErrorCode>? reportProblems = null,
+        CancellationToken cancellationToken = default)
     {
         var inputPath = _pathExpander.Expand(lane.Input);
         var outputBase = _pathExpander.Expand(lane.Output);
@@ -243,22 +250,34 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             // failed - in either case routing has nothing further to do with it, but unlike a
             // still-failing retry, this outcome is final (Completed, never revisited), so it needs
             // its clean human-readable name now rather than staying under its GUID staging one
-            // forever. Same "resting in Output" treatment ProcessOneFileAsync's own first-attempt
-            // path uses.
-            string RestInPlace(string physicalPath)
+            // forever. Same "resting in Output" treatment (now also collision-safe via
+            // FileRouter.ResolveCollision, not an unconditional overwrite) ProcessOneFileAsync's
+            // own first-attempt path uses - see there for why. Returns null (stay at physicalPath)
+            // when Skip applies to a real collision.
+            string? RestInPlace(string physicalPath)
             {
-                var restingPath = Path.Combine(Path.GetDirectoryName(physicalPath)!, desiredFileName);
-                File.Move(physicalPath, restingPath, overwrite: true);
-                return restingPath;
+                var desiredDestPath = Path.Combine(Path.GetDirectoryName(physicalPath)!, desiredFileName);
+                string resolvedDestPath;
+                try
+                {
+                    resolvedDestPath = FileRouter.ResolveCollision(desiredDestPath, config.Processing.OnDestinationCollision);
+                }
+                catch (DestinationCollisionSkippedException ex)
+                {
+                    _logger.Log($"  {ex.Message}");
+                    return null;
+                }
+                File.Move(physicalPath, resolvedDestPath, overwrite: true);
+                return resolvedDestPath;
             }
 
             // Only once this retry has genuinely reached its final resting place - either
             // routed, or deliberately left in place via a configured Skip - does the original
             // source get cleaned up, same "only once disposition is final" rule
-            // ProcessOneFileAsync's own first-attempt path follows. Called BEFORE
-            // MoveCompanionFiles below (not after): its own "is this folder now empty of video"
-            // cascade-delete check needs the source video already gone to correctly detect an
-            // otherwise-empty single-item folder and clean it up in that same call.
+            // ProcessOneFileAsync's own first-attempt path follows. Called before MoveCompanionFiles
+            // below simply so companions follow once the source is confirmed handled - the actual
+            // folder-emptiness cascade-delete (CleanUpEmptySourceFolder) runs much later now, after
+            // the arr-unmonitor/rescan step, and no longer depends on this ordering for correctness.
             void CleanUpRetriedSource()
             {
                 if (string.Equals(entry.FullName, currentPath, StringComparison.OrdinalIgnoreCase)) return;
@@ -282,6 +301,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             // still reach it.
             var originalSourceDirectory = Path.GetDirectoryName(entry.FullName)!;
             string? retryDestPath = null;
+            var companionMoveFailed = false;
 
             try
             {
@@ -293,7 +313,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 retrySucceeded = true;
                 _logger.Log($"  Retried move for '{desiredFileName}' - succeeded.");
 
-                currentPath = retryDestPath ?? RestInPlace(encodedFilePath);
+                currentPath = retryDestPath ?? RestInPlace(encodedFilePath) ?? encodedFilePath;
                 CleanUpRetriedSource();
 
                 if (retryDestPath is not null)
@@ -304,6 +324,10 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     }
                     catch (Exception ex)
                     {
+                        // Same reasoning as ProcessOneFileAsync's own call site: a companion left
+                        // stranded by a real move failure must not be swept up as an "unmatched
+                        // leftover" by the folder cleanup below.
+                        companionMoveFailed = true;
                         _logger.Log($"  Companion file handling skipped on move retry: {ex.Message}", LogSeverity.Error);
                     }
                 }
@@ -318,7 +342,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 entry.LastRetryFailureMessage = null;
                 retrySucceeded = true;
                 _logger.Log($"  {ex.Message}");
-                currentPath = RestInPlace(encodedFilePath);
+                currentPath = RestInPlace(encodedFilePath) ?? encodedFilePath;
                 CleanUpRetriedSource();
             }
             catch (Exception ex)
@@ -349,7 +373,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             {
                 try
                 {
-                    var arrResult = await _arrUnmonitor.UnmonitorAsync(config, desiredFileName, retryIsTv);
+                    var arrResult = await _arrUnmonitor.UnmonitorAsync(config, desiredFileName, retryIsTv, cancellationToken);
                     if (arrResult is not null) _logger.Log($"  {arrResult}");
                 }
                 catch (Exception ex)
@@ -361,8 +385,9 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 // while it still physically existed, is it actually safe to remove it if it's now
                 // empty - same ordering ProcessOneFileAsync's own call site follows, and for the
                 // same reason (a folder already gone at rescan time reads as disconnected, not
-                // empty, to Sonarr/Radarr).
-                if (retryDestPath is not null)
+                // empty, to Sonarr/Radarr). Skipped if the companion move itself failed - see
+                // ProcessOneFileAsync's own call site for why.
+                if (retryDestPath is not null && !companionMoveFailed)
                 {
                     try
                     {
@@ -665,11 +690,31 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             // stay independent for as long as this file's final disposition is still unresolved.
             var desiredFileName = Path.GetFileName(newFileName);
 
-            string RestInPlace(string physicalPath, string folder)
+            // Resolves the SAME OnDestinationCollision policy real routing already gets before
+            // resting the file in Output under its clean human-readable name - previously this
+            // always overwrote unconditionally, regardless of what the user configured, so two
+            // files that happened to both rest in Output under the same name (MoveFiles off, or a
+            // routing-level Skip - see below) could silently clobber each other even with
+            // Rename/Skip configured. Returns null (stay at physicalPath, under its current
+            // collision-safe temp name) when Skip applies to a real collision - the caller falls
+            // back to physicalPath itself in that case, matching how a routing-level Skip already
+            // leaves a file at tempFileName rather than renaming it.
+            string? RestInPlace(string physicalPath, string folder)
             {
-                var restingPath = Path.Combine(folder, desiredFileName);
-                File.Move(physicalPath, restingPath, overwrite: true);
-                return restingPath;
+                var desiredDestPath = Path.Combine(folder, desiredFileName);
+                string resolvedDestPath;
+                try
+                {
+                    resolvedDestPath = FileRouter.ResolveCollision(desiredDestPath, config.Processing.OnDestinationCollision);
+                }
+                catch (DestinationCollisionSkippedException ex)
+                {
+                    postProcessWarning = AppendWarning(postProcessWarning, ex.Message);
+                    _logger.Log($"  {ex.Message}");
+                    return null;
+                }
+                File.Move(physicalPath, resolvedDestPath, overwrite: true);
+                return resolvedDestPath;
             }
 
             var currentPath = tempFileName;
@@ -682,17 +727,19 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     // MoveFiles is false - nothing further to route to, so unlike the moveFailed
                     // branch below, this already IS the file's final resting place and needs its
                     // proper human-readable name now, not the collision-safe staging one.
-                    : RestInPlace(tempFileName, destFolder);
+                    : RestInPlace(tempFileName, destFolder) ?? tempFileName;
             }
             catch (DestinationCollisionSkippedException ex)
             {
                 // Configured to skip on collision, not an error - the encode succeeded and the
                 // result is exactly where it's meant to end up (Output). Same "final disposition
                 // reached" treatment as the MoveFiles=false case above - nothing will ever revisit
-                // this entry again, so it needs its clean resting name now too.
+                // this entry again, so it needs its clean resting name now too (or, if Output ALSO
+                // has a real collision on that name, RestInPlace falls back to leaving it under
+                // tempFileName rather than clobbering whatever's already there).
                 postProcessWarning = AppendWarning(postProcessWarning, ex.Message);
                 _logger.Log($"  {ex.Message}");
-                currentPath = RestInPlace(tempFileName, destFolder);
+                currentPath = RestInPlace(tempFileName, destFolder) ?? tempFileName;
             }
             catch (Exception ex)
             {
@@ -771,6 +818,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             // move anything alongside, and if moveFailed, there's nothing to move companions
             // alongside yet; they'll go together once a later retry (PrepareLaneAsync's MoveFailed
             // handling) actually succeeds.
+            var companionMoveFailed = false;
             if (routedDestPath is not null)
             {
                 try
@@ -779,6 +827,11 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 }
                 catch (Exception ex)
                 {
+                    // A companion that failed to move (locked file, permission error, etc.) is
+                    // still sitting in the source folder - companionMoveFailed suppresses the
+                    // folder cleanup below so it can't be swept up as an "unmatched leftover" and
+                    // deleted/recycled. A real data-loss edge case found via code review, not live.
+                    companionMoveFailed = true;
                     _logger.Log($"  Companion file handling skipped: {ex.Message}", LogSeverity.Error);
                     postProcessWarning = AppendWarning(postProcessWarning, $"Companion files not moved: {ex.Message}");
                 }
@@ -796,7 +849,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             {
                 try
                 {
-                    var arrResult = await _arrUnmonitor.UnmonitorAsync(config, file.Name, isTv);
+                    var arrResult = await _arrUnmonitor.UnmonitorAsync(config, file.Name, isTv, cancellationToken);
                     if (arrResult is not null)
                     {
                         _logger.Log($"  {arrResult}");
@@ -816,7 +869,10 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             // remove it if it's now empty - real regression this whole split guards against:
             // deleting the folder any earlier made a subsequent rescan see a disconnected root
             // instead of a genuinely-empty one, and Sonarr/Radarr would never clear the episode.
-            if (routedDestPath is not null)
+            // Skipped entirely if the companion move itself failed above - the folder isn't
+            // actually empty of "belongs here" content in that case, it's got a stranded
+            // companion still waiting to be moved, not a genuine orphan to sweep.
+            if (routedDestPath is not null && !companionMoveFailed)
             {
                 try
                 {

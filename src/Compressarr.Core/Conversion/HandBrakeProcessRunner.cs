@@ -197,6 +197,24 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
         if (current.Length > 0) result.Add(current.ToString());
         return result;
     }
+
+    /// <summary>True if input has an unterminated quote - the same "still inside a quote" state
+    /// SplitExtraOptions' own tokenizer would be left in at the end of the string, which silently
+    /// folds everything after the stray quote into one final token rather than actually rejecting
+    /// it. Deliberately surfaced as a Settings-page validation warning (see SettingsValidator)
+    /// instead of making SplitExtraOptions itself throw at encode time - a malformed value should
+    /// be visible and fixable on the Settings page before it's ever used, not crash an otherwise-
+    /// healthy run the moment it's used. A pure static function, same testable-without-a-process
+    /// pattern as SplitExtraOptions/DetermineSuccess above.</summary>
+    internal static bool HasUnbalancedQuotes(string input)
+    {
+        var inQuotes = false;
+        foreach (var c in input)
+        {
+            if (c == '"') inQuotes = !inQuotes;
+        }
+        return inQuotes;
+    }
 }
 
 public sealed record HandBrakeProgress(double Percent, double? Fps, string? Eta);

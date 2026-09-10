@@ -21,6 +21,7 @@ file sealed class RecordingRunLogger : IRunLogger
         _lastProblemMessages[key] = message;
     }
     public void ClearProblem(string key) => _lastProblemMessages.Remove(key);
+    public bool HasLaneProblemsChanged(string laneId, IReadOnlyCollection<string> problemCodes) => true;
     public void FileStart(string laneDisplayName, int index, int total, string fileName, double sizeGb, string contentType, string preset) { }
     public void FileComplete(string fileName, double beginSizeGb, double endSizeGb, TimeSpan duration, bool success, string? detailLogFile) { }
 }

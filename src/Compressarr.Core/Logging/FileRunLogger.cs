@@ -10,6 +10,10 @@ public sealed class FileRunLogger : IRunLogger
     // comment on IRunLogger.
     private readonly Dictionary<string, string> _lastProblemMessages = new();
 
+    // Same "survives across polls, not across a restart" lifetime as _lastProblemMessages above -
+    // see HasLaneProblemsChanged's own doc comment on IRunLogger.
+    private readonly Dictionary<string, string> _lastReportedLaneProblems = new();
+
     public event Action<string, LogSeverity>? LineWritten;
 
     public bool HasLoggedError { get; private set; }
@@ -51,6 +55,14 @@ public sealed class FileRunLogger : IRunLogger
     }
 
     public void ClearProblem(string key) => _lastProblemMessages.Remove(key);
+
+    public bool HasLaneProblemsChanged(string laneId, IReadOnlyCollection<string> problemCodes)
+    {
+        var current = string.Join(",", problemCodes.OrderBy(c => c, StringComparer.Ordinal));
+        var changed = !_lastReportedLaneProblems.TryGetValue(laneId, out var last) || last != current;
+        _lastReportedLaneProblems[laneId] = current;
+        return changed;
+    }
 
     public void FileStart(string laneDisplayName, int index, int total, string fileName, double sizeGb, string contentType, string preset)
     {

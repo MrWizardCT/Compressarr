@@ -120,6 +120,44 @@ public class SettingsValidatorTests : IDisposable
         Assert.Contains(issues, i => i.Field == "vidTypes");
     }
 
+    // Code-review finding (v2.1.4 review, #5 LOW-MED): a malformed Extra CLI Options value (an
+    // unterminated quote) used to just silently mis-tokenize at encode time with no warning
+    // anywhere. Surfaced here instead, on the Settings page, the same way every other base-
+    // configuration problem already is.
+
+    [Fact]
+    public void Validate_UnbalancedQuotesInHandBrakeOptions_FlagsField()
+    {
+        var config = MakeHealthyConfig();
+        config.HandBrake.Options = "--custom-anamorphic \"16:9 --two-pass";
+
+        var issues = SettingsValidator.Validate(config, new PassThroughPathExpander());
+
+        Assert.Contains(issues, i => i.Field == "handBrakeOptions");
+    }
+
+    [Fact]
+    public void Validate_BalancedQuotesInHandBrakeOptions_DoesNotFlag()
+    {
+        var config = MakeHealthyConfig();
+        config.HandBrake.Options = "--custom-anamorphic \"16:9\" --two-pass";
+
+        var issues = SettingsValidator.Validate(config, new PassThroughPathExpander());
+
+        Assert.DoesNotContain(issues, i => i.Field == "handBrakeOptions");
+    }
+
+    [Fact]
+    public void Validate_EmptyHandBrakeOptions_DoesNotFlag()
+    {
+        var config = MakeHealthyConfig();
+        config.HandBrake.Options = "";
+
+        var issues = SettingsValidator.Validate(config, new PassThroughPathExpander());
+
+        Assert.DoesNotContain(issues, i => i.Field == "handBrakeOptions");
+    }
+
     [Fact]
     public void Validate_MultipleSimultaneousProblems_AllAppear()
     {

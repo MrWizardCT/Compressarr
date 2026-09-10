@@ -48,6 +48,20 @@ public interface IRunLogger
     /// same problem is treated as new again instead of silently staying "already known" forever.</summary>
     void ClearProblem(string key);
 
+    /// <summary>Same dedup idea as LogProblem, one level up: tells the caller whether laneId's
+    /// current set of problem codes differs from what was last reported for it via this same
+    /// method, so the HTML report writer can skip writing an unchanged report for a lane whose
+    /// configuration problem hasn't changed since the last pass that actually wrote one - LogProblem
+    /// alone only dedups the per-pass TEXT LOG line, it has no effect on whether
+    /// RunOrchestrator.RunOnceAsync's report-writing gate (`reportModel.HasAnyLaneProblems`) fires,
+    /// which is a real gap found live: a persistently misconfigured lane could still force a fresh
+    /// HTML report on every single poll forever even though the matching log line was correctly
+    /// downgraded to Info. Pass an empty collection for a lane with no current problems - a lane
+    /// going from broken to clear (or clear to broken) always counts as changed. Always true the
+    /// first time a given laneId is checked. Same persistence lifetime as LogProblem's own memory
+    /// (survives across polls, not across an app restart).</summary>
+    bool HasLaneProblemsChanged(string laneId, IReadOnlyCollection<string> problemCodes);
+
     void FileStart(string laneDisplayName, int index, int total, string fileName, double sizeGb, string contentType, string preset);
 
     void FileComplete(string fileName, double beginSizeGb, double endSizeGb, TimeSpan duration, bool success, string? detailLogFile);

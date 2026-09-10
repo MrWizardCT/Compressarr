@@ -68,7 +68,7 @@ file sealed class NoOpCompanionFileService : ICompanionFileService
 
 file sealed class NoOpArrUnmonitorService : IArrUnmonitorService
 {
-    public Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv) => Task.FromResult<string?>(null);
+    public Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
 }
 
 file sealed class NoOpTrashService : ITrashService
@@ -77,14 +77,33 @@ file sealed class NoOpTrashService : ITrashService
     public void DeleteFolder(string path, DeleteAfterConvertMode mode) { }
 }
 
+/// <summary>Mirrors FileRunLogger's own LogProblem/HasLaneProblemsChanged dedup logic for real
+/// (not just a no-op stub) - needed so tests can actually exercise the "unchanged persistent lane
+/// problem doesn't force a fresh report on every pass" fix across multiple RunOnceAsync calls
+/// against the SAME logger instance, the same way the real app relies on this state surviving
+/// across polls.</summary>
 file sealed class NoOpRunLogger : IRunLogger
 {
     public event Action<string, LogSeverity>? LineWritten { add { } remove { } }
     public bool HasLoggedError { get; private set; }
+    private readonly Dictionary<string, string> _lastProblemMessages = new();
+    private readonly Dictionary<string, string> _lastReportedLaneProblems = new();
     public string Initialize(string logFilePath, string timestamp) { HasLoggedError = false; return Path.GetTempFileName(); }
     public void Log(string message, LogSeverity severity = LogSeverity.Info) { if (severity == LogSeverity.Error) HasLoggedError = true; }
-    public void LogProblem(string key, string message) => Log(message, LogSeverity.Error);
-    public void ClearProblem(string key) { }
+    public void LogProblem(string key, string message)
+    {
+        var changed = !_lastProblemMessages.TryGetValue(key, out var last) || last != message;
+        Log(changed ? message : $"{message} (still unresolved, same as last check)", changed ? LogSeverity.Error : LogSeverity.Info);
+        _lastProblemMessages[key] = message;
+    }
+    public void ClearProblem(string key) => _lastProblemMessages.Remove(key);
+    public bool HasLaneProblemsChanged(string laneId, IReadOnlyCollection<string> problemCodes)
+    {
+        var current = string.Join(",", problemCodes.OrderBy(c => c, StringComparer.Ordinal));
+        var changed = !_lastReportedLaneProblems.TryGetValue(laneId, out var last) || last != current;
+        _lastReportedLaneProblems[laneId] = current;
+        return changed;
+    }
     public void FileStart(string laneDisplayName, int index, int total, string fileName, double sizeGb, string contentType, string preset) { }
     public void FileComplete(string fileName, double beginSizeGb, double endSizeGb, TimeSpan duration, bool success, string? detailLogFile) { }
 }
@@ -621,5 +640,97 @@ public class RunOrchestratorTests : IDisposable
         var reportHtml = await File.ReadAllTextAsync(result.ReportFilePath);
         Assert.Contains("ERROR 106", reportHtml);
         Assert.Contains("1 lane problem(s)", reportHtml);
+    }
+
+    // Code-review finding (v2.1.4 review, #1 HIGH): LogProblem's own dedup only downgrades the
+    // per-pass TEXT LOG line for an unchanged problem - it has no effect on whether the HTML
+    // report gets written at all, since that gate only ever checked "does a problem currently
+    // exist," not "is this the SAME problem as last time." A persistently misconfigured lane could
+    // therefore still force a brand-new report on literally every single poll forever. Fixed via
+    // IRunLogger.HasLaneProblemsChanged, the same per-key "changed since last check" memory
+    // LogProblem already uses, applied one level up.
+    [Fact]
+    public async Task RunOnceAsync_SameUnchangedLaneProblemAcrossPolls_DoesNotWriteARepeatReport()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Broken Lane", Enabled = true, Input = inputDir, Output = outputDir };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.HandBrake.CliPath = Path.Combine(_tempDir, "HandBrakeCLI.exe");
+        config.HandBrake.PresetsPath = Path.Combine(_tempDir, "presets.json");
+        config.Logging.LogFilePath = Path.Combine(_tempDir, "Logs");
+        config.Report.ReportPath = Path.Combine(_tempDir, "Reports");
+        config.Lanes.Add(lane);
+
+        // A real, shared IRunLogger across both passes - matching production, where the logger is
+        // a singleton and this dedup memory has to survive from one poll to the next. Using the
+        // default NoOpRunLogger() per call (as most other tests here do) would silently defeat this
+        // exact test, since a fresh instance has no memory of "pass 1" by the time pass 2 runs.
+        var sharedLogger = new NoOpRunLogger();
+        var (orchestrator, _) = BuildOrchestrator(config, new RecordingProcessRunner(), logger: sharedLogger);
+
+        var result1 = await orchestrator.RunOnceAsync(config);
+        Assert.True(File.Exists(result1!.ReportFilePath), "the first pass with a new lane problem must still write a report");
+        var reportsAfterPass1 = Directory.GetFiles(config.Report.ReportPath).Length;
+
+        // Forces a genuinely different run timestamp (and so a different report filename) than
+        // pass 1 - without this, a bug that DID try to write a second report could coincidentally
+        // land on the exact same filename and get silently overwritten, making the file-count
+        // assertion below pass even though the fix doesn't actually work.
+        await Task.Delay(1100);
+
+        var result2 = await orchestrator.RunOnceAsync(config);
+        var reportsAfterPass2 = Directory.GetFiles(config.Report.ReportPath).Length;
+
+        Assert.Equal(0, result2!.TotalFiles);
+        Assert.Equal(reportsAfterPass1, reportsAfterPass2);
+    }
+
+    // Same scenario, but the lane problem clears in between (a preset gets configured) then
+    // reappears - must be treated as new again once it comes back, not silently swallowed as
+    // "already known" forever just because the SAME code (LaneNoPresetConfigured) was seen before.
+    [Fact]
+    public async Task RunOnceAsync_LaneProblemClearsThenReturns_WritesAFreshReportOnReturn()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Broken Lane", Enabled = true, Input = inputDir, Output = outputDir };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.HandBrake.CliPath = Path.Combine(_tempDir, "HandBrakeCLI.exe");
+        config.HandBrake.PresetsPath = Path.Combine(_tempDir, "presets.json");
+        config.Logging.LogFilePath = Path.Combine(_tempDir, "Logs");
+        config.Report.ReportPath = Path.Combine(_tempDir, "Reports");
+        config.Lanes.Add(lane);
+
+        var sharedLogger = new NoOpRunLogger();
+        var (orchestrator, _) = BuildOrchestrator(config, new RecordingProcessRunner(), logger: sharedLogger);
+
+        await orchestrator.RunOnceAsync(config);
+        var reportsAfterPass1 = Directory.GetFiles(config.Report.ReportPath).Length;
+        Assert.Equal(1, reportsAfterPass1);
+
+        // Pass 2: fixed - no lane problem, and nothing else happened, so no report either (a
+        // genuinely quiet pass) - but this clears the "last reported" memory back to empty.
+        await Task.Delay(1100);
+        lane.MoviePreset = "Any Preset";
+        await orchestrator.RunOnceAsync(config);
+        var reportsAfterPass2 = Directory.GetFiles(config.Report.ReportPath).Length;
+        Assert.Equal(1, reportsAfterPass2);
+
+        // Pass 3: broken again, identical problem code/message to pass 1 - must still count as
+        // "changed" because it was genuinely clear in between.
+        await Task.Delay(1100);
+        lane.MoviePreset = "";
+        var result3 = await orchestrator.RunOnceAsync(config);
+        var reportsAfterPass3 = Directory.GetFiles(config.Report.ReportPath).Length;
+
+        Assert.Equal(0, result3!.TotalFiles);
+        Assert.Equal(2, reportsAfterPass3);
     }
 }

@@ -104,4 +104,34 @@ public class HandBrakeProcessRunnerTests : IDisposable
     {
         Assert.Empty(HandBrakeProcessRunner.SplitExtraOptions(""));
     }
+
+    // Code-review finding (v2.1.4 review, #5 LOW-MED): SplitExtraOptions isn't a full Windows
+    // command-line parser (no backslash-escaping) - an unterminated quote gets silently folded
+    // into one final token rather than rejected. HasUnbalancedQuotes surfaces that same "still
+    // inside a quote at end of string" condition so SettingsValidator can warn about it on the
+    // Settings page, instead of letting it silently mis-tokenize at encode time.
+
+    [Fact]
+    public void HasUnbalancedQuotes_BalancedQuotes_ReturnsFalse()
+    {
+        Assert.False(HandBrakeProcessRunner.HasUnbalancedQuotes("--custom-anamorphic \"16:9\" --two-pass"));
+    }
+
+    [Fact]
+    public void HasUnbalancedQuotes_NoQuotesAtAll_ReturnsFalse()
+    {
+        Assert.False(HandBrakeProcessRunner.HasUnbalancedQuotes("--encoder-preset slow --quality 20"));
+    }
+
+    [Fact]
+    public void HasUnbalancedQuotes_SingleUnterminatedQuote_ReturnsTrue()
+    {
+        Assert.True(HandBrakeProcessRunner.HasUnbalancedQuotes("--custom-anamorphic \"16:9 --two-pass"));
+    }
+
+    [Fact]
+    public void HasUnbalancedQuotes_TwoQuotedSegments_ReturnsFalse()
+    {
+        Assert.False(HandBrakeProcessRunner.HasUnbalancedQuotes("--a \"one\" --b \"two\""));
+    }
 }

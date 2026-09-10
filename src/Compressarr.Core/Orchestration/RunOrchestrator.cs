@@ -236,7 +236,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 var laneIsResumed = resumeState.Any(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending);
                 _progress.LaneStarted(lane.Id, lane.DisplayName, laneIsResumed);
 
-                var context = await _conversionOrchestrator.PrepareLaneAsync(lane, config, resumeState, resumeFilePath, thisLaneProblems);
+                var context = await _conversionOrchestrator.PrepareLaneAsync(lane, config, resumeState, resumeFilePath, thisLaneProblems, token);
                 configLaneIndex++;
                 if (context is null) continue;
 
@@ -370,6 +370,20 @@ public sealed class RunOrchestrator : IRunOrchestrator
 
         var reportFilePath = Path.Combine(reportPath, reportFileName);
 
+        // Called unconditionally, every pass, for every configured lane (not just ones with a
+        // problem this time) - the memory has to track "went from broken to clear" and "clear to
+        // broken" too, not just "still broken with the same code set", the same way LogProblem's
+        // own per-key memory is always updated regardless of what else happens this pass.
+        var anyLaneProblemsChanged = false;
+        foreach (var lane in config.Lanes)
+        {
+            var problems = laneProblems.TryGetValue(lane.Id, out var found) ? found : new List<ReportErrorCode>();
+            if (_logger.HasLaneProblemsChanged(lane.Id, problems.Select(p => p.ToString()).ToList()))
+            {
+                anyLaneProblemsChanged = true;
+            }
+        }
+
         // Broader than the history record/run-counter gate above (deliberately): a pass that
         // processed nothing AND hit no lane/run-level problem gets no report on disk at all, same
         // "don't leave empty artifacts behind" reasoning as the log-file cleanup. But a pass that
@@ -377,8 +391,13 @@ public sealed class RunOrchestrator : IRunOrchestrator
         // still gets a report, so that's visible on the report itself and not just log-only - the
         // whole point of ReportErrorCode's 106+ values. reportModel/reportFilePath still get
         // built either way since RunResult always needs them (and building the model itself is
-        // free - no I/O), but nothing writes them out for a genuinely empty, problem-free pass.
-        if (totalFiles > 0 || reportModel.HasAnyLaneProblems)
+        // free - no I/O), but nothing writes them out for a genuinely empty, problem-free pass -
+        // or, same reasoning extended, for a pass whose only "activity" is the exact same lane
+        // problem(s) as the pass that already wrote the last report (real gap found live: this
+        // gate had no memory of its own, so a persistently misconfigured lane could force a fresh
+        // report on literally every single poll forever, even though the matching log line was
+        // already correctly downgraded to Info by LogProblem).
+        if (totalFiles > 0 || (reportModel.HasAnyLaneProblems && anyLaneProblemsChanged))
         {
             Directory.CreateDirectory(reportPath);
             var html = _reportGenerator.Generate(reportModel);

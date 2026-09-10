@@ -13,7 +13,8 @@ const SETTINGS_FIELD_MAP = {
   handBrakeCliPath: '#hbCliPath',
   presetsPath: '#presetsPath',
   fileBotCliPath: '#fileBotCliPath',
-  vidTypes: '#vidTypes'
+  vidTypes: '#vidTypes',
+  handBrakeOptions: '#hbOptions'
 };
 
 function applySettingsValidation(issues) {

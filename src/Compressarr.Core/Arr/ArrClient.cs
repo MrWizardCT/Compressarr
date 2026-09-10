@@ -7,7 +7,12 @@ public interface IArrClient
 {
     Task<JsonNode?> GetAsync(string baseUrl, string apiKey, string relativePath);
     Task PutAsync(string baseUrl, string apiKey, string relativePath, JsonNode body);
-    Task PostAsync(string baseUrl, string apiKey, string relativePath, JsonNode body);
+
+    /// <summary>Returns the response body - for a command POST (e.g. /api/v3/command), this is
+    /// the created command's own representation, including its "id", needed to poll
+    /// /api/v3/command/{id} afterward for real completion status instead of guessing with a fixed
+    /// wait.</summary>
+    Task<JsonNode?> PostAsync(string baseUrl, string apiKey, string relativePath, JsonNode body);
 }
 
 /// <summary>Thin wrapper around HttpClient with the X-Api-Key header, so callers don't repeat
@@ -39,13 +44,14 @@ public sealed class ArrClient : IArrClient
         response.EnsureSuccessStatusCode();
     }
 
-    public async Task PostAsync(string baseUrl, string apiKey, string relativePath, JsonNode body)
+    public async Task<JsonNode?> PostAsync(string baseUrl, string apiKey, string relativePath, JsonNode body)
     {
         using var request = CreateRequest(HttpMethod.Post, baseUrl, apiKey, relativePath);
         request.Content = JsonContent.Create(body);
         using var client = CreateClient();
         using var response = await client.SendAsync(request);
         response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<JsonNode>();
     }
 
     private HttpClient CreateClient()

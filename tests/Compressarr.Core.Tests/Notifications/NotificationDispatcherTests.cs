@@ -32,6 +32,7 @@ file sealed class NoOpRunLogger : IRunLogger
     public void Log(string message, LogSeverity severity = LogSeverity.Info) { }
     public void LogProblem(string key, string message) { }
     public void ClearProblem(string key) { }
+    public bool HasLaneProblemsChanged(string laneId, IReadOnlyCollection<string> problemCodes) => true;
     public void FileStart(string laneDisplayName, int index, int total, string fileName, double sizeGb, string contentType, string preset) { }
     public void FileComplete(string fileName, double beginSizeGb, double endSizeGb, TimeSpan duration, bool success, string? detailLogFile) { }
 }

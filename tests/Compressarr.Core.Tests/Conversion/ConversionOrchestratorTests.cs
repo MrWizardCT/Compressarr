@@ -217,6 +217,7 @@ file sealed class NoOpRunLogger : IRunLogger
     public void Log(string message, LogSeverity severity = LogSeverity.Info) { }
     public void LogProblem(string key, string message) { }
     public void ClearProblem(string key) { }
+    public bool HasLaneProblemsChanged(string laneId, IReadOnlyCollection<string> problemCodes) => true;
     public void FileStart(string laneDisplayName, int index, int total, string fileName, double sizeGb, string contentType, string preset) { }
     public void FileComplete(string fileName, double beginSizeGb, double endSizeGb, TimeSpan duration, bool success, string? detailLogFile) { }
 }
@@ -227,6 +228,7 @@ file sealed class RecordingRunLogger : IRunLogger
     public List<(string Message, LogSeverity Severity)> Logs { get; } = new();
     public bool HasLoggedError => Logs.Any(l => l.Severity == LogSeverity.Error);
     private readonly Dictionary<string, string> _lastProblemMessages = new();
+    private readonly Dictionary<string, string> _lastReportedLaneProblems = new();
     public string Initialize(string logFilePath, string timestamp) { Logs.Clear(); return Path.GetTempFileName(); }
     public void Log(string message, LogSeverity severity = LogSeverity.Info) => Logs.Add((message, severity));
     public void LogProblem(string key, string message)
@@ -236,6 +238,13 @@ file sealed class RecordingRunLogger : IRunLogger
         _lastProblemMessages[key] = message;
     }
     public void ClearProblem(string key) => _lastProblemMessages.Remove(key);
+    public bool HasLaneProblemsChanged(string laneId, IReadOnlyCollection<string> problemCodes)
+    {
+        var current = string.Join(",", problemCodes.OrderBy(c => c, StringComparer.Ordinal));
+        var changed = !_lastReportedLaneProblems.TryGetValue(laneId, out var last) || last != current;
+        _lastReportedLaneProblems[laneId] = current;
+        return changed;
+    }
     public void FileStart(string laneDisplayName, int index, int total, string fileName, double sizeGb, string contentType, string preset) { }
     public void FileComplete(string fileName, double beginSizeGb, double endSizeGb, TimeSpan duration, bool success, string? detailLogFile) { }
 }
@@ -255,12 +264,12 @@ file sealed class NoOpProgressReporter : IRunProgressReporter
 
 file sealed class NoOpArrUnmonitorService : IArrUnmonitorService
 {
-    public Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv) => Task.FromResult<string?>(null);
+    public Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
 }
 
 file sealed class ThrowingArrUnmonitorService : IArrUnmonitorService
 {
-    public Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv) =>
+    public Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default) =>
         throw new InvalidOperationException("Sonarr API unreachable");
 }
 
@@ -268,7 +277,7 @@ file sealed class RecordingArrUnmonitorService : IArrUnmonitorService
 {
     public int CallCount { get; private set; }
 
-    public Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv)
+    public Task<string?> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default)
     {
         CallCount++;
         return Task.FromResult<string?>("Unmonitored");
@@ -288,6 +297,22 @@ file sealed class NoOpCompanionFileService : ICompanionFileService
 {
     public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string routedVideoDestPath, DeleteAfterConvertMode deleteAfterConvert, IReadOnlyList<string> companionExtensions, DeleteAfterConvertMode unmatchedCompanionAction, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite) { }
     public void CleanUpEmptySourceFolder(string originalFileDirectory, string inputRoot, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, DeleteAfterConvertMode unmatchedCompanionAction) { }
+}
+
+/// <summary>Throws on MoveCompanionFiles (simulating a real I/O failure moving a companion), but
+/// records rather than throws on CleanUpEmptySourceFolder - lets a test assert directly on whether
+/// the orchestrator called it at all after a companion-move failure, which ThrowingCompanionFileService
+/// (throws on both) can't distinguish, since that call is already wrapped in its own try/catch either
+/// way.</summary>
+file sealed class ThrowOnMoveCompanionFileService : ICompanionFileService
+{
+    public bool CleanUpCalled { get; private set; }
+
+    public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string routedVideoDestPath, DeleteAfterConvertMode deleteAfterConvert, IReadOnlyList<string> companionExtensions, DeleteAfterConvertMode unmatchedCompanionAction, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite) =>
+        throw new IOException("Access to the path is denied.");
+
+    public void CleanUpEmptySourceFolder(string originalFileDirectory, string inputRoot, IReadOnlyList<string> vidTypes, DeleteAfterConvertMode deleteAfterConvert, DeleteAfterConvertMode unmatchedCompanionAction) =>
+        CleanUpCalled = true;
 }
 
 file sealed class NoOpResumeStateStore : IResumeStateStore
@@ -626,6 +651,56 @@ public class ConversionOrchestratorTests : IDisposable
         var removedEntry = resumeState.Single(e => e.FullName == removedPath);
         Assert.Equal(ResumeStatus.Pending, removedEntry.Status);
         Assert.True(removedEntry.Removed);
+    }
+
+    // Code-review finding (v2.1.4 review, #4 MEDIUM): RestInPlace() - used whenever a converted
+    // file rests directly in Output (MoveFiles off, or a routing-level collision Skip) - always
+    // did File.Move(..., overwrite: true) unconditionally, regardless of OnDestinationCollision.
+    // A real routed destination already respects Overwrite/Skip/Rename; a file resting in Output
+    // did not, so two files that happened to land on the same desired name there could silently
+    // clobber each other even with Rename configured. Fixed by routing RestInPlace through the
+    // same FileRouter.ResolveCollision every other collision check already uses.
+    [Fact]
+    public async Task ProcessLaneAsync_RestingInOutput_RenameCollision_DoesNotOverwriteExistingFile()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "process-me.mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        // A file already sits at the exact name this conversion would otherwise land on.
+        var preExistingPath = Path.Combine(outputDir, "process-me.mkv");
+        File.WriteAllText(preExistingPath, "PRE-EXISTING CONTENT - must survive");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir, MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig
+        {
+            // MoveFiles off - the file rests directly in Output, the exact scenario RestInPlace
+            // used to leave unprotected regardless of this setting.
+            Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false, OnDestinationCollision = DestinationCollisionMode.Rename }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var results = await RunLaneAsync(orchestrator,
+            lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.True(result.Success);
+
+        Assert.Equal("PRE-EXISTING CONTENT - must survive", File.ReadAllText(preExistingPath));
+
+        var renamedPath = Path.Combine(outputDir, "process-me (2).mkv");
+        Assert.True(File.Exists(renamedPath), "the new encode must land under a renamed path instead of silently overwriting the pre-existing file");
+        Assert.Equal("fake encoded output", File.ReadAllText(renamedPath));
     }
 
     [Fact]
@@ -1814,6 +1889,72 @@ public class ConversionOrchestratorTests : IDisposable
         // subtitles/nfo/artwork) failed, so this must not be reported as a failed conversion.
         Assert.True(result.Success);
         Assert.Contains("Companion files not moved", result.PostProcessWarning);
+    }
+
+    // Code-review finding (v2.1.4 review, #2 MED-HIGH): a companion move exception was logged and
+    // warned about, but nothing stopped the source-folder cleanup that runs right after - if the
+    // video itself was already routed and its own source already deleted, the folder could look
+    // "empty of video" even though the failed-to-move companion is still sitting in it, and that
+    // companion could then be swept up and deleted/recycled as an "unmatched leftover" by the very
+    // next step. Fixed via a companionMoveFailed flag that suppresses CleanUpEmptySourceFolder for
+    // that pass.
+    [Fact]
+    public async Task ProcessLaneAsync_CompanionFileMoveFails_DoesNotRunSourceFolderCleanup()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane = new LaneConfig
+        {
+            Id = "lane1",
+            DisplayName = "Test Lane",
+            Enabled = true,
+            Input = inputDir,
+            Output = outputDir,
+            MoviePreset = "Any Preset",
+            MovieBasePath = Path.Combine(_tempDir, "Movies")
+        };
+
+        // Delete (not Maintain, unlike the sibling test above) - the actual at-risk scenario: the
+        // video's own source gets deleted as normal, the folder now LOOKS empty of video, and the
+        // only thing standing between "genuinely empty" and "a stranded companion still in there"
+        // is this fix.
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var companionService = new ThrowOnMoveCompanionFileService();
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(),
+            new RealFolderScanner(),
+            new NoOpFileBotRunner(),
+            new FixedExtensionPresetService(),
+            new MetadataService(),
+            new FakeProcessRunner(),
+            new FileRouter(),
+            companionService,
+            new NoOpArrUnmonitorService(),
+            new RecordingTrashService(),
+            new NoOpRunLogger(),
+            new NoOpResumeStateStore(),
+            new NoOpProgressReporter(),
+            configStore);
+
+        var results = await RunLaneAsync(orchestrator,
+            lane, config, _tempDir, "20260101_000000", new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.True(result.Success);
+        Assert.Contains("Companion files not moved", result.PostProcessWarning);
+        Assert.False(companionService.CleanUpCalled, "a companion left stranded by a failed move must not have its folder swept as if genuinely empty");
     }
 
     [Fact]

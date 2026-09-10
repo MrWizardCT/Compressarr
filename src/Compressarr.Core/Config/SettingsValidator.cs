@@ -1,3 +1,4 @@
+using Compressarr.Core.Conversion;
 using Compressarr.Core.Validation;
 
 namespace Compressarr.Core.Config;
@@ -37,6 +38,11 @@ public static class SettingsValidator
         if (config.Processing.VidTypes.Count == 0)
         {
             issues.Add(new ValidationIssue("vidTypes", "At least one video extension is required - without one, no file can ever be recognized as a video to convert."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(config.HandBrake.Options) && HandBrakeProcessRunner.HasUnbalancedQuotes(config.HandBrake.Options))
+        {
+            issues.Add(new ValidationIssue("handBrakeOptions", "Extra CLI options has an unmatched quote (\") - everything after it will be folded into one argument instead of being split as intended. Check for a missing closing quote."));
         }
 
         return issues;
