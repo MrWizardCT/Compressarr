@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Compressarr.Core.Config;
 using Compressarr.Core.Conversion;
 using Compressarr.Core.Diagnostics;
+using Compressarr.Core.Logging;
 using Compressarr.Core.Orchestration;
 using Compressarr.Core.Routing;
 using Microsoft.AspNetCore.Builder;
@@ -102,6 +103,40 @@ public static class MaintenanceEndpoints
             if (File.Exists(historyFile))
             {
                 trash.DeleteFile(historyFile, DeleteAfterConvertMode.Recycle);
+            }
+
+            return Results.Ok();
+        });
+
+        // Same footprint as Clear Logs + Clear History combined (every log, every HTML report,
+        // and the run-history CSV), but a real permanent delete instead of Recycle Bin - for a
+        // library with years of accumulated logs/reports where recycling thousands of files one
+        // at a time (see ITrashService.DeleteFile - there's no bulk Recycle Bin API, only a
+        // per-file one) is itself slow enough to matter. Deliberately doesn't go through
+        // ITrashService at all, unlike every other maintenance action.
+        app.MapPost("/api/maintenance/purge-logs-reports", (IConfigStore configStore, IPathExpander pathExpander, IRunLogger logger) =>
+        {
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+
+            var logPath = pathExpander.Expand(config.Logging.LogFilePath);
+            if (Directory.Exists(logPath))
+            {
+                var logExtensions = new HashSet<string>(new[] { ".log", ".txt", ".csv" }, StringComparer.OrdinalIgnoreCase);
+                foreach (var file in Directory.EnumerateFiles(logPath).Where(f => logExtensions.Contains(Path.GetExtension(f))))
+                {
+                    try { File.Delete(file); }
+                    catch (Exception ex) { logger.Log($"Purge Logs & Reports: unable to remove '{file}': {ex.Message}", LogSeverity.Error); }
+                }
+            }
+
+            var reportPath = pathExpander.Expand(config.Report.ReportPath);
+            if (Directory.Exists(reportPath))
+            {
+                foreach (var file in Directory.EnumerateFiles(reportPath, "*.html"))
+                {
+                    try { File.Delete(file); }
+                    catch (Exception ex) { logger.Log($"Purge Logs & Reports: unable to remove '{file}': {ex.Message}", LogSeverity.Error); }
+                }
             }
 
             return Results.Ok();

@@ -384,6 +384,12 @@ document.getElementById('clearHistoryBtn').addEventListener('click', () => runMa
   'History cleared.'
 ));
 
+document.getElementById('purgeLogsReportsBtn').addEventListener('click', () => runMaintenanceAction(
+  '/api/maintenance/purge-logs-reports',
+  'Permanently delete every log file, every HTML report, and the run-history CSV?\n\nThis does NOT go to the Recycle Bin - it cannot be undone.',
+  'Logs and reports purged.'
+));
+
 document.getElementById('clearAllBtn').addEventListener('click', () => runMaintenanceAction(
   '/api/maintenance/clear-all',
   'Delete everything except Settings and Lanes - every report, every log, and all tracked resume state?\n\nThe run counter is left untouched. Removed files go to the Recycle Bin.',
