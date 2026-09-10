@@ -9,7 +9,23 @@ for that full history.
 > and renaming all run on plain, inspectable regex pattern matching - the same deterministic
 > logic every time, nothing generative involved.
 
-## [2.1.4] - 2026-09-09
+## [2.1.4] - 2026-09-10
+
+> [!WARNING]
+> **Critical bug fix — excessive log and report accumulation.** Earlier versions could write a
+> brand-new log file *and* HTML report on every single monitoring pass - as often as once a
+> minute - whenever the same problem kept recurring (a misconfigured lane, a destination that
+> stayed unreachable for an extended period, etc.). Over weeks or months this could leave
+> thousands of near-duplicate files sitting in your Logs and Reports folders (by default,
+> `%APPDATA%\Compressarr\Logs` and `%APPDATA%\Compressarr\Reports` - check Settings > Logging &
+> Reports if you've customized either path). This is now fixed: a repeating problem is only
+> logged once, not on every poll.
+>
+> If you've been running an earlier version for a while, you may already have a large backlog of
+> these files. This release adds a **Purge Logs & Reports** button (Settings > Maintenance) that
+> permanently deletes every log, every report, and the run-history CSV in one fast pass -
+> bypassing the Recycle Bin, so it won't bog down even on a folder with thousands of files.
+> Recommended once after upgrading, to clear out anything the old bug left behind.
 
 > [!TIP]
 > **What's new in 2.1.4:** configuration validation with red-outlined fields and a consolidated
