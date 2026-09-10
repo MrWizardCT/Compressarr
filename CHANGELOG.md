@@ -17,8 +17,10 @@ for that full history.
 > the HTML run report, a "Launch Monitor at Startup" option, and an important data-safety fix so a
 > failed file move can no longer lose the source file. Destination-collision handling (Rename/Skip)
 > now actually applies instead of silently behaving like Overwrite, and companion files follow the
-> same setting as their video. Everything else below carries forward from 2.1.3 for context - new
-> changes are in **bold**.
+> same setting as their video. Sonarr/Radarr's post-move rescan now waits to finish and the source
+> folder isn't removed until after it does, so a rescan can no longer see a disconnected folder
+> instead of a genuinely empty one. Everything else below carries forward from 2.1.3 for context -
+> new changes are in **bold**.
 
 ### Added
 - **A "Launch Monitor at Startup" option (Settings > Monitoring): opens the Monitor page in your
@@ -36,6 +38,9 @@ for that full history.
 - **A "Keep Logs of successful HandBrake Encodes" setting (Settings > Maintenance, off by default),
   so successful-encode detail logs don't accumulate forever - failed-encode logs are always kept
   since the report links to them.**
+- **A "Purge Logs & Reports" button (Settings > Maintenance) - same as Clear Logs + Clear History
+  combined, but a permanent delete instead of Recycle Bin, for a faster cleanup on a large
+  accumulated backlog.**
 
 ### Changed
 - **Every page's status/save messages now show in the toolbar, replacing each page's own scattered
@@ -81,6 +86,15 @@ for that full history.
   Notifications.**
 - **Several other save/action confirmations across the app were missing their green success
   styling.**
+- **A converted file's original source is no longer stripped of its title metadata before
+  encoding - only the actual converted output ever gets its title tag cleared.**
+- **Sonarr/Radarr's own library rescan (triggered right after unmonitoring) now waits for the
+  scan to actually finish before moving on to the next file, instead of firing it and
+  continuing immediately.**
+- **The now-empty source folder is no longer removed until after Sonarr/Radarr's unmonitor and
+  rescan have completed - removing it any earlier could make the rescan see a disconnected
+  folder instead of a genuinely empty one, which could leave the episode/movie incorrectly
+  still showing as present.**
 
 ## [2.1.3] - 2026-09-07
 
