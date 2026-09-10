@@ -9,6 +9,125 @@ for that full history.
 > and renaming all run on plain, inspectable regex pattern matching - the same deterministic
 > logic every time, nothing generative involved.
 
+## [2.1.5] - 2026-09-10
+
+> [!TIP]
+> **What's new in 2.1.5:** a full reliability pass on the Sonarr/Radarr post-move handoff and its
+> source-folder cleanup. The rescan Compressarr triggers after unmonitoring a file is now actually
+> confirmed complete (real polling, not a blind wait), and every way that confirmation - or the
+> cleanup itself - can be deferred now gets its own retry state instead of quietly being marked
+> done: a stranded companion file, an unconfirmed rescan, or a cleanup that failed outright (a
+> locked file, permissions, antivirus, a flaky network share) are all automatically retried on the
+> lane's next pass, with no re-encode. A pass whose only work was one of these recoveries no longer
+> looks like an empty poll - it keeps its log and gets a report. Also fixes destination-collision
+> handling for a file resting in Output, and flags an unmatched quote in Extra CLI Options.
+> Everything else below carries forward from 2.1.4 for context - new changes are in **bold**.
+
+### Added
+- A "Launch Monitor at Startup" option (Settings > Monitoring): opens the Monitor page in your
+  default browser as soon as Compressarr launches, independent of whether monitoring itself
+  auto-starts.
+- Configuration validation: required fields on Settings and Lanes (HandBrake/FileBot paths,
+  video extensions, a lane's preset or Output folder) are checked on load and on save, with
+  invalid fields outlined in red and a toolbar error message pointing you to them. Notifications
+  validates its own required fields (e.g. a channel's webhook URL) the same way before you save.
+  Saving still succeeds either way - this is a warning, not a gate - matching how Test Connection
+  and other checks already behave in this app.
+- Numbered error-code badges (101-110) on the HTML run report, with a hover tooltip explaining
+  each one - covers missing HandBrake/presets, a misconfigured lane, and FileBot path problems, so
+  a problem is identifiable from the report itself, not just the log.
+- A "Keep Logs of successful HandBrake Encodes" setting (Settings > Maintenance, off by default),
+  so successful-encode detail logs don't accumulate forever - failed-encode logs are always kept
+  since the report links to them.
+- A "Purge Logs & Reports" button (Settings > Maintenance) - same as Clear Logs + Clear History
+  combined, but a permanent delete instead of Recycle Bin, for a faster cleanup on a large
+  accumulated backlog.
+
+### Changed
+- **The HTML report's recovery banner and the activity it's based on now cover every kind of
+  automatic retry - a failed move, a failed companion-file move, or a deferred Sonarr/Radarr
+  rescan/cleanup - not just the first two.**
+- Every page's status/save messages now show in the toolbar, replacing each page's own scattered
+  status element(s) - the same consistent place across Settings, Lanes, and Notifications.
+- The toolbar shows elapsed time for the run currently in progress ("Monitoring is ON: Running
+  (Time Elapsed: 2 hrs, 5 min 10 sec)"), ticking up live instead of only updating once per poll.
+- Checking for updates now happens immediately when Compressarr starts, instead of only relying
+  on a browser cache that could keep showing "update available" for up to a day after you'd
+  already upgraded.
+- Donate page crypto address cards are more compact and show a truncated address (full address on
+  hover, copy, and in the QR modal) so all six currencies fit in a single row.
+
+### Fixed
+- **Sonarr/Radarr's post-move library rescan is now actually confirmed complete (real polling of
+  its own command status, replacing a blind fixed wait) before the now-empty source folder is
+  removed - and if that confirmation times out, fails, or is cancelled, the folder is safely left
+  in place and the confirmation is automatically retried on the lane's next pass, instead of
+  risking Sonarr/Radarr losing track of the episode/movie because the folder was already gone when
+  it rescanned.**
+- **A source-folder cleanup that fails outright (a locked file, a permissions error, antivirus
+  interference, a flaky network share, etc.) after a confirmed rescan is now retried the same way,
+  instead of being silently abandoned - the file's report entry also shows a warning so it's
+  visible that cleanup is still pending, rather than reading as a plain, finished "OK".**
+- **A companion file (subtitle, .nfo, artwork) that fails to move alongside its video now gets its
+  own retry state and is automatically retried on the lane's next pass, without re-encoding -
+  previously it was left stranded in the source folder with only a log warning and no way to
+  recover on its own.**
+- **A monitoring pass whose only activity was successfully recovering a previously-stranded file
+  (a failed move, a failed companion move, or a deferred Sonarr/Radarr confirmation/cleanup) no
+  longer looks like an empty, idle poll - its log and an HTML report are kept, the same as a pass
+  that processed brand-new files.**
+- **The destination-collision setting (Rename/Skip) is now honored for a file resting directly in
+  Output (MoveFiles off) or left in place after a routing failure - this path previously always
+  overwrote regardless of what was configured, independent of the similar Rename/Skip fix already
+  shipped in 2.1.4 for the normal routed-move path.**
+- **Report generation for a persistent, unchanged lane configuration problem is now deduplicated
+  the same way the matching log message already was, instead of writing a fresh report on every
+  single poll for as long as the problem stays unresolved.**
+- **Extra CLI Options with an unmatched quote (") are now flagged in Settings validation -
+  everything after an unclosed quote would otherwise silently fold into a single argument instead
+  of being split as intended.**
+- The sidebar's red History error/warning badges had no way to clear - they now go away once
+  you've opened the History page and its Reports list has loaded, and stay cleared until a new run
+  has an error or warning.
+- A failed file move (offline network drive, permissions, etc.) no longer deletes the source file
+  before the move is retried - the source is preserved until the move actually succeeds, and a
+  failed move is retried automatically on the lane's next pass without re-encoding. A related bug
+  this fix exposed - a rescan could mistake that pending retry for a fresh file and force a full
+  re-encode instead of just retrying the move - is fixed alongside it.
+- Sonarr/Radarr are no longer unmonitored for a file whose move to its destination failed - only
+  once the move actually succeeds.
+- The destination-collision setting (Rename/Skip) now actually applies - previously the staged
+  output file was always given a fresh temporary name before the collision check ran, so Rename
+  and Skip both behaved like Overwrite in practice.
+- Companion files (subtitles, .nfo, artwork) now follow the same "On destination collision"
+  setting as their video, and always take the video's own resulting filename (including any
+  Rename-mode suffix), so a renamed video and its companions stay matched.
+- The library scanner now skips reparse points (junctions/symlinks) and tracks visited folders,
+  preventing runaway or duplicate scanning through a symlink loop.
+- HandBrakeCLI's arguments are now passed individually instead of built into one manually-quoted
+  string, removing a class of quoting problems from paths or preset names with spaces or special
+  characters.
+- Several cleanup steps (removing temp files, HandBrake detail logs, and trash-fallback warnings)
+  that used to fail silently are now logged instead of swallowed.
+- A source folder could be left behind, empty, after all its files successfully moved out.
+- A monitor pass that keeps failing the same way (e.g. a lane with no usable preset) no longer
+  writes a fresh log entry and report on every single pass.
+- Installing or merging a new HandBrake preset didn't refresh the cached preset list, so it
+  didn't show up in the Lanes page's preset dropdowns until a separate manual reload.
+- The Lanes page's own save confirmation never turned green like it does on Settings and
+  Notifications.
+- Several other save/action confirmations across the app were missing their green success
+  styling.
+- A converted file's original source is no longer stripped of its title metadata before
+  encoding - only the actual converted output ever gets its title tag cleared.
+- Sonarr/Radarr's own library rescan (triggered right after unmonitoring) now waits for the
+  scan to actually finish before moving on to the next file, instead of firing it and
+  continuing immediately.
+- The now-empty source folder is no longer removed until after Sonarr/Radarr's unmonitor and
+  rescan have completed - removing it any earlier could make the rescan see a disconnected
+  folder instead of a genuinely empty one, which could leave the episode/movie incorrectly
+  still showing as present.
+
 ## [2.1.4] - 2026-09-10
 
 > [!WARNING]
