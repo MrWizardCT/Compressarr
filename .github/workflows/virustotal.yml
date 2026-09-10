@@ -27,8 +27,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release download "${{ inputs.tag }}" --pattern "*.exe" --dir ./scan --repo ${{ github.repository }}
 
+      # continue-on-error + id here (not just a bare `uses:`) so a failure doesn't stop the job
+      # outright - see "Handle already-scanned asset" below for why: this action can fail with
+      # HTTP 409 ("already exists/queued for analysis") when the exact same file was already
+      # uploaded moments earlier by this project's own manual pre-release VirusTotal gate (see the
+      # compressarr-release-pipeline memory, step 8) - VT hasn't finished processing that upload
+      # yet, so re-submitting the identical bytes collides instead of returning the existing
+      # report. That's a benign race, not a real problem, and shouldn't fail the release's own
+      # workflow run.
       - name: Scan with VirusTotal (new release)
         if: github.event_name == 'release'
+        id: vtscan_release
+        continue-on-error: true
         uses: crazy-max/ghaction-virustotal@v5
         with:
           vt_api_key: ${{ secrets.VT_API_KEY }}
@@ -38,9 +48,57 @@ jobs:
           files: |
             .exe$
 
+      # Recovery path for the 409 race described above. Rather than re-uploading (which is what
+      # raced in the first place), look each asset up by its own SHA256 hash instead - VT's
+      # per-hash lookup never re-submits the file, so it can't collide the same way, and a 200
+      # response there is direct proof the file really is already known to VT (the specific benign
+      # case this exists to forgive). Any OTHER reason the scan step could have failed (a bad/
+      # expired API key, a real VT-side outage, a genuine network error, etc) will make this same
+      # per-hash lookup fail too, so `exit 1` below still fails the job for real in that case -
+      # this only forgives "the file is already there," nothing else.
+      - name: Handle already-scanned asset (409) on release path
+        if: github.event_name == 'release' && steps.vtscan_release.outcome == 'failure'
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release download "${{ github.event.release.tag_name }}" --pattern "*.exe" --dir ./scan --repo ${{ github.repository }} --clobber
+
+          all_known=true
+          : > links.md
+          for f in ./scan/*.exe; do
+            name=$(basename "$f")
+            hash=$(sha256sum "$f" | cut -d' ' -f1)
+            status=$(curl -s -o /tmp/vt_lookup.json -w "%{http_code}" -H "x-apikey: $VT_API_KEY" "https://www.virustotal.com/api/v3/files/$hash")
+            if [ "$status" = "200" ]; then
+              echo "$name is already known to VirusTotal (sha256 $hash) - treating the earlier 409 as the expected race, not a real failure."
+              printf -- '- [%s](https://www.virustotal.com/gui/file/%s)\n' "$name" "$hash" >> links.md
+            else
+              echo "::error::$name could not be confirmed already-scanned (hash lookup returned $status) - the earlier failure was not the benign 'already known' case."
+              all_known=false
+            fi
+          done
+
+          if [ "$all_known" != "true" ]; then
+            echo "::error::At least one asset could not be confirmed already-scanned on VirusTotal - failing the job for real."
+            exit 1
+          fi
+
+          # update_release_body on the action above never got the chance to run, so append the
+          # same "VirusTotal scan" link section by hand, matching its usual format.
+          gh release view "${{ github.event.release.tag_name }}" --repo ${{ github.repository }} --json body -q .body > body.md
+          printf '\n\n**VirusTotal scan**:\n' >> body.md
+          cat links.md >> body.md
+          gh release edit "${{ github.event.release.tag_name }}" --repo ${{ github.repository }} --notes-file body.md
+
+      # Same continue-on-error/recovery treatment as the release path above - this manual re-scan
+      # can hit the identical 409 race if it's ever run again shortly after a release (or after a
+      # separate manual VT check on the same asset).
       - name: Scan with VirusTotal (manual re-scan)
         if: github.event_name == 'workflow_dispatch'
         id: vtscan
+        continue-on-error: true
         uses: crazy-max/ghaction-virustotal@v5
         with:
           vt_api_key: ${{ secrets.VT_API_KEY }}
@@ -49,9 +107,11 @@ jobs:
             ./scan/*.exe
 
       # workflow_dispatch has no `release` event context for update_release_body to use, so
-      # append the report link to that release's notes explicitly instead.
+      # append the report link to that release's notes explicitly instead. Only runs when the
+      # scan step above actually succeeded - see the 409-recovery step further below for the
+      # failure case.
       - name: Append scan link to release notes
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && steps.vtscan.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Comma-joined "path=url" pairs, one per scanned file (crazy-max/ghaction-virustotal).
@@ -65,4 +125,38 @@ jobs:
             url="${entry#*=}"
             printf -- '- [%s](%s)\n' "$name" "$url" >> body.md
           done
+          gh release edit "${{ inputs.tag }}" --repo ${{ github.repository }} --notes-file body.md
+
+      # Same 409-race recovery as the release path, for the manual re-scan path.
+      - name: Handle already-scanned asset (409) on manual re-scan path
+        if: github.event_name == 'workflow_dispatch' && steps.vtscan.outcome == 'failure'
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          all_known=true
+          : > links.md
+          for f in ./scan/*.exe; do
+            name=$(basename "$f")
+            hash=$(sha256sum "$f" | cut -d' ' -f1)
+            status=$(curl -s -o /tmp/vt_lookup.json -w "%{http_code}" -H "x-apikey: $VT_API_KEY" "https://www.virustotal.com/api/v3/files/$hash")
+            if [ "$status" = "200" ]; then
+              echo "$name is already known to VirusTotal (sha256 $hash) - treating the earlier 409 as the expected race, not a real failure."
+              printf -- '- [%s](https://www.virustotal.com/gui/file/%s)\n' "$name" "$hash" >> links.md
+            else
+              echo "::error::$name could not be confirmed already-scanned (hash lookup returned $status) - the earlier failure was not the benign 'already known' case."
+              all_known=false
+            fi
+          done
+
+          if [ "$all_known" != "true" ]; then
+            echo "::error::At least one asset could not be confirmed already-scanned on VirusTotal - failing the job for real."
+            exit 1
+          fi
+
+          gh release view "${{ inputs.tag }}" --repo ${{ github.repository }} --json body -q .body > body.md
+          printf '\n\n**VirusTotal scan**:\n' >> body.md
+          cat links.md >> body.md
           gh release edit "${{ inputs.tag }}" --repo ${{ github.repository }} --notes-file body.md
