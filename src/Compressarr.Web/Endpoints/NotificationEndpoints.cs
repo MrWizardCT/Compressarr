@@ -21,7 +21,10 @@ public static class NotificationEndpoints
                 config.Notifications.ToastDigestWeeklyEnabled,
                 config.Notifications.ToastDigestDailyTime,
                 config.Notifications.ToastDigestWeeklyTime,
-                config.Notifications.ToastDigestWeeklyDay.ToString()));
+                config.Notifications.ToastDigestWeeklyDay.ToString(),
+                config.Notifications.MessageStyle.ToString(),
+                config.Notifications.CustomTitleTemplate,
+                config.Notifications.CustomBodyTemplate));
         });
 
         app.MapPut("/api/notifications/settings", (NotificationSettingsDto dto, IConfigStore configStore) =>
@@ -36,9 +39,23 @@ public static class NotificationEndpoints
                 config.Notifications.ToastDigestWeeklyDay = Enum.Parse<DayOfWeek>(dto.ToastDigestWeeklyDay);
                 // ToastLastDailyDigestSentDate/ToastLastWeeklyDigestSentDate deliberately untouched -
                 // scheduler-internal bookkeeping, not part of this DTO at all.
+                config.Notifications.MessageStyle = Enum.Parse<NotificationMessageStyle>(dto.MessageStyle);
+                config.Notifications.CustomTitleTemplate = dto.CustomTitleTemplate;
+                config.Notifications.CustomBodyTemplate = dto.CustomBodyTemplate;
                 return true;
             });
             return Results.Ok();
+        });
+
+        // The built-in styles' actual Title/Body wording, so the Notifications page can preview
+        // them without hardcoding the same text a second time in notifications.js - this endpoint
+        // is the single source of truth for what "Minimal"/"Standard"/"Detailed" actually say.
+        app.MapGet("/api/notifications/message-presets", () =>
+        {
+            var dto = NotificationMessagePresets.Templates.ToDictionary(
+                kv => kv.Key.ToString(),
+                kv => new MessagePresetDto(kv.Value.Title, kv.Value.Body));
+            return Results.Json(dto);
         });
 
         app.MapGet("/api/notifications/types", (IEnumerable<INotifier> notifiers) =>

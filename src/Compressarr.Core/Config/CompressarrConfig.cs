@@ -268,6 +268,20 @@ public enum NotificationTrigger
     Never
 }
 
+/// <summary>Which Title/Body pair a per-run completion notification uses across the pluggable
+/// Channels (Discord, Slack, Telegram, Pushover, ntfy, Gotify, Notifiarr) - deliberately NOT
+/// consulted by the desktop toast (own fixed multi-line layout, local-only, the user is already at
+/// the machine) or the Generic Webhook (its JSON body is structured data for another program to
+/// read, not prose for a person). Custom means CustomTitleTemplate/CustomBodyTemplate below are
+/// used instead of one of NotificationMessagePresets' built-in pairs.</summary>
+public enum NotificationMessageStyle
+{
+    Minimal,
+    Standard,
+    Detailed,
+    Custom
+}
+
 public sealed class NotificationSettings
 {
     /// <summary>Gates the existing local-OS toast (INotificationService/WindowsNotificationService)
@@ -275,6 +289,14 @@ public sealed class NotificationSettings
     /// pluggable Channels below which are opt-in-by-adding-one anyway. A desktop user who wants
     /// toasts back turns this on from the first card on the Notifications page.</summary>
     public bool ToastEnabled { get; set; } = false;
+
+    public NotificationMessageStyle MessageStyle { get; set; } = NotificationMessageStyle.Standard;
+
+    /// <summary>Only read when MessageStyle == Custom - ignored otherwise, so switching back to a
+    /// built-in style doesn't lose whatever the user last typed here. Same token vocabulary as the
+    /// built-in presets (see NotificationMessagePresets/NotificationMessageRenderer).</summary>
+    public string CustomTitleTemplate { get; set; } = "Compressarr run #{run_number} - {outcome}";
+    public string CustomBodyTemplate { get; set; } = "{files} file(s) processed, {saved_gb} GB saved.";
 
     // Digest settings for the toast itself - toast has no Trigger/channel concept, so its own
     // digest schedule lives directly here rather than on a NotificationChannel. Same 7-field shape

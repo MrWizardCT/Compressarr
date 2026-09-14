@@ -25,10 +25,18 @@ async function loadToastSetting() {
 }
 
 async function saveToastSettings(message) {
+  // The PUT endpoint replaces the whole NotificationSettingsDto, not just the fields named here -
+  // start from the current saved settings so this save can't silently reset MessageStyle/
+  // CustomTitleTemplate/CustomBodyTemplate back to their defaults (see saveMessageFormatSettings,
+  // which has the identical concern in reverse).
+  const currentRes = await fetch('/api/notifications/settings');
+  const current = await currentRes.json();
+
   await fetch('/api/notifications/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      ...current,
       toastEnabled: document.getElementById('toastEnabled').checked,
       toastDigestDailyEnabled: document.getElementById('toastDigestDaily').checked,
       toastDigestWeeklyEnabled: document.getElementById('toastDigestWeekly').checked,
@@ -50,6 +58,78 @@ document.getElementById('toastDigestClearBtn').addEventListener('click', () => {
   document.getElementById('toastDigestDaily').checked = false;
   document.getElementById('toastDigestWeekly').checked = false;
 });
+
+// ---- Message Format - which Title/Body pair the pluggable Channels use. Built-in presets'
+// actual wording comes from the server (single source of truth, see NotificationMessagePresets)
+// rather than being duplicated here; only the Custom template fields are ever user-edited.
+let messagePresets = {}; // { Minimal: {title, body}, Standard: {...}, Detailed: {...} }
+
+// Illustrative numbers only, for the live preview - never sent anywhere, never real run data.
+const PREVIEW_SAMPLE = {
+  run_number: '47', files: '12', saved_gb: '8.42', saved_pct: '31.6',
+  before_gb: '26.7', after_gb: '18.3', duration: '1h 12m', outcome: 'Success',
+  error_count: '0', warning_count: '1', retries_succeeded: '2',
+  report_path: 'C:\\Compressarr\\Reports\\Compressarr_2026-09-11_Report.html',
+  today_files: '15', today_saved_gb: '10.1', month_files: '212', month_saved_gb: '143.8',
+  year_files: '1904', year_saved_gb: '1207.5'
+};
+
+function renderPreviewTemplate(template) {
+  let result = template || '';
+  for (const [token, value] of Object.entries(PREVIEW_SAMPLE)) {
+    result = result.split(`{${token}}`).join(value);
+  }
+  return result;
+}
+
+function updateMessagePreview() {
+  const style = document.getElementById('messageStyle').value;
+  const isCustom = style === 'Custom';
+  document.getElementById('customTemplateFields').hidden = !isCustom;
+
+  const { title, body } = isCustom
+    ? { title: document.getElementById('customTitleTemplate').value, body: document.getElementById('customBodyTemplate').value }
+    : (messagePresets[style] || { title: '', body: '' });
+
+  document.getElementById('messagePreview').textContent =
+    `${renderPreviewTemplate(title)}\n${renderPreviewTemplate(body)}`;
+}
+
+async function loadMessageFormatSettings() {
+  const [presetsRes, settingsRes] = await Promise.all([
+    fetch('/api/notifications/message-presets'),
+    fetch('/api/notifications/settings')
+  ]);
+  messagePresets = await presetsRes.json();
+  const dto = await settingsRes.json();
+
+  document.getElementById('messageStyle').value = dto.messageStyle;
+  document.getElementById('customTitleTemplate').value = dto.customTitleTemplate;
+  document.getElementById('customBodyTemplate').value = dto.customBodyTemplate;
+  updateMessagePreview();
+}
+
+async function saveMessageFormatSettings() {
+  const settingsRes = await fetch('/api/notifications/settings');
+  const current = await settingsRes.json();
+
+  await fetch('/api/notifications/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...current,
+      messageStyle: document.getElementById('messageStyle').value,
+      customTitleTemplate: document.getElementById('customTitleTemplate').value,
+      customBodyTemplate: document.getElementById('customBodyTemplate').value
+    })
+  });
+  setStatusMessage('Message format saved.', 'success');
+}
+
+document.getElementById('messageStyle').addEventListener('change', updateMessagePreview);
+document.getElementById('customTitleTemplate').addEventListener('input', updateMessagePreview);
+document.getElementById('customBodyTemplate').addEventListener('input', updateMessagePreview);
+document.getElementById('messageFormatSaveBtn').addEventListener('click', saveMessageFormatSettings);
 
 document.getElementById('toastDigestTestBtn').addEventListener('click', async () => {
   const weeklyFlags = [];
@@ -329,4 +409,5 @@ document.getElementById('addChannelBtn').addEventListener('click', async () => {
 });
 
 loadToastSetting();
+loadMessageFormatSettings();
 loadNotifierTypes().then(loadChannels);

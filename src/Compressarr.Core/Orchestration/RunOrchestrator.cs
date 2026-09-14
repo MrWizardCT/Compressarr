@@ -458,10 +458,13 @@ public sealed class RunOrchestrator : IRunOrchestrator
             var outcome = reportModel.ErrorCount > 0 ? NotificationOutcome.Error
                 : reportModel.WarningCount > 0 ? NotificationOutcome.Warning
                 : NotificationOutcome.Success;
+            var (titleTemplate, bodyTemplate) = config.Notifications.MessageStyle == NotificationMessageStyle.Custom
+                ? (config.Notifications.CustomTitleTemplate, config.Notifications.CustomBodyTemplate)
+                : NotificationMessagePresets.Templates[config.Notifications.MessageStyle];
             var notifyEvent = new NotificationEvent(
                 outcome,
-                Title: $"Compressarr run #{runNumber}",
-                Body: $"{totalFiles} file(s) processed, {reportModel.TotalBeforeGb - reportModel.TotalAfterGb:0.##} GB saved.",
+                Title: NotificationMessageRenderer.Render(titleTemplate, outcome, reportModel, reportFilePath),
+                Body: NotificationMessageRenderer.Render(bodyTemplate, outcome, reportModel, reportFilePath),
                 totalFiles,
                 SavedGb: reportModel.TotalBeforeGb - reportModel.TotalAfterGb,
                 runTime,

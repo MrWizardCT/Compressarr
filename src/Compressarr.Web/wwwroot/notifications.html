@@ -63,6 +63,52 @@
 
     <div class="card">
       <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg>
+        <h2>Message Format</h2>
+      </div>
+      <div class="card-body">
+        <p style="color: var(--text-dim); font-size: 12.5px; margin: 0 0 10px;">
+          Controls the Title/message text sent to Discord, Slack, Telegram, Pushover, ntfy,
+          Gotify, and Notifiarr when a run completes. Doesn't affect the desktop toast above or
+          the Generic Webhook's raw data payload.
+        </p>
+        <div class="field-row">
+          <label for="messageStyle">Style</label>
+          <select id="messageStyle">
+            <option value="Minimal">Minimal</option>
+            <option value="Standard">Standard</option>
+            <option value="Detailed">Detailed</option>
+            <option value="Custom">Custom</option>
+          </select>
+        </div>
+        <div id="customTemplateFields" hidden>
+          <div class="field-row">
+            <label for="customTitleTemplate">Title template</label>
+            <input type="text" id="customTitleTemplate" style="flex: 1;" />
+          </div>
+          <div class="field-row">
+            <label for="customBodyTemplate">Body template</label>
+            <textarea id="customBodyTemplate" rows="3" style="flex: 1;"></textarea>
+          </div>
+          <p style="color: var(--text-dim); font-size: 12.5px; margin: 0 0 10px;">
+            Tokens: <code>{run_number}</code> <code>{files}</code> <code>{saved_gb}</code>
+            <code>{saved_pct}</code> <code>{before_gb}</code> <code>{after_gb}</code>
+            <code>{duration}</code> <code>{outcome}</code> <code>{error_count}</code>
+            <code>{warning_count}</code> <code>{retries_succeeded}</code> <code>{report_path}</code>
+            <code>{today_files}</code> <code>{today_saved_gb}</code> <code>{month_files}</code>
+            <code>{month_saved_gb}</code> <code>{year_files}</code> <code>{year_saved_gb}</code>
+          </p>
+        </div>
+        <div class="field-row">
+          <label>Preview</label>
+          <div id="messagePreview" style="flex: 1; font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: var(--text-dim); white-space: pre-line;"></div>
+        </div>
+        <button type="button" id="messageFormatSaveBtn" class="icon-btn save">Save</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
         <h2>Notification Channels</h2>
         <div class="card-head-spacer"></div>

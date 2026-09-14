@@ -6,7 +6,16 @@ public sealed record NotificationSettingsDto(
     bool ToastDigestWeeklyEnabled = false,
     string ToastDigestDailyTime = "09:00",
     string ToastDigestWeeklyTime = "09:00",
-    string ToastDigestWeeklyDay = "Monday");
+    string ToastDigestWeeklyDay = "Monday",
+    string MessageStyle = "Standard",
+    string CustomTitleTemplate = "",
+    string CustomBodyTemplate = "");
+
+/// <summary>One built-in NotificationMessageStyle's canned Title/Body pair, as sent to the browser
+/// so the Notifications page can preview it without hardcoding the actual wording twice (once in
+/// NotificationMessagePresets, once in notifications.js) - the server stays the single source of
+/// truth for what each style actually says.</summary>
+public sealed record MessagePresetDto(string Title, string Body);
 
 public sealed record NotifierFieldDto(string Key, string Label, string InputType, bool Required, bool Secret, IReadOnlyList<string>? Options, string? HelpText, string? Placeholder);
 
