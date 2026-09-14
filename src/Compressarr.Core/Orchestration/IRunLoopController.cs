@@ -35,7 +35,12 @@ public interface IRunLoopController
     /// loop isn't started - a countdown UI should treat null as "no countdown to show".</summary>
     DateTimeOffset? NextRunUtc { get; }
 
-    /// <summary>No-op if already running (idempotent - a second Start doesn't spawn a second loop).</summary>
+    /// <summary>No-op if already running (idempotent - a second Start doesn't spawn a second loop).
+    /// config/pollInterval are only used for the very first pass - every pass after that re-reads
+    /// config fresh from disk (see LoopAsync), so a settings change made via the web UI while
+    /// monitoring keeps running takes effect on the next pass instead of needing Stop+Start or an
+    /// app restart. pollInterval itself is the one exception - it stays fixed for the life of this
+    /// monitoring session, matching the caller's own Math.Max(5, ...) clamp.</summary>
     void Start(CompressarrConfig config, TimeSpan pollInterval);
 
     /// <summary>Stops the loop from starting another pass, and stops the current pass (if any)
@@ -68,6 +73,7 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
     private readonly IRunOrchestrator _runOrchestrator;
     private readonly IRunLogger _logger;
     private readonly IActiveRunController _activeRunController;
+    private readonly IConfigStore _configStore;
     private readonly TimeProvider _timeProvider;
 
     private readonly object _lock = new();
@@ -77,16 +83,17 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
     private TaskCompletionSource? _triggerNowTcs;
     private bool _isStopping;
 
-    public RunLoopController(IRunOrchestrator runOrchestrator, IRunLogger logger, IActiveRunController activeRunController)
-        : this(runOrchestrator, logger, activeRunController, TimeProvider.System)
+    public RunLoopController(IRunOrchestrator runOrchestrator, IRunLogger logger, IActiveRunController activeRunController, IConfigStore configStore)
+        : this(runOrchestrator, logger, activeRunController, configStore, TimeProvider.System)
     {
     }
 
-    internal RunLoopController(IRunOrchestrator runOrchestrator, IRunLogger logger, IActiveRunController activeRunController, TimeProvider timeProvider)
+    internal RunLoopController(IRunOrchestrator runOrchestrator, IRunLogger logger, IActiveRunController activeRunController, IConfigStore configStore, TimeProvider timeProvider)
     {
         _runOrchestrator = runOrchestrator;
         _logger = logger;
         _activeRunController = activeRunController;
+        _configStore = configStore;
         _timeProvider = timeProvider;
     }
 
@@ -217,9 +224,30 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
 
     private async Task LoopAsync(CompressarrConfig config, TimeSpan pollInterval, CancellationToken token)
     {
+        var isFirstPass = true;
         while (!token.IsCancellationRequested)
         {
             lock (_lock) { _nextRunUtc = null; _triggerNowTcs = null; }
+
+            // Re-read config fresh for every pass after the first - Start()'s caller already
+            // loaded a fresh snapshot moments before calling Start(), so re-reading again for pass
+            // one would just be a redundant, wasted file read. From the second pass onward, this
+            // is what actually picks up a settings change made via the web UI while monitoring
+            // keeps running - confirmed live 2026-09-14: without this, a Notifications message-
+            // style change (and, before this fix, literally anything else in CompressarrConfig -
+            // Report/PostExec/Logging settings, the Lanes list itself) silently had no effect until
+            // Stop+Start or an app restart, because the loop otherwise reused the one config object
+            // handed to it at Start() time for its entire session. Mirrors the same "must reflect a
+            // live web-UI edit mid-session" reasoning ConversionOrchestrator's own per-file config/
+            // RefreshResumeState reload already uses, just at the coarser per-PASS granularity for
+            // everything that per-file reload doesn't already cover. pollInterval is deliberately
+            // NOT re-derived here - it stays fixed for this monitoring session (see Start()'s own
+            // doc comment).
+            if (!isFirstPass)
+            {
+                config = _configStore.Load(AppPaths.GetConfigFilePath());
+            }
+            isFirstPass = false;
 
             try
             {

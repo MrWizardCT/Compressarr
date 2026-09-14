@@ -10,8 +10,14 @@ file sealed class FakeRunOrchestrator : IRunOrchestrator
     public int CallCount;
     public bool ThrowOnNextCall;
 
+    /// <summary>The config instance most recently passed into RunOnceAsync - lets a test assert
+    /// which config object reached a given pass (see the config-reload tests below), not just that
+    /// RunOnceAsync was called.</summary>
+    public CompressarrConfig? LastConfig;
+
     public Task<RunResult?> RunOnceAsync(CompressarrConfig config, CancellationToken stopToken = default)
     {
+        LastConfig = config;
         Interlocked.Increment(ref CallCount);
         if (ThrowOnNextCall)
         {
@@ -20,6 +26,17 @@ file sealed class FakeRunOrchestrator : IRunOrchestrator
         }
         return Task.FromResult<RunResult?>(null);
     }
+}
+
+/// <summary>Ignores the path argument entirely and just hands back whatever Config currently is -
+/// a test mutates Config between passes to simulate a settings save landing on disk while
+/// monitoring keeps running.</summary>
+file sealed class FakeConfigStore : IConfigStore
+{
+    public CompressarrConfig Config { get; set; } = new();
+    public CompressarrConfig Load(string path) => Config;
+    public void Save(CompressarrConfig config, string path) { }
+    public T Update<T>(string path, Func<CompressarrConfig, T> mutate) => mutate(Config);
 }
 
 file sealed class DiskFullRunOrchestrator : IRunOrchestrator
@@ -106,7 +123,7 @@ public class RunLoopControllerTests
     [Fact]
     public void Start_SetsIsRunningTrue()
     {
-        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController());
+        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
 
         controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
 
@@ -117,7 +134,7 @@ public class RunLoopControllerTests
     public async Task Start_CalledTwice_DoesNotDoubleStart()
     {
         var orchestrator = new FakeRunOrchestrator();
-        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
 
         controller.Start(new CompressarrConfig(), TinyInterval);
         await WaitUntil(() => orchestrator.CallCount >= 1, TimeSpan.FromSeconds(2));
@@ -139,7 +156,7 @@ public class RunLoopControllerTests
     [Fact]
     public async Task StopAsync_SetsIsRunningFalse_AndWaitsForInFlightPassToComplete()
     {
-        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController());
+        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
         controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
 
         await controller.StopAsync();
@@ -151,7 +168,7 @@ public class RunLoopControllerTests
     public async Task Loop_InvokesRunOnceAsync_OnEachPollInterval()
     {
         var orchestrator = new FakeRunOrchestrator();
-        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
 
         controller.Start(new CompressarrConfig(), TinyInterval);
         await WaitUntil(() => orchestrator.CallCount >= 3, TimeSpan.FromSeconds(2));
@@ -164,7 +181,7 @@ public class RunLoopControllerTests
     public async Task Loop_SwallowsExceptionFromRunOnceAsync_AndContinuesPolling()
     {
         var orchestrator = new FakeRunOrchestrator { ThrowOnNextCall = true };
-        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
 
         controller.Start(new CompressarrConfig(), TinyInterval);
         // The first pass throws; the loop must still be alive and polling afterward.
@@ -178,7 +195,7 @@ public class RunLoopControllerTests
     [Fact]
     public async Task RunningChanged_FiresOnStartAndStop()
     {
-        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController());
+        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
         var events = new List<bool>();
         controller.RunningChanged += running => events.Add(running);
 
@@ -192,7 +209,7 @@ public class RunLoopControllerTests
     public async Task IsStopping_TrueWhileWaitingForInFlightPass_FalseAfter()
     {
         var orchestrator = new SlowRunOrchestrator();
-        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
         controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
 
         // Start() only guarantees LoopAsync has been scheduled (via Task.Run - see Start()'s own
@@ -223,7 +240,7 @@ public class RunLoopControllerTests
         // regardless, instead of stopping between files/lanes as expected. This asserts the wiring
         // that fixes it: RunOnceAsync must actually receive a stopToken that gets cancelled.
         var orchestrator = new SlowRunOrchestrator();
-        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
         controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
         await WaitUntil(() => orchestrator.ReceivedStopToken is not null, TimeSpan.FromSeconds(2));
 
@@ -241,7 +258,7 @@ public class RunLoopControllerTests
     public async Task StoppingChanged_FiresTrueThenFalse_AroundTheInFlightPass()
     {
         var orchestrator = new SlowRunOrchestrator();
-        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
         var events = new List<bool>();
         controller.StoppingChanged += stopping => events.Add(stopping);
         controller.Start(new CompressarrConfig(), TimeSpan.FromMinutes(5));
@@ -258,7 +275,7 @@ public class RunLoopControllerTests
     public async Task Loop_DiskFullResult_StopsMonitoringAutomatically_WithoutWaitingForPollInterval()
     {
         var orchestrator = new DiskFullRunOrchestrator();
-        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
         var events = new List<bool>();
         controller.RunningChanged += running => events.Add(running);
 
@@ -276,7 +293,7 @@ public class RunLoopControllerTests
     public async Task Abort_CallsActiveRunControllerAbort_AndStopsTheLoop()
     {
         var activeRunController = new FakeActiveRunController();
-        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), activeRunController);
+        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), activeRunController, new FakeConfigStore());
         controller.Start(new CompressarrConfig(), TinyInterval);
 
         controller.Abort();
@@ -289,7 +306,7 @@ public class RunLoopControllerTests
     [Fact]
     public void NextRunUtc_IsNull_BeforeStart()
     {
-        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController());
+        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
 
         Assert.Null(controller.NextRunUtc);
     }
@@ -297,7 +314,7 @@ public class RunLoopControllerTests
     [Fact]
     public void TriggerNow_ReturnsFalse_WhenNotStarted()
     {
-        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController());
+        var controller = new RunLoopController(new FakeRunOrchestrator(), new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
 
         Assert.False(controller.TriggerNow());
     }
@@ -306,7 +323,7 @@ public class RunLoopControllerTests
     public async Task TriggerNow_SkipsRemainingWait_AndStartsNextPassImmediately()
     {
         var orchestrator = new FakeRunOrchestrator();
-        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController());
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
 
         // A long poll interval - if TriggerNow didn't actually cut the wait short, the second
         // pass wouldn't arrive within the test's timeout at all.
@@ -321,5 +338,46 @@ public class RunLoopControllerTests
 
         Assert.True(triggered);
         Assert.True(orchestrator.CallCount >= 2);
+    }
+
+    [Fact]
+    public async Task Loop_FirstPass_UsesTheConfigPassedToStart_NotAnExtraConfigStoreLoad()
+    {
+        var orchestrator = new FakeRunOrchestrator();
+        var configStore = new FakeConfigStore(); // never mutated - if pass 1 used it, LastConfig would differ
+        var configFromStart = new CompressarrConfig();
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), configStore);
+
+        controller.Start(configFromStart, TimeSpan.FromMinutes(5));
+        await WaitUntil(() => orchestrator.CallCount >= 1, TimeSpan.FromSeconds(2));
+        await controller.StopAsync();
+
+        Assert.Same(configFromStart, orchestrator.LastConfig);
+    }
+
+    [Fact]
+    public async Task Loop_PassesAfterTheFirst_ReloadConfigFromTheConfigStore()
+    {
+        // Reproduces the real bug this test guards against (confirmed live 2026-09-14): a
+        // NotificationSettings change (or any other config change) saved via the web UI while
+        // monitoring was already running had no effect until Stop+Start or an app restart, because
+        // the loop reused the one config object it was handed at Start() time for its entire
+        // session instead of ever re-reading the file monitoring/JsonConfigStore.Update() writes.
+        var orchestrator = new FakeRunOrchestrator();
+        var configStore = new FakeConfigStore();
+        var updatedConfig = new CompressarrConfig();
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), configStore);
+
+        controller.Start(new CompressarrConfig(), TinyInterval);
+        await WaitUntil(() => orchestrator.CallCount >= 1, TimeSpan.FromSeconds(2));
+
+        // Simulate a settings save landing on disk while monitoring keeps running - exactly what
+        // the web UI's PUT /api/notifications/settings (or any other settings save) does.
+        configStore.Config = updatedConfig;
+
+        await WaitUntil(() => ReferenceEquals(orchestrator.LastConfig, updatedConfig), TimeSpan.FromSeconds(2));
+        await controller.StopAsync();
+
+        Assert.Same(updatedConfig, orchestrator.LastConfig);
     }
 }
