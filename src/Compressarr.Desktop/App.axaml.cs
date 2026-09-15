@@ -57,7 +57,16 @@ public partial class App : Application
 #endif
 
         _webApp = builder.Build();
-        _webApp.UseDefaultFiles();
+        // Monitor, not Settings (the plain UseDefaultFiles()/index.html default) - the tray icon's
+        // "Open Web UI" and a bare http://localhost:{port}/ should land wherever a user checks in
+        // most often day-to-day, which is the running queue, not the one-time setup page. Settings
+        // itself is unaffected - it still lives at /index.html and every nav link to it already
+        // points there explicitly (see nav.js), this only changes what an UNqualified "/" resolves
+        // to.
+        _webApp.UseDefaultFiles(new Microsoft.AspNetCore.Builder.DefaultFilesOptions
+        {
+            DefaultFileNames = new List<string> { "monitor.html" }
+        });
         _webApp.UseStaticFiles(new Microsoft.AspNetCore.Builder.StaticFileOptions
         {
             // No explicit Cache-Control means browsers fall back to heuristic caching off
