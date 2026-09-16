@@ -130,6 +130,18 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
                 _activeProcess.Unregister();
             }
 
+            // WaitForExitAsync doesn't reliably guarantee pending ErrorDataReceived events have
+            // fully fired before it returns when streams are redirected to async handlers - a
+            // documented .NET behavior gap (dotnet/runtime#34294, #42556), not a theoretical one.
+            // HandBrakeCLI's own "Finished work at" completion line is among the last things it
+            // emits right as it exits - exactly the content DetermineSuccess depends on and most
+            // at risk of not having arrived in stderr yet. The parameterless synchronous
+            // WaitForExit() forces the async stream reader to fully drain before this reads
+            // stderr's accumulated content - a plausible source of a rare, hard-to-reproduce false
+            // "encode failed" result otherwise. Harmless/instant here regardless of path: the
+            // process has either already exited normally or was just killed above.
+            process.WaitForExit();
+
             File.WriteAllText(detailLogFile, stderr.ToString());
         }
 
