@@ -87,10 +87,20 @@ file sealed class NoOpRunLogger : IRunLogger
 {
     public event Action<string, LogSeverity>? LineWritten { add { } remove { } }
     public bool HasLoggedError { get; private set; }
+
+    /// <summary>Every message this logger has ever received, in order - lets a test assert on
+    /// specific log text (e.g. the PostExec timeout/abort message) instead of just HasLoggedError's
+    /// bare yes/no.</summary>
+    public List<(string Message, LogSeverity Severity)> Messages { get; } = new();
+
     private readonly Dictionary<string, string> _lastProblemMessages = new();
     private readonly Dictionary<string, string> _lastReportedLaneProblems = new();
     public string Initialize(string logFilePath, string timestamp) { HasLoggedError = false; return Path.GetTempFileName(); }
-    public void Log(string message, LogSeverity severity = LogSeverity.Info) { if (severity == LogSeverity.Error) HasLoggedError = true; }
+    public void Log(string message, LogSeverity severity = LogSeverity.Info)
+    {
+        if (severity == LogSeverity.Error) HasLoggedError = true;
+        Messages.Add((message, severity));
+    }
     public void LogProblem(string key, string message)
     {
         var changed = !_lastProblemMessages.TryGetValue(key, out var last) || last != message;
@@ -191,7 +201,8 @@ public class RunOrchestratorTests : IDisposable
     // RecordingProcessRunner can't appear in a member signature of this non-file-local test class,
     // even a private one, so the caller constructs it and passes it in instead of getting it back.
     private (RunOrchestrator Orchestrator, string ResumeFilePath) BuildOrchestrator(
-        CompressarrConfig config, IHandBrakeProcessRunner processRunner, IResumeStateStore? resumeStore = null, IRunLogger? logger = null)
+        CompressarrConfig config, IHandBrakeProcessRunner processRunner, IResumeStateStore? resumeStore = null,
+        IRunLogger? logger = null, TimeSpan? postExecTimeout = null)
     {
         // HandBrakeCLI/presets "paths" just need to exist on disk for PathExists to pass -
         // PassThroughPathExpander does no real expansion, and FixedExtensionPresetService never
@@ -217,11 +228,20 @@ public class RunOrchestratorTests : IDisposable
             new NoOpTrashService(), effectiveLogger, effectiveResumeStore, new NoOpProgressReporter(),
             new StaticConfigStore(config));
 
-        var runOrchestrator = new RunOrchestrator(
-            new PassThroughPathExpander(), new FixedExtensionPresetService(), conversionOrchestrator, new MetadataService(),
-            effectiveResumeStore, effectiveLogger, new NoOpHistoryStore(), new NoOpHistoryRollupCalculator(),
-            new Compressarr.Core.Reporting.HtmlReportGenerator(), new NoOpReportLauncher(), new NoOpNotificationService(), new NoOpNotificationDispatcher(),
-            new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController());
+        // postExecTimeout only ever non-null in the PostExec timeout test below - resolves the
+        // internal test-only constructor overload; every other test keeps using the real
+        // production (public) constructor and its real 5-minute default.
+        var runOrchestrator = postExecTimeout is { } timeout
+            ? new RunOrchestrator(
+                new PassThroughPathExpander(), new FixedExtensionPresetService(), conversionOrchestrator, new MetadataService(),
+                effectiveResumeStore, effectiveLogger, new NoOpHistoryStore(), new NoOpHistoryRollupCalculator(),
+                new Compressarr.Core.Reporting.HtmlReportGenerator(), new NoOpReportLauncher(), new NoOpNotificationService(), new NoOpNotificationDispatcher(),
+                new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController(), timeout)
+            : new RunOrchestrator(
+                new PassThroughPathExpander(), new FixedExtensionPresetService(), conversionOrchestrator, new MetadataService(),
+                effectiveResumeStore, effectiveLogger, new NoOpHistoryStore(), new NoOpHistoryRollupCalculator(),
+                new Compressarr.Core.Reporting.HtmlReportGenerator(), new NoOpReportLauncher(), new NoOpNotificationService(), new NoOpNotificationDispatcher(),
+                new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController());
 
         return (runOrchestrator, resumeFilePath);
     }
@@ -794,5 +814,64 @@ public class RunOrchestratorTests : IDisposable
 
         Assert.Equal(0, result3!.TotalFiles);
         Assert.Equal(2, reportsAfterPass3);
+    }
+
+    // Architecture-roadmap item 11 (PostExec timeout): a hung post-exec script previously blocked
+    // the whole pass indefinitely, with nothing (not even Abort) able to interrupt it, since no
+    // token ever reached the process. Uses a real ping.exe (always present on Windows, pings
+    // loopback so it needs no real network access) as a genuinely long-running process to prove
+    // the new timeout actually kills it, rather than mocking Process.Start away entirely.
+    [Fact]
+    public async Task RunOnceAsync_PostExecHangs_KilledAfterTimeout_AndLogsError()
+    {
+        var pingPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "PING.EXE");
+        Assert.True(File.Exists(pingPath), "This test needs a real ping.exe on the test machine to simulate a hung PostExec command.");
+
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.HandBrake.CliPath = Path.Combine(_tempDir, "HandBrakeCLI.exe");
+        config.HandBrake.PresetsPath = Path.Combine(_tempDir, "presets.json");
+        config.Logging.LogFilePath = Path.Combine(_tempDir, "Logs");
+        config.Report.ReportPath = Path.Combine(_tempDir, "Reports");
+        config.PostExec.Cmd = pingPath;
+        config.PostExec.Args = "-n 999 127.0.0.1"; // ~999 seconds if never killed - real "hangs" stand-in
+
+        var logger = new NoOpRunLogger();
+        var (orchestrator, _) = BuildOrchestrator(config, new RecordingProcessRunner(), logger: logger, postExecTimeout: TimeSpan.FromMilliseconds(300));
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        await orchestrator.RunOnceAsync(config);
+        stopwatch.Stop();
+
+        // Proves the process was actually killed, not just that WaitForExitAsync gave up locally -
+        // a real un-killed 999-ping run would take far longer than this test's own budget.
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(15),
+            $"RunOnceAsync took {stopwatch.Elapsed} - the hung PostExec process doesn't look like it was actually killed.");
+        Assert.Contains(logger.Messages, m => m.Severity == LogSeverity.Error &&
+            m.Message.Contains("Post-execution command was killed", StringComparison.Ordinal) &&
+            m.Message.Contains("didn't finish within", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunOnceAsync_PostExecCompletesQuickly_RunsNormally_NoTimeoutError()
+    {
+        // Guards against the timeout/linked-token plumbing itself breaking the ordinary, expected
+        // case - a post-exec command that behaves and exits well within its timeout.
+        var pingPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "PING.EXE");
+
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.HandBrake.CliPath = Path.Combine(_tempDir, "HandBrakeCLI.exe");
+        config.HandBrake.PresetsPath = Path.Combine(_tempDir, "presets.json");
+        config.Logging.LogFilePath = Path.Combine(_tempDir, "Logs");
+        config.Report.ReportPath = Path.Combine(_tempDir, "Reports");
+        config.PostExec.Cmd = pingPath;
+        config.PostExec.Args = "-n 1 127.0.0.1"; // one ping, exits almost immediately
+
+        var logger = new NoOpRunLogger();
+        var (orchestrator, _) = BuildOrchestrator(config, new RecordingProcessRunner(), logger: logger, postExecTimeout: TimeSpan.FromSeconds(30));
+
+        await orchestrator.RunOnceAsync(config);
+
+        Assert.DoesNotContain(logger.Messages, m => m.Message.Contains("Post-execution command was killed", StringComparison.Ordinal));
+        Assert.Contains(logger.Messages, m => m.Message.Contains("Running post-execution command:", StringComparison.Ordinal));
     }
 }

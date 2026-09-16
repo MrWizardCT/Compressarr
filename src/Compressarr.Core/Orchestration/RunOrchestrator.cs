@@ -50,6 +50,15 @@ public interface IRunOrchestrator
 
 public sealed class RunOrchestrator : IRunOrchestrator
 {
+    // No config knob for this - a user-configured post-exec script hanging (waiting on input,
+    // launching a GUI, a deadlocked .bat/.ps1) previously blocked that whole pass's report/
+    // notification indefinitely with nothing (not even Abort) able to interrupt it. 5 minutes is
+    // generous for what this is meant for (a quick notify-another-tool call) while still bounding
+    // the worst case.
+    private static readonly TimeSpan DefaultPostExecTimeout = TimeSpan.FromMinutes(5);
+
+    private readonly TimeSpan _postExecTimeout;
+
     private readonly IPathExpander _pathExpander;
     private readonly IHandBrakePresetService _presets;
     private readonly IConversionOrchestrator _conversionOrchestrator;
@@ -82,7 +91,37 @@ public sealed class RunOrchestrator : IRunOrchestrator
         ITrashService trash,
         IRunProgressReporter progress,
         IActiveRunController activeRunController)
+        : this(pathExpander, presets, conversionOrchestrator, metadata, resumeStore, logger, historyStore,
+              rollupCalculator, reportGenerator, reportLauncher, notifications, notificationDispatcher, trash,
+              progress, activeRunController, DefaultPostExecTimeout)
     {
+    }
+
+    /// <summary>Test-only seam for PostExecTimeout - real production wiring always resolves the
+    /// public constructor above (only one PUBLIC constructor exists, so DI can't get confused
+    /// between the two), which fixes it at DefaultPostExecTimeout. A real end-to-end test of the
+    /// timeout/kill path can't wait out a real 5 minutes, so this lets it substitute a
+    /// millisecond-scale value instead - same "public ctor with a real default, internal ctor with
+    /// an override" shape RunLoopController's own TimeProvider seam already uses.</summary>
+    internal RunOrchestrator(
+        IPathExpander pathExpander,
+        IHandBrakePresetService presets,
+        IConversionOrchestrator conversionOrchestrator,
+        IMetadataService metadata,
+        IResumeStateStore resumeStore,
+        IRunLogger logger,
+        IRunHistoryStore historyStore,
+        IHistoryRollupCalculator rollupCalculator,
+        IHtmlReportGenerator reportGenerator,
+        IReportLauncher reportLauncher,
+        INotificationService notifications,
+        INotificationDispatcher notificationDispatcher,
+        ITrashService trash,
+        IRunProgressReporter progress,
+        IActiveRunController activeRunController,
+        TimeSpan postExecTimeout)
+    {
+        _postExecTimeout = postExecTimeout;
         _pathExpander = pathExpander;
         _presets = presets;
         _conversionOrchestrator = conversionOrchestrator;
@@ -356,7 +395,27 @@ public sealed class RunOrchestrator : IRunOrchestrator
         {
             _logger.Log($"\nRunning post-execution command: {postExecCmd} {config.PostExec.Args}");
             using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(postExecCmd, config.PostExec.Args) { UseShellExecute = false, CreateNoWindow = true });
-            process?.WaitForExit();
+            if (process is not null)
+            {
+                // token here is Abort's hard-kill token (see RunOnceAsync/_activeRunController.Begin
+                // above), so Abort can now actually interrupt a hung post-exec script too, not just
+                // the encode itself - previously nothing reached this process at all.
+                using var timeoutCts = new CancellationTokenSource(_postExecTimeout);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token, timeoutCts.Token);
+                try
+                {
+                    await process.WaitForExitAsync(linkedCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    var reason = token.IsCancellationRequested
+                        ? "the run was aborted"
+                        : $"it didn't finish within {_postExecTimeout.TotalMinutes:0.##} minutes";
+                    _logger.Log($"Post-execution command was killed - {reason}.", LogSeverity.Error);
+                    try { process.Kill(entireProcessTree: true); }
+                    catch (Exception ex) { _logger.Log($"Failed to kill post-execution command: {ex.Message}", LogSeverity.Error); }
+                }
+            }
         }
 
         _logger.Log(totalFiles == 0
