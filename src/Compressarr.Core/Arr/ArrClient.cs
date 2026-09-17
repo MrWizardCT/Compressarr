@@ -63,7 +63,22 @@ public sealed class ArrClient : IArrClient
 
     private static HttpRequestMessage CreateRequest(HttpMethod method, string baseUrl, string apiKey, string relativePath)
     {
-        var uri = baseUrl.TrimEnd('/') + relativePath;
+        // Still string concatenation, not a two-argument Uri combine (new Uri(baseUri,
+        // relativePath)) - every relativePath here starts with "/" (see call sites in
+        // ArrUnmonitorService), which Uri's own combining rules treat as an ABSOLUTE-PATH
+        // reference that replaces the base's entire path. That would silently drop a custom
+        // Sonarr/Radarr URL Base (e.g. baseUrl "http://host:8989/sonarr" behind a reverse proxy) -
+        // a real, supported *arr configuration this app must not break. Trim first (a pasted URL
+        // with stray leading/trailing whitespace, or one/more trailing slashes, is real fragility -
+        // confirmed as this item's actual complaint), then validate the fully-combined string
+        // through Uri so a genuinely malformed URL fails fast with a clear message here, not with
+        // a more confusing failure downstream inside HttpClient.
+        var combined = baseUrl.Trim().TrimEnd('/') + relativePath;
+        if (!Uri.TryCreate(combined, UriKind.Absolute, out var uri))
+        {
+            throw new InvalidOperationException($"'{baseUrl}' is not a valid URL.");
+        }
+
         var request = new HttpRequestMessage(method, uri);
         request.Headers.Add("X-Api-Key", apiKey);
         return request;
