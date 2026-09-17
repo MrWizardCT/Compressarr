@@ -173,7 +173,17 @@ public sealed class JsonResumeStateStore : IResumeStateStore
             Directory.CreateDirectory(folder);
         }
 
-        File.WriteAllText(path, JsonSerializer.Serialize(state, Options));
+        var json = JsonSerializer.Serialize(state, Options);
+
+        // Write to a temp file and swap it into place rather than writing the target file
+        // directly, so a concurrent Load() never observes a partially-written/torn file even if
+        // it happens to run outside the Update() lock below - same pattern JsonConfigStore.Save
+        // already uses, for the same reason. resume.json is rewritten after every single file AND
+        // every queue-control edit, so a crash/power-loss mid-write here is high-frequency enough
+        // to matter, unlike a one-off settings save.
+        var tempPath = path + ".tmp-" + Guid.NewGuid().ToString("N")[..8];
+        File.WriteAllText(tempPath, json);
+        File.Move(tempPath, path, overwrite: true);
     }
 
     public void DeleteIfComplete(List<ResumeEntry> state, string path)
