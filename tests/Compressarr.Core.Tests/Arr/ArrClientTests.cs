@@ -138,4 +138,45 @@ public class ArrClientTests
         Assert.Equal("http://localhost:8989/api/v3/episode/42", handler.LastRequest!.RequestUri!.AbsoluteUri);
         Assert.Equal(HttpMethod.Put, handler.LastRequest.Method);
     }
+
+    // Architecture-roadmap item 4: GetAsync/PostAsync/PutAsync took no CancellationToken at all, so
+    // Abort's token died before it ever reached a Sonarr/Radarr HTTP call. Decisive rather than just
+    // checking a parameter exists: an already-cancelled token must actually abort the call - if the
+    // token weren't really wired through to SendAsync, this would just succeed with the fake
+    // handler's normal OK response instead of throwing.
+    [Fact]
+    public async Task GetAsync_CancelledToken_ThrowsInsteadOfCompleting()
+    {
+        var handler = new FakeHttpMessageHandler(_ => OkJson());
+        var client = new ArrClient(new FakeHttpClientFactory(handler));
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.GetAsync("http://localhost:8989", "key", "/api/v3/command/1", cts.Token));
+    }
+
+    [Fact]
+    public async Task PutAsync_CancelledToken_ThrowsInsteadOfCompleting()
+    {
+        var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = new ArrClient(new FakeHttpClientFactory(handler));
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.PutAsync("http://localhost:8989", "key", "/api/v3/episode/1", new JsonObject(), cts.Token));
+    }
+
+    [Fact]
+    public async Task PostAsync_CancelledToken_ThrowsInsteadOfCompleting()
+    {
+        var handler = new FakeHttpMessageHandler(_ => OkJson());
+        var client = new ArrClient(new FakeHttpClientFactory(handler));
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.PostAsync("http://localhost:8989", "key", "/api/v3/command", new JsonObject(), cts.Token));
+    }
 }

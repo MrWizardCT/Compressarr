@@ -5,14 +5,14 @@ namespace Compressarr.Core.Arr;
 
 public interface IArrClient
 {
-    Task<JsonNode?> GetAsync(string baseUrl, string apiKey, string relativePath);
-    Task PutAsync(string baseUrl, string apiKey, string relativePath, JsonNode body);
+    Task<JsonNode?> GetAsync(string baseUrl, string apiKey, string relativePath, CancellationToken cancellationToken = default);
+    Task PutAsync(string baseUrl, string apiKey, string relativePath, JsonNode body, CancellationToken cancellationToken = default);
 
     /// <summary>Returns the response body - for a command POST (e.g. /api/v3/command), this is
     /// the created command's own representation, including its "id", needed to poll
     /// /api/v3/command/{id} afterward for real completion status instead of guessing with a fixed
     /// wait.</summary>
-    Task<JsonNode?> PostAsync(string baseUrl, string apiKey, string relativePath, JsonNode body);
+    Task<JsonNode?> PostAsync(string baseUrl, string apiKey, string relativePath, JsonNode body, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Thin wrapper around HttpClient with the X-Api-Key header, so callers don't repeat
@@ -26,32 +26,32 @@ public sealed class ArrClient : IArrClient
         _httpClientFactory = httpClientFactory;
     }
 
-    public async Task<JsonNode?> GetAsync(string baseUrl, string apiKey, string relativePath)
+    public async Task<JsonNode?> GetAsync(string baseUrl, string apiKey, string relativePath, CancellationToken cancellationToken = default)
     {
         using var request = CreateRequest(HttpMethod.Get, baseUrl, apiKey, relativePath);
         using var client = CreateClient();
-        using var response = await client.SendAsync(request);
+        using var response = await client.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<JsonNode>();
+        return await response.Content.ReadFromJsonAsync<JsonNode>(cancellationToken);
     }
 
-    public async Task PutAsync(string baseUrl, string apiKey, string relativePath, JsonNode body)
+    public async Task PutAsync(string baseUrl, string apiKey, string relativePath, JsonNode body, CancellationToken cancellationToken = default)
     {
         using var request = CreateRequest(HttpMethod.Put, baseUrl, apiKey, relativePath);
         request.Content = JsonContent.Create(body);
         using var client = CreateClient();
-        using var response = await client.SendAsync(request);
+        using var response = await client.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
     }
 
-    public async Task<JsonNode?> PostAsync(string baseUrl, string apiKey, string relativePath, JsonNode body)
+    public async Task<JsonNode?> PostAsync(string baseUrl, string apiKey, string relativePath, JsonNode body, CancellationToken cancellationToken = default)
     {
         using var request = CreateRequest(HttpMethod.Post, baseUrl, apiKey, relativePath);
         request.Content = JsonContent.Create(body);
         using var client = CreateClient();
-        using var response = await client.SendAsync(request);
+        using var response = await client.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<JsonNode>();
+        return await response.Content.ReadFromJsonAsync<JsonNode>(cancellationToken);
     }
 
     private HttpClient CreateClient()

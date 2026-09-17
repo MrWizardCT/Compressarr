@@ -19,8 +19,14 @@ file sealed class FakeArrClient : IArrClient
     public Queue<JsonNode?> CommandStatusResponses { get; } = new(new[] { JsonNode.Parse("""{"id": 1, "status": "completed", "result": "successful"}""") });
     public List<(string Method, string Path)> Calls { get; } = new();
 
-    public Task<JsonNode?> GetAsync(string baseUrl, string apiKey, string relativePath)
+    /// <summary>The cancellationToken most recently passed into any call - lets a test assert
+    /// UnmonitorAsync's own token (Abort) actually reaches ArrClient calls, not just
+    /// WaitForCommandAsync's polling delay (architecture-roadmap item 4).</summary>
+    public CancellationToken LastCancellationToken { get; private set; }
+
+    public Task<JsonNode?> GetAsync(string baseUrl, string apiKey, string relativePath, CancellationToken cancellationToken = default)
     {
+        LastCancellationToken = cancellationToken;
         Calls.Add(("GET", relativePath));
         if (relativePath.StartsWith("/api/v3/command/", StringComparison.Ordinal))
         {
@@ -29,14 +35,16 @@ file sealed class FakeArrClient : IArrClient
         return Task.FromResult(ParseResponse);
     }
 
-    public Task PutAsync(string baseUrl, string apiKey, string relativePath, JsonNode body)
+    public Task PutAsync(string baseUrl, string apiKey, string relativePath, JsonNode body, CancellationToken cancellationToken = default)
     {
+        LastCancellationToken = cancellationToken;
         Calls.Add(("PUT", relativePath));
         return Task.CompletedTask;
     }
 
-    public Task<JsonNode?> PostAsync(string baseUrl, string apiKey, string relativePath, JsonNode body)
+    public Task<JsonNode?> PostAsync(string baseUrl, string apiKey, string relativePath, JsonNode body, CancellationToken cancellationToken = default)
     {
+        LastCancellationToken = cancellationToken;
         Calls.Add(("POST", relativePath));
         return Task.FromResult(CommandPostResponse);
     }
@@ -152,6 +160,32 @@ public class ArrUnmonitorServiceTests
         Assert.True(result.SafeToCleanUp);
         Assert.Contains(client.Calls, c => c.Method == "PUT" && c.Path == "/api/v3/episode/7");
         Assert.Contains(client.Calls, c => c.Method == "POST" && c.Path == "/api/v3/command");
+    }
+
+    // Architecture-roadmap item 4: UnmonitorAsync's own cancellationToken (Abort) previously died
+    // before reaching any actual _client.* HTTP call - only WaitForCommandAsync's own polling delay
+    // ever saw it. Confirms the token now reaches ArrClient itself, not just the wait between polls.
+    [Fact]
+    public async Task UnmonitorAsync_PassesCancellationTokenThroughToArrClientCalls()
+    {
+        var client = new FakeArrClient
+        {
+            ParseResponse = JsonNode.Parse("""
+                {
+                  "series": { "id": 42 },
+                  "episodes": [ { "id": 7, "monitored": true } ]
+                }
+                """)
+        };
+        var service = new ArrUnmonitorService(client, new NoOpRunLogger(), TinyInterval, TinyMaxWait, TinyInterval);
+        var config = ConfigWith(new ArrServiceSettings { Enabled = true, Url = "http://sonarr:8989", ApiKey = "key" });
+        using var cts = new CancellationTokenSource();
+
+        await service.UnmonitorAsync(config, "Show.S01E01.mkv", isTv: true, cts.Token);
+
+        // Not `default` - proves this specific token instance actually reached the client, not
+        // just that some token or other was passed.
+        Assert.Equal(cts.Token, client.LastCancellationToken);
     }
 
     // Real API shapes confirmed live against Sonarr/Radarr 2026-09-10 - see ArrUnmonitorService's

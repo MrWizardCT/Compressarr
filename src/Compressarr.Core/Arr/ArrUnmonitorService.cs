@@ -136,7 +136,7 @@ public sealed class ArrUnmonitorService : IArrUnmonitorService
 
     private async Task<(bool Matched, bool Changed, ArrRescanOutcome Outcome)> UnmonitorSonarrAsync(string baseUrl, string apiKey, string fileName, CancellationToken cancellationToken)
     {
-        var parsed = await _client.GetAsync(baseUrl, apiKey, "/api/v3/parse?title=" + Uri.EscapeDataString(fileName));
+        var parsed = await _client.GetAsync(baseUrl, apiKey, "/api/v3/parse?title=" + Uri.EscapeDataString(fileName), cancellationToken);
 
         var episodes = parsed?["series"] is not null ? parsed["episodes"] as JsonArray : null;
         if (episodes is null || episodes.Count == 0)
@@ -153,13 +153,13 @@ public sealed class ArrUnmonitorService : IArrUnmonitorService
 
             episode["monitored"] = false;
             var episodeId = episode["id"]!.GetValue<int>();
-            await _client.PutAsync(baseUrl, apiKey, $"/api/v3/episode/{episodeId}", episode);
+            await _client.PutAsync(baseUrl, apiKey, $"/api/v3/episode/{episodeId}", episode, cancellationToken);
             changedAny = true;
         }
 
         var seriesId = parsed!["series"]!["id"]!.GetValue<int>();
         var command = new JsonObject { ["name"] = "RescanSeries", ["seriesId"] = seriesId };
-        var commandResponse = await _client.PostAsync(baseUrl, apiKey, "/api/v3/command", command);
+        var commandResponse = await _client.PostAsync(baseUrl, apiKey, "/api/v3/command", command, cancellationToken);
         var outcome = await WaitForCommandAsync(baseUrl, apiKey, commandResponse, "Sonarr", cancellationToken);
 
         return (true, changedAny, outcome);
@@ -167,7 +167,7 @@ public sealed class ArrUnmonitorService : IArrUnmonitorService
 
     private async Task<(bool Matched, bool Changed, ArrRescanOutcome Outcome)> UnmonitorRadarrAsync(string baseUrl, string apiKey, string fileName, CancellationToken cancellationToken)
     {
-        var parsed = await _client.GetAsync(baseUrl, apiKey, "/api/v3/parse?title=" + Uri.EscapeDataString(fileName));
+        var parsed = await _client.GetAsync(baseUrl, apiKey, "/api/v3/parse?title=" + Uri.EscapeDataString(fileName), cancellationToken);
 
         var movie = parsed?["movie"] as JsonObject;
         if (movie is null || movie["id"] is null)
@@ -180,13 +180,13 @@ public sealed class ArrUnmonitorService : IArrUnmonitorService
         {
             movie["monitored"] = false;
             var movieId = movie["id"]!.GetValue<int>();
-            await _client.PutAsync(baseUrl, apiKey, $"/api/v3/movie/{movieId}", movie);
+            await _client.PutAsync(baseUrl, apiKey, $"/api/v3/movie/{movieId}", movie, cancellationToken);
             changed = true;
         }
 
         var movieIdForCommand = movie["id"]!.GetValue<int>();
         var command = new JsonObject { ["name"] = "RescanMovie", ["movieId"] = movieIdForCommand };
-        var commandResponse = await _client.PostAsync(baseUrl, apiKey, "/api/v3/command", command);
+        var commandResponse = await _client.PostAsync(baseUrl, apiKey, "/api/v3/command", command, cancellationToken);
         var outcome = await WaitForCommandAsync(baseUrl, apiKey, commandResponse, "Radarr", cancellationToken);
 
         return (true, changed, outcome);
@@ -230,10 +230,16 @@ public sealed class ArrUnmonitorService : IArrUnmonitorService
             JsonNode? status;
             try
             {
-                status = await _client.GetAsync(baseUrl, apiKey, $"/api/v3/command/{id}");
+                status = await _client.GetAsync(baseUrl, apiKey, $"/api/v3/command/{id}", cancellationToken);
             }
             catch
             {
+                // Catches a genuine cancellation too, not just a transient poll failure - harmless
+                // either way: the loop's own IsCancellationRequested check (top of the next
+                // iteration) or Task.Delay's cancellation below still correctly returns Cancelled,
+                // just one negligible step later. What matters here is that the token now actually
+                // reaches the in-flight HTTP call itself, so Abort tears it down immediately instead
+                // of leaving it to run for up to ArrClient's own 15-second HttpClient.Timeout.
                 status = null;
             }
 
