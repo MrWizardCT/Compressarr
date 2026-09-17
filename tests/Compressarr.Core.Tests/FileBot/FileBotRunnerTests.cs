@@ -222,4 +222,38 @@ public class FileBotRunnerTests : IDisposable
 
         Assert.Contains(logger.Logs, l => l.Severity == LogSeverity.Error && l.Message.Contains("Exited with code"));
     }
+
+    // Architecture-roadmap item 4: {files} must expand into one ArgumentList entry per file, not a
+    // single shell-joined/quoted string the child process has to re-parse itself - the same
+    // reasoning HandBrakeProcessRunner.RunAsync already applied to its own Extra CLI Options.
+    [Fact]
+    public void Run_FilesTokenSubstitution_PassesFileWithSpaceInNameAsOneArgument()
+    {
+        // Decisive rather than just plausible: if the space in this filename were ever wrongly
+        // treated as an argument separator (the exact bug class this fix targets), `del` would
+        // receive two bogus paths instead of the real one, and the file would survive untouched.
+        var moviePath = CreateFile("My Movie (2020).mkv");
+        var runner = new FileBotRunner(new RealFolderScanner());
+        var logger = new RecordingRunLogger();
+        var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, MovieArgs = "/c del {files}" };
+
+        runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+
+        Assert.False(File.Exists(moviePath));
+    }
+
+    [Fact]
+    public void Run_FilesTokenSubstitution_MultipleFiles_EachPassedAsItsOwnArgument()
+    {
+        var moviePath1 = CreateFile("First Movie (2020).mkv");
+        var moviePath2 = CreateFile("Second Movie (2021).mkv");
+        var runner = new FileBotRunner(new RealFolderScanner());
+        var logger = new RecordingRunLogger();
+        var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, MovieArgs = "/c del {files}" };
+
+        runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+
+        Assert.False(File.Exists(moviePath1));
+        Assert.False(File.Exists(moviePath2));
+    }
 }

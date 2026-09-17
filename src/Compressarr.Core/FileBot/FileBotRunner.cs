@@ -90,11 +90,28 @@ public sealed class FileBotRunner : IFileBotRunner
             return files.Select(f => f.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
 
-        var fileList = string.Join(" ", files.Select(f => $"\"{f.FullName}\""));
-        args = args.Replace("{files}", fileList);
+        // Tokenize the free-form Args template FIRST (honoring quotes, via the same tokenizer
+        // HandBrakeProcessRunner.RunAsync already uses for its own free-form Extra CLI Options),
+        // then expand the {files} token into one ArgumentList entry per file - not a single
+        // joined/quoted string the child process would have to re-parse itself, avoiding the exact
+        // shell-style re-quoting bugs (a path containing a space or an embedded quote) that switch
+        // already fixed for HandBrake.
+        var argumentList = new List<string>();
+        foreach (var token in HandBrakeProcessRunner.SplitExtraOptions(args))
+        {
+            if (token == "{files}")
+            {
+                argumentList.AddRange(files.Select(f => f.FullName));
+            }
+            else
+            {
+                argumentList.Add(token);
+            }
+        }
 
-        logger.Log($"[FileBot] Running ({label}): \"{cliPath}\" {args}");
-        var output = InvokeProcess(cliPath, args, logger);
+        var displayArgs = string.Join(" ", argumentList.Select(a => a.Contains(' ') ? $"\"{a}\"" : a));
+        logger.Log($"[FileBot] Running ({label}): \"{cliPath}\" {displayArgs}");
+        var output = InvokeProcess(cliPath, argumentList, logger);
 
         // A file whose original path is gone was renamed/moved away - matched. A file whose path
         // is untouched could still be a genuine match: FileBot logs "[MOVE] Skipped [X] because [X]
@@ -108,18 +125,25 @@ public sealed class FileBotRunner : IFileBotRunner
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    private string InvokeProcess(string cliPath, string args, IRunLogger logger)
+    private string InvokeProcess(string cliPath, IReadOnlyList<string> argumentList, IRunLogger logger)
     {
         var output = new StringBuilder();
         try
         {
-            var startInfo = new ProcessStartInfo(cliPath, args)
+            var startInfo = new ProcessStartInfo(cliPath)
             {
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
             };
+            // ArgumentList, not a manually built/re-quoted Arguments string - each element reaches
+            // the child process exactly as given, matching HandBrakeProcessRunner.RunAsync's own
+            // reasoning for the identical switch.
+            foreach (var arg in argumentList)
+            {
+                startInfo.ArgumentList.Add(arg);
+            }
 
             using var process = new Process { StartInfo = startInfo };
             var stateLock = new object();
