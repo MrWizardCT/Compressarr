@@ -308,6 +308,39 @@ A digest reads: *"Compressed 12 files, reducing original size from 45.3 GB to 21
 53.4% of original size."* Want digest-only for a channel? Set its Trigger to **Never** and enable
 Daily and/or Weekly - the two are independent, so any combination works.
 
+**Message Format**: controls the Title/message text sent to Discord, Slack, Telegram, Pushover,
+ntfy, Gotify, and Notifiarr when a run completes (it doesn't affect the desktop toast above, or
+the Generic Webhook's raw JSON payload, though the Title/Body text it produces does also flow into
+IFTTT's `value1`/`value2` and the Generic Webhook's own `title`/`message` fields alongside their
+other structured data). Pick a **Style**:
+
+| Style | Example |
+|---|---|
+| Minimal | `12 file(s), 24.1 GB saved.` |
+| Standard | `12 file(s) processed, 24.1 GB saved (53.4%) in 42 min.` |
+| Detailed | `12 file(s) processed in 42 min.`<br>`45.3 GB -> 21.1 GB (53.4% smaller)`<br>`Errors: 0 - Warnings: 0` |
+| Custom | Write your own Title and Body templates using the same tokens below |
+
+Every style shares one Title line: `Compressarr run #{run_number} - {outcome}`. A live **Preview**
+on the page shows exactly what the current style/template will produce, using real numbers from
+your history. Custom templates use `{token}` placeholders - an unrecognized token is left as
+literal text rather than breaking the message:
+
+| Token | Value |
+|---|---|
+| `{run_number}` | The sequential run number |
+| `{files}` | Files processed this run |
+| `{saved_gb}` / `{saved_pct}` | Space saved, in GB / as a percent |
+| `{before_gb}` / `{after_gb}` | Total size before/after, in GB |
+| `{duration}` | How long the run took |
+| `{outcome}` | Success / Warning / Error |
+| `{error_count}` / `{warning_count}` | Counts for this run |
+| `{retries_succeeded}` | Files recovered via automatic retry this run |
+| `{report_path}` | Local path to this run's HTML report |
+| `{today_files}` / `{today_saved_gb}` | Rollup for today so far |
+| `{month_files}` / `{month_saved_gb}` | Rollup for this calendar month so far |
+| `{year_files}` / `{year_saved_gb}` | Rollup for this calendar year so far |
+
 **What data is sent**: every channel receives the run number, an aggregate summary (e.g. "12
 file(s) processed, 4.2 GB saved"), and the outcome (success/warning/error) - never filenames,
 media titles, folder paths, or anything else from your configuration. The one exception is the
