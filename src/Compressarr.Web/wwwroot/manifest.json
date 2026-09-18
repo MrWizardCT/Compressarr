@@ -1,0 +1,25 @@
+{
+  "name": "Compressarr",
+  "short_name": "Compressarr",
+  "description": "Monitor and control Compressarr's HandBrake conversion queue from your phone.",
+  "start_url": "/monitor.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f2f4f8",
+  "theme_color": "#5b6389",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

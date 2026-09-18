@@ -77,7 +77,18 @@ public partial class App : Application
             // for.
             OnPrepareResponse = ctx =>
             {
-                ctx.Context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+                // The service worker script is the one exception to the blanket no-store below -
+                // no-cache still forces revalidation on every registration attempt (so an updated
+                // sw.js is never missed), it just stops short of no-store's "never let the browser
+                // cache this response at all." This is the standard recommendation for service
+                // worker scripts specifically (see web.dev's own PWA guidance) independent of any
+                // one browser's behavior - not verified against a real Chrome/Edge from this
+                // session (see compressarr_pwa memory: the sandboxed preview browser available
+                // here fails ALL service worker registration, even a trivial one, so it couldn't
+                // confirm or rule out a no-store-specific issue either way).
+                ctx.Context.Response.Headers.CacheControl = ctx.File.Name == "sw.js"
+                    ? "no-cache"
+                    : "no-cache, no-store, must-revalidate";
             }
         });
         _webApp.MapCompressarrEndpoints();

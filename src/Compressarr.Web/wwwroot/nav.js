@@ -94,6 +94,7 @@ function renderNav(activePage) {
   const toolbar = document.createElement('div');
   toolbar.className = 'toolbar';
   toolbar.innerHTML = `
+    <button type="button" class="hamburger-btn" id="hamburgerBtn" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg></button>
     <h1>${titleText}</h1>
     <span class="toolbar-spacer"></span>
     <div class="toolbar-global-status">
@@ -139,7 +140,16 @@ function renderNav(activePage) {
   mainCol.appendChild(toolbar);
   if (existingMain) mainCol.appendChild(existingMain);
 
+  // Off-canvas at narrow viewports (see styles.css's sidebar media query) - inert/invisible at
+  // desktop width, where .sidebar is always visible in its normal flex position instead. Sits
+  // between sidebar and mainCol in the DOM only so its z-index sits above mainCol but the sidebar
+  // itself (also elevated at narrow widths) still layers above the scrim.
+  const scrim = document.createElement('div');
+  scrim.className = 'sidebar-scrim';
+  scrim.id = 'sidebarScrim';
+
   appShell.appendChild(sidebar);
+  appShell.appendChild(scrim);
   appShell.appendChild(mainCol);
   document.body.prepend(appShell);
 
@@ -147,9 +157,114 @@ function renderNav(activePage) {
     setTheme(e.target.checked ? 'dark' : 'light');
   });
 
+  function closeSidebar() {
+    sidebar.classList.remove('open');
+    scrim.classList.remove('open');
+  }
+  document.getElementById('hamburgerBtn').addEventListener('click', () => {
+    sidebar.classList.add('open');
+    scrim.classList.add('open');
+  });
+  scrim.addEventListener('click', closeSidebar);
+  // Only actually matters at narrow widths (desktop never opens the drawer in the first place),
+  // but harmless to always attach - a real page navigation happens regardless of this class.
+  sidebar.querySelectorAll('a').forEach(a => a.addEventListener('click', closeSidebar));
+
   renderHistoryBadges();
   startGlobalStatusPoll();
+  registerServiceWorker();
+  initInstallPrompt();
   checkForUpdate();
+}
+
+// ---- PWA: service worker registration + install prompt banner. Both are best-effort and must
+// never break page load if unsupported/unavailable - a service worker in particular silently
+// fails on any non-secure context other than localhost (see manifest.json's own real-world caveat:
+// a phone opening Compressarr over a plain-http LAN address, not localhost, gets no install
+// prompt and no service worker at all, by browser design, not a bug here).
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('/sw.js').catch(() => {
+    // Best-effort - most commonly rejected because the page isn't in a secure context (see above).
+  });
+}
+
+const INSTALL_DISMISSED_KEY = 'compressarr.installBannerDismissedV1';
+let deferredInstallPrompt = null;
+
+function isRunningStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function isIosDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+}
+
+function showInstallBanner(kind) {
+  if (document.getElementById('installBanner')) return; // already showing
+  if (localStorage.getItem(INSTALL_DISMISSED_KEY) === 'true') return;
+  if (isRunningStandalone()) return;
+
+  const mainCol = document.querySelector('.main-col');
+  const toolbar = document.querySelector('.toolbar');
+  if (!mainCol || !toolbar) return;
+
+  const banner = document.createElement('div');
+  banner.className = 'install-banner';
+  banner.id = 'installBanner';
+  banner.innerHTML = kind === 'ios'
+    ? `<img src="/assets/icon-192.png" alt="" />
+       <span class="grow">Install Compressarr: tap the Share icon, then "Add to Home Screen".</span>
+       <button type="button" class="dismiss" aria-label="Dismiss">&#10005;</button>`
+    : `<img src="/assets/icon-192.png" alt="" />
+       <span class="grow">Install Compressarr for one-tap access from your home screen.</span>
+       <button type="button" class="install-action">Install</button>
+       <button type="button" class="dismiss" aria-label="Dismiss">&#10005;</button>`;
+
+  toolbar.insertAdjacentElement('afterend', banner);
+
+  banner.querySelector('.dismiss').addEventListener('click', () => {
+    localStorage.setItem(INSTALL_DISMISSED_KEY, 'true');
+    banner.remove();
+  });
+
+  const actionBtn = banner.querySelector('.install-action');
+  if (actionBtn) {
+    actionBtn.addEventListener('click', async () => {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice; // single-use regardless of accept/dismiss
+      deferredInstallPrompt = null;
+      banner.remove();
+    });
+  }
+}
+
+function initInstallPrompt() {
+  if (isRunningStandalone()) return;
+
+  // Chrome/Edge/Android - fires only once the browser itself decides the page meets its
+  // installability criteria (valid manifest + registered service worker + secure context).
+  // preventDefault() suppresses the browser's own mini-infobar in favor of this banner, matching
+  // every other page-level notice's look.
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    showInstallBanner('android');
+  });
+
+  window.addEventListener('appinstalled', () => {
+    localStorage.setItem(INSTALL_DISMISSED_KEY, 'true');
+    const banner = document.getElementById('installBanner');
+    if (banner) banner.remove();
+  });
+
+  // iOS Safari has no beforeinstallprompt/install API at all - Add to Home Screen is a manual,
+  // user-driven action with nothing a page can trigger. Shown unconditionally for an iOS visitor
+  // (rather than waiting for an event that will never fire) so there's still a path to installing.
+  if (isIosDevice()) {
+    showInstallBanner('ios');
+  }
 }
 
 // Update indicator in the toolbar - visible on every page, same reasoning as the monitoring

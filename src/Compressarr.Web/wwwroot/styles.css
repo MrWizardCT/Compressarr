@@ -154,6 +154,51 @@ body {
 .sidebar-badge.err { background: var(--badge-danger); }
 .sidebar-badge.warn { background: var(--badge-warning); }
 
+.hamburger-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: #fff;
+  padding: 6px;
+  margin: -6px 2px -6px -6px;
+  border-radius: 7px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.hamburger-btn:hover { background: rgba(255, 255, 255, 0.12); }
+.hamburger-btn svg { width: 20px; height: 20px; display: block; }
+
+.sidebar-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 12, 20, 0.45);
+  z-index: 199;
+}
+
+/* Below this width the sidebar can no longer share the row with real content (200px fixed
+   leaves well under half the screen for everything else) - it becomes an off-canvas drawer
+   instead, toggled by .hamburger-btn (shown only at this same width) and closed by the scrim,
+   a nav-link click, or navigating away. Matches the width other pages' own two-column collapses
+   already use (.two-col/.routing-grid above). */
+@media (max-width: 760px) {
+  .hamburger-btn { display: flex; align-items: center; justify-content: center; }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: 4px 0 18px rgba(0, 0, 0, 0.25);
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  .sidebar-scrim.open { display: block; }
+}
+
 .main-col {
   flex: 1;
   min-width: 0;
@@ -240,6 +285,45 @@ body {
 
 .toolbar button:hover { border-color: #ffffff; color: #ffffff; }
 
+/* Inserted directly after the toolbar (see nav.js's initInstallPrompt/showInstallBanner) - a
+   content-theme surface, not toolbar chrome, since it sits in the scrolling content column below
+   the fixed toolbar bar, not inside it. */
+.install-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  padding: 10px 20px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.install-banner img { width: 22px; height: 22px; border-radius: 5px; flex-shrink: 0; }
+.install-banner .grow { flex: 1; min-width: 0; line-height: 1.35; }
+.install-banner .install-action {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.install-banner .dismiss {
+  background: none;
+  border: none;
+  color: var(--accent);
+  opacity: 0.7;
+  padding: 6px 4px;
+  font-size: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.install-banner .dismiss:hover { opacity: 1; }
+
 /* Monitoring status (with a live/idle dot), the countdown, and CPU - visible in the toolbar on
    every page, not just Monitor (see nav.js's own poll of /api/run/status). Sits between the
    page-actions spacer and the theme toggle, same relative position as the mockup's
@@ -252,6 +336,33 @@ body {
   color: var(--toolbar-text);
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+/* The toolbar's fixed 56px height (set above) assumes everything fits on one line - true at
+   desktop width, but real user-facing breakage at narrow widths: .toolbar-spacer's own content
+   (a page's action buttons, e.g. Monitor's Start/Pause/Run Now/Abort) and .toolbar-global-status
+   would still try to render on that same single line despite flex-wrap, overlapping each other
+   inside the fixed height instead of actually dropping to a new line. Forces each onto its own
+   full-width row instead (flex-basis: 100% always starts a fresh line in a wrapping flex
+   container) and lets the toolbar's own height grow to fit, regardless of which page's own
+   actions happen to be inside .toolbar-spacer. */
+@media (max-width: 760px) {
+  .toolbar {
+    height: auto;
+    min-height: 52px;
+    padding: 10px 14px;
+    row-gap: 8px;
+  }
+  .toolbar h1 { flex: 1 1 auto; min-width: 0; }
+  /* .toolbar-spacer going full-width only fixed half the overlap: it and its own child
+     (.page-actions, a page's actual button row) are BOTH plain non-wrapping flex containers, so
+     a row of 4+ buttons (e.g. Monitor's Start/Pause/Run Now/Abort) still ran off the right edge
+     of the screen instead of dropping to a second line, even after gaining a full-width row to
+     drop onto. Both levels need flex-wrap for the buttons themselves to actually wrap. */
+  .toolbar-spacer { flex: 1 0 100%; order: 3; flex-wrap: wrap; row-gap: 8px; }
+  .toolbar .field-row,
+  .toolbar .page-actions { flex-wrap: wrap; row-gap: 8px; }
+  .toolbar-global-status { flex: 1 0 100%; order: 4; white-space: normal; }
 }
 
 /* Hidden by default (see the "hidden" class on the element itself) - only shown once
@@ -1209,6 +1320,48 @@ td { font-variant-numeric: tabular-nums; }
 .queue-item.skipped .queue-meta,
 .queue-item.skipped .queue-preset-select {
   opacity: 0.5;
+}
+
+/* Reflows the same flat row of children into a two-line card via flex order/flex-basis alone -
+   no markup change in monitor.js needed. Row 1: badge(s) + filename + the 3-dot menu. Row 2
+   (forced onto its own line by .queue-lane's flex-basis: 100%): lane, size, preset - separated
+   from row 1 by a thin rule, same visual grouping the approved mobile mockup used. The drag
+   handle is hidden entirely rather than shrunk - dragging to reorder is an awkward touch gesture
+   competing with page-scroll, and the existing "Move to top/Move to bottom" 3-dot menu items
+   already cover the same job (see compressarr_v2_deferred_features memory's own note on this). */
+@media (max-width: 760px) {
+  .queue-item { padding: 10px 12px; gap: 6px 8px; }
+
+  .queue-handle { display: none; }
+
+  .queue-badge { order: 1; }
+  .queue-badge.unmatched { order: 2; }
+
+  .queue-item .queue-file {
+    order: 3;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 13px;
+  }
+
+  .queue-menu-wrap { order: 4; }
+
+  .queue-item .queue-lane {
+    order: 5;
+    flex: 1 0 100%;
+    min-width: 0;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+  }
+
+  .queue-item .queue-meta { order: 6; }
+
+  .queue-preset-select, .queue-preset-static {
+    order: 7;
+    margin-left: auto;
+    max-width: 130px;
+  }
 }
 
 .banner {
