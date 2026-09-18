@@ -268,6 +268,26 @@ file sealed class NoOpArrUnmonitorService : IArrUnmonitorService
         Task.FromResult(new ArrUnmonitorResult(null, ArrRescanOutcome.NotEnabled));
 }
 
+/// <summary>Fires a callback from inside UnmonitorAsync - simulates a concurrent web queue edit
+/// landing during the *arr rescan-confirmation step specifically, AFTER ConversionOrchestrator's
+/// own one-time RefreshResumeState call (right after HandBrake finishes) but BEFORE its final save.
+/// This is the exact gap a code review found live: RefreshResumeState only runs once per file, but
+/// routing, companion-file movement, and this arr step all still run afterward - an edit to a
+/// DIFFERENT file landing here was previously silently wiped the moment the in-flight file's own
+/// blind Save(resumeState, ...) ran, unlike the already-fixed "edit lands mid-encode" case
+/// ConcurrentEditProcessRunner covers above.</summary>
+file sealed class ConcurrentEditArrUnmonitorService : IArrUnmonitorService
+{
+    private readonly Action _onUnmonitor;
+    public ConcurrentEditArrUnmonitorService(Action onUnmonitor) => _onUnmonitor = onUnmonitor;
+
+    public Task<ArrUnmonitorResult> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default)
+    {
+        _onUnmonitor();
+        return Task.FromResult(new ArrUnmonitorResult(null, ArrRescanOutcome.NotEnabled));
+    }
+}
+
 file sealed class ThrowingArrUnmonitorService : IArrUnmonitorService
 {
     public Task<ArrUnmonitorResult> UnmonitorAsync(CompressarrConfig config, string fileName, bool isTv, CancellationToken cancellationToken = default) =>
@@ -919,6 +939,66 @@ public class ConversionOrchestratorTests : IDisposable
         // not been silently overwritten by them.
         var finalState = realResumeStore.Load(resumeFilePath);
         Assert.All(finalState, e => Assert.Equal(ResumeStatus.Completed, e.Status));
+    }
+
+    [Fact]
+    public async Task ProcessLaneAsync_ConcurrentQueueEditAfterRefresh_DuringPostProcessing_IsHonoredNotLost()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+
+        var path1 = Path.Combine(inputDir, "episode1.mkv");
+        var path2 = Path.Combine(inputDir, "episode2.mkv");
+        File.WriteAllText(path1, "1");
+        File.WriteAllText(path2, "2");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir, MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+        var realResumeStore = new JsonResumeStateStore();
+
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "lane1", FullName = path1, Status = ResumeStatus.Pending, Order = 0 },
+            new() { LaneId = "lane1", FullName = path2, Status = ResumeStatus.Pending, Order = 1 }
+        };
+        realResumeStore.Save(resumeState, resumeFilePath);
+
+        // Simulates a concurrent web edit landing during episode1's *arr rescan step - AFTER
+        // ConversionOrchestrator's one-time RefreshResumeState already ran for episode1, exactly
+        // the gap the code review found: routing/companion-move/arr-rescan all still run between
+        // that one refresh and the final save, so an edit to a DIFFERENT file landing anywhere in
+        // that window was previously silently lost.
+        var arrUnmonitor = new ConcurrentEditArrUnmonitorService(() =>
+        {
+            realResumeStore.Update(resumeFilePath, state =>
+            {
+                state.Single(e => e.FullName == path2).Skipped = true;
+                return true;
+            });
+        });
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), arrUnmonitor,
+            new RecordingTrashService(), new NoOpRunLogger(), realResumeStore, new NoOpProgressReporter(), configStore);
+
+        var results = await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", resumeState, resumeFilePath, CancellationToken.None);
+
+        // episode2's Skipped=true (set while episode1 was still processing) must have survived
+        // episode1's own final save - previously it was silently wiped, so episode2 would have
+        // been incorrectly picked and processed too.
+        Assert.Single(results);
+        Assert.Equal("episode1.mkv", results[0].FileName);
+
+        var finalState = realResumeStore.Load(resumeFilePath);
+        Assert.True(finalState.Single(e => e.FullName == path2).Skipped);
+        Assert.Equal(ResumeStatus.Pending, finalState.Single(e => e.FullName == path2).Status);
     }
 
     [Fact]

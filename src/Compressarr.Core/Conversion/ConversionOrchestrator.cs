@@ -816,7 +816,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         {
             _logger.Log($"  No {contentType} preset configured for this lane - skipping.", LogSeverity.Error);
             resumeEntry.Status = ResumeStatus.Error;
-            _resumeStore.Save(resumeState, resumeFilePath);
+            SaveEntryResult(resumeEntry, resumeFilePath);
 
             return new ConversionResult
             {
@@ -916,7 +916,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             catch (Exception ex) { _logger.Log($"  Unable to remove temporary file '{tempFileName}': {ex.Message}", LogSeverity.Error); }
             _logger.Log($"  Conversion of '{file.Name}' aborted by user.", LogSeverity.Error);
             resumeEntry.Status = ResumeStatus.Error;
-            _resumeStore.Save(resumeState, resumeFilePath);
+            SaveEntryResult(resumeEntry, resumeFilePath);
             cancellationToken.ThrowIfCancellationRequested();
         }
 
@@ -1246,7 +1246,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         _progress.FileCompleted(lane.Id, finalFileName ?? newFileName, overallSuccess);
         _progress.FileThroughputSample(presetName, beginSizeGb, duration);
 
-        _resumeStore.Save(resumeState, resumeFilePath);
+        SaveEntryResult(resumeEntry, resumeFilePath);
 
         return new ConversionResult
         {
@@ -1321,5 +1321,44 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 resumeState.Add(diskEntry);
             }
         }
+    }
+
+    /// <summary>Persists this one file's own processing-owned fields (Status, EncodedFilePath,
+    /// EncodedFileDesiredName, PendingCompanionSourceDirectory, PendingCompanionVideoDestPath) onto
+    /// the freshest disk copy of resume.json, instead of blindly overwriting the whole file with
+    /// ProcessOneFileAsync's own in-memory resumeState snapshot. Code-review finding: that snapshot
+    /// is only fresh as of RefreshResumeState's own one-time call right after HandBrake finishes -
+    /// routing, companion-file movement, and the Sonarr/Radarr rescan-confirmation wait (up to
+    /// IArrUnmonitorService's own multi-minute poll window) all still run AFTER that refresh and
+    /// BEFORE this save. A queue-control edit (reorder/skip/preset-override/remove) to ANY entry -
+    /// not just this file's own - made anywhere in that window was previously silently lost the
+    /// instant a blind Save(resumeState, ...) ran, even though the queue endpoint's own write to
+    /// disk had already succeeded moments earlier. Never touches the UI-owned fields (Order/
+    /// Skipped/PresetOverride/Removed/CreatedByQueueEdit) on the disk entry - whatever's freshest
+    /// there for those wins, the same merge direction RefreshResumeState above already uses, just
+    /// going the other way for the fields this method actually owns.</summary>
+    private void SaveEntryResult(ResumeEntry resumeEntry, string resumeFilePath)
+    {
+        _resumeStore.Update(resumeFilePath, diskState =>
+        {
+            var diskEntry = diskState.FirstOrDefault(e =>
+                e.LaneId == resumeEntry.LaneId &&
+                string.Equals(e.FullName, resumeEntry.FullName, StringComparison.OrdinalIgnoreCase));
+            if (diskEntry is null)
+            {
+                // Genuinely rare (e.g. Reset Resume File fired mid-pass) - fall back to persisting
+                // our own in-memory copy rather than silently dropping this file's result entirely.
+                diskState.Add(resumeEntry);
+            }
+            else
+            {
+                diskEntry.Status = resumeEntry.Status;
+                diskEntry.EncodedFilePath = resumeEntry.EncodedFilePath;
+                diskEntry.EncodedFileDesiredName = resumeEntry.EncodedFileDesiredName;
+                diskEntry.PendingCompanionSourceDirectory = resumeEntry.PendingCompanionSourceDirectory;
+                diskEntry.PendingCompanionVideoDestPath = resumeEntry.PendingCompanionVideoDestPath;
+            }
+            return true;
+        });
     }
 }

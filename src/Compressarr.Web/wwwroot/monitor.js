@@ -185,7 +185,9 @@ function fillQueuePresetSelect(select, item) {
   select.value = currentValue;
 }
 
-function queueKey(item) { return `${item.laneId}::${item.fileName}`; }
+// fullName, not fileName - two different files can legitimately share the same leaf name in
+// different lane subfolders (code-review finding), so only the full path is actually unique.
+function queueKey(item) { return `${item.laneId}::${item.fullName}`; }
 
 function queueBadgeClass(item) {
   if (item.isError) return 'error';
@@ -274,7 +276,7 @@ function renderQueueList() {
       // Pending row alongside the untouched Error one instead of editing it.
       const removeBtn = document.createElement('button');
       removeBtn.textContent = 'Remove';
-      removeBtn.addEventListener('click', () => removeErrorQueueEntry(item.laneId, item.fileName));
+      removeBtn.addEventListener('click', () => removeErrorQueueEntry(item.laneId, item.fileName, item.fullName));
       row.appendChild(removeBtn);
     } else {
       row.querySelector('.queue-handle').addEventListener('pointerdown', e => startQueueDrag(e, item, row));
@@ -298,7 +300,7 @@ function renderQueueList() {
         await fetch('/api/run/queue/preset-override', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName, preset: chosen })
+          body: JSON.stringify({ laneId: item.laneId, fullName: item.fullName, preset: chosen })
         });
         poll();
       });
@@ -323,13 +325,13 @@ function renderQueueList() {
           await fetch('/api/run/queue/skip', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName, skipped: !item.isSkipped })
+            body: JSON.stringify({ laneId: item.laneId, fullName: item.fullName, skipped: !item.isSkipped })
           });
         } else if (act === 'use-lane-preset') {
           await fetch('/api/run/queue/preset-override', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName, preset: null })
+            body: JSON.stringify({ laneId: item.laneId, fullName: item.fullName, preset: null })
           });
         } else if (act === 'move-top' || act === 'move-bottom') {
           await moveQueueItem(item, act === 'move-top');
@@ -337,7 +339,7 @@ function renderQueueList() {
           await fetch('/api/run/queue/remove', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ laneId: item.laneId, fileName: item.fileName })
+            body: JSON.stringify({ laneId: item.laneId, fullName: item.fullName })
           });
         }
         poll();
@@ -422,7 +424,7 @@ async function onQueueDragEnd() {
   // picking order. Error rows are excluded: they're never actually processed, and including one
   // here would let FindOrCreatePendingEntry silently create a duplicate, wrongly re-encodable
   // Pending entry for an already-failed file (a real bug, fixed server-side too as a backstop).
-  const items = displayItems.filter(i => !i.isError).map(i => ({ laneId: i.laneId, fileName: i.fileName }));
+  const items = displayItems.filter(i => !i.isError).map(i => ({ laneId: i.laneId, fullName: i.fullName }));
 
   setTimeout(() => {
     if (ghostEl) { ghostEl.remove(); ghostEl = null; }
@@ -454,7 +456,7 @@ async function moveQueueItem(item, toTop) {
   }
   renderQueueList();
 
-  const items = displayItems.filter(i => !i.isError).map(i => ({ laneId: i.laneId, fileName: i.fileName }));
+  const items = displayItems.filter(i => !i.isError).map(i => ({ laneId: i.laneId, fullName: i.fullName }));
   await fetch('/api/run/queue/reorder', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -462,13 +464,13 @@ async function moveQueueItem(item, toTop) {
   });
 }
 
-async function removeErrorQueueEntry(laneId, fileName) {
+async function removeErrorQueueEntry(laneId, fileName, fullName) {
   if (!confirm(`Remove '${fileName}' from the queue?\n\nThis only clears its tracked error status - the file itself is left untouched on disk, and a future scan can pick it back up as new.`)) return;
 
   await fetch('/api/run/queue/remove-error', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ laneId, fileName })
+    body: JSON.stringify({ laneId, fullName })
   });
   poll();
 }

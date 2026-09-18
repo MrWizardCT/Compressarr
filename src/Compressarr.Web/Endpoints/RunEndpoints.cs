@@ -8,14 +8,20 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Compressarr.Web.Endpoints;
 
-public sealed record UpNextItem(string LaneId, string LaneDisplayName, string FileName, double SizeGb, string? Preset, bool IsResumed, bool IsError, bool IsSkipped, bool IsCustomPreset, bool IsFileBotUnmatched);
+// FullName (the file's real absolute path) is what every queue-mutation request identifies a row
+// by - FileName (the bare leaf name, kept for display only) is NOT unique: lanes intentionally
+// support recursive Input folders, so two different files can legitimately share the same leaf
+// name in different subfolders (e.g. two different shows' own "episode.mkv"). Code-review finding:
+// matching on FileName alone let a skip/remove/preset-override/reorder request silently target the
+// wrong one of two same-named files, or fail ambiguously.
+public sealed record UpNextItem(string LaneId, string LaneDisplayName, string FileName, string FullName, double SizeGb, string? Preset, bool IsResumed, bool IsError, bool IsSkipped, bool IsCustomPreset, bool IsFileBotUnmatched);
 
-public sealed record RemoveErrorQueueEntryRequest(string LaneId, string FileName);
-public sealed record RemoveQueueEntryRequest(string LaneId, string FileName);
-public sealed record SkipQueueEntryRequest(string LaneId, string FileName, bool Skipped);
-public sealed record ReorderQueueItem(string LaneId, string FileName);
+public sealed record RemoveErrorQueueEntryRequest(string LaneId, string FullName);
+public sealed record RemoveQueueEntryRequest(string LaneId, string FullName);
+public sealed record SkipQueueEntryRequest(string LaneId, string FullName, bool Skipped);
+public sealed record ReorderQueueItem(string LaneId, string FullName);
 public sealed record ReorderQueueRequest(List<ReorderQueueItem> Items);
-public sealed record PresetOverrideRequest(string LaneId, string FileName, string? Preset);
+public sealed record PresetOverrideRequest(string LaneId, string FullName, string? Preset);
 
 public static class RunEndpoints
 {
@@ -122,7 +128,7 @@ public static class RunEndpoints
                 var preset = hasOverride ? entry!.PresetOverride : (ContentClassifier.IsTvFile(file.Name) ? lane.TvPreset : lane.MoviePreset);
                 var sizeGb = Math.Round(file.Length / (double)BytesPerGb, 3);
                 var isFileBotUnmatched = entry?.FileBotUnmatched ?? false;
-                var item = new UpNextItem(lane.Id, lane.DisplayName, file.Name, sizeGb, preset, isResumed, IsError: false, isSkipped, hasOverride, isFileBotUnmatched);
+                var item = new UpNextItem(lane.Id, lane.DisplayName, file.Name, file.FullName, sizeGb, preset, isResumed, IsError: false, isSkipped, hasOverride, isFileBotUnmatched);
                 candidates.Add((item, laneOrderIndex, entry?.Order, naturalIndex[file.FullName]));
             }
 
@@ -138,7 +144,7 @@ public static class RunEndpoints
 
                 var preset = ContentClassifier.IsTvFile(fileInfo.Name) ? lane.TvPreset : lane.MoviePreset;
                 var sizeGb = Math.Round(fileInfo.Length / (double)BytesPerGb, 3);
-                errorItems.Add(new UpNextItem(lane.Id, lane.DisplayName, fileInfo.Name, sizeGb, preset, IsResumed: false, IsError: true, IsSkipped: false, IsCustomPreset: false, IsFileBotUnmatched: false));
+                errorItems.Add(new UpNextItem(lane.Id, lane.DisplayName, fileInfo.Name, fileInfo.FullName, sizeGb, preset, IsResumed: false, IsError: true, IsSkipped: false, IsCustomPreset: false, IsFileBotUnmatched: false));
             }
 
             laneOrderIndex++;
@@ -154,38 +160,37 @@ public static class RunEndpoints
         return items;
     }
 
-    /// <summary>Finds the Pending resume entry for fileName in this lane, or creates one (Status
+    /// <summary>Finds the Pending resume entry for fullName in this lane, or creates one (Status
     /// Pending) if the file is real but wasn't tracked yet - e.g. a freshly-scanned file the user
     /// reorders/skips/overrides the preset on before the engine's own next pass would have gotten
-    /// around to tracking it. Returns null if fileName doesn't resolve to a real file directly
-    /// inside the lane's Input folder (a stale request for a file that's since been moved/deleted),
-    /// or if it already has a tracked entry under a status other than Pending (e.g. Error) - real
-    /// bug found live: matching only on Status == Pending let a drag involving an unrelated Pending
-    /// file in the same lane as an Error-status file silently create a SECOND, phantom Pending
-    /// entry for the already-failed file, which the engine would then silently re-encode. Matching
-    /// on LaneId+filename regardless of status first closes that off entirely, rather than only
-    /// reducing how often it can happen.</summary>
-    private static ResumeEntry? FindOrCreatePendingEntry(List<ResumeEntry> resumeState, string laneId, string inputPath, string fileName)
+    /// around to tracking it. Returns null if fullName doesn't resolve to a real file on disk (a
+    /// stale request for a file that's since been moved/deleted), or if it already has a tracked
+    /// entry under a status other than Pending (e.g. Error) - real bug found live: matching only on
+    /// Status == Pending let a drag involving an unrelated Pending file in the same lane as an
+    /// Error-status file silently create a SECOND, phantom Pending entry for the already-failed
+    /// file, which the engine would then silently re-encode. Matching on LaneId+path regardless of
+    /// status first closes that off entirely, rather than only reducing how often it can happen.
+    ///
+    /// Matches on the full path, not the leaf filename - code-review finding: lanes intentionally
+    /// support recursive Input folders, so two different files can legitimately share the same leaf
+    /// name in different subfolders (e.g. two different shows' own "episode.mkv"). Matching on the
+    /// bare name alone let a skip/remove/preset-override/reorder request silently target the wrong
+    /// one of two same-named files, or fail ambiguously. Also simpler than the old approach: since
+    /// the caller already has the file's real full path (from the UpNextItem it's acting on), no
+    /// directory search is needed at all - just a direct File.Exists check.</summary>
+    private static ResumeEntry? FindOrCreatePendingEntry(List<ResumeEntry> resumeState, string laneId, string fullName)
     {
         var existingAnyStatus = resumeState.FirstOrDefault(e =>
             e.LaneId == laneId &&
-            string.Equals(Path.GetFileName(e.FullName), fileName, StringComparison.Ordinal));
+            string.Equals(e.FullName, fullName, StringComparison.OrdinalIgnoreCase));
         if (existingAnyStatus is not null)
         {
             return existingAnyStatus.Status == ResumeStatus.Pending ? existingAnyStatus : null;
         }
 
-        // Not just Path.Combine(inputPath, fileName) - a lane's Input folder can have files nested
-        // in subfolders (e.g. one folder per movie), which IVideoFileScanner already scans
-        // recursively. The flat-only assumption here used to silently fail to find/create an entry
-        // for any such file, making reorder/skip/preset-override a no-op with no visible error for
-        // exactly that file.
-        var fullPath = Directory.Exists(inputPath)
-            ? Directory.EnumerateFiles(inputPath, fileName, SearchOption.AllDirectories).FirstOrDefault()
-            : null;
-        if (fullPath is null) return null;
+        if (!File.Exists(fullName)) return null;
 
-        var created = new ResumeEntry { LaneId = laneId, FullName = fullPath, Status = ResumeStatus.Pending, CreatedByQueueEdit = true };
+        var created = new ResumeEntry { LaneId = laneId, FullName = fullName, Status = ResumeStatus.Pending, CreatedByQueueEdit = true };
         resumeState.Add(created);
         return created;
     }
@@ -235,7 +240,7 @@ public static class RunEndpoints
             var removed = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState => resumeState.RemoveAll(e =>
                 e.LaneId == request.LaneId &&
                 e.Status == ResumeStatus.Error &&
-                string.Equals(Path.GetFileName(e.FullName), request.FileName, StringComparison.Ordinal)));
+                string.Equals(e.FullName, request.FullName, StringComparison.OrdinalIgnoreCase)));
 
             return Results.Json(new { removed });
         });
@@ -248,7 +253,7 @@ public static class RunEndpoints
         // entry yet (freshly scanned, never touched before) gets one created here (Status Pending)
         // so the order actually sticks - reusing the exact same FindOrCreatePendingEntry the skip
         // and preset-override endpoints below use.
-        app.MapPost("/api/run/queue/reorder", (ReorderQueueRequest request, IConfigStore configStore, IPathExpander pathExpander, IResumeStateStore resumeStore) =>
+        app.MapPost("/api/run/queue/reorder", (ReorderQueueRequest request, IConfigStore configStore, IResumeStateStore resumeStore) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
 
@@ -260,8 +265,7 @@ public static class RunEndpoints
                     var lane = config.Lanes.FirstOrDefault(l => l.Id == item.LaneId);
                     if (lane is null) continue;
 
-                    var inputPath = pathExpander.Expand(lane.Input);
-                    var entry = FindOrCreatePendingEntry(resumeState, lane.Id, inputPath, item.FileName);
+                    var entry = FindOrCreatePendingEntry(resumeState, lane.Id, item.FullName);
                     if (entry is not null) entry.Order = i;
                 }
                 return true;
@@ -273,16 +277,15 @@ public static class RunEndpoints
         // "Skip" from the queue's 3-dot menu - the entry stays visible (dimmed) but
         // ConversionOrchestrator excludes it from what actually gets encoded. Persists until
         // toggled back off from the same menu, not a true one-shot skip (see ResumeEntry.Skipped).
-        app.MapPost("/api/run/queue/skip", (SkipQueueEntryRequest request, IConfigStore configStore, IPathExpander pathExpander, IResumeStateStore resumeStore) =>
+        app.MapPost("/api/run/queue/skip", (SkipQueueEntryRequest request, IConfigStore configStore, IResumeStateStore resumeStore) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             var lane = config.Lanes.FirstOrDefault(l => l.Id == request.LaneId);
             if (lane is null) return Results.NotFound();
 
-            var inputPath = pathExpander.Expand(lane.Input);
             var found = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
             {
-                var entry = FindOrCreatePendingEntry(resumeState, lane.Id, inputPath, request.FileName);
+                var entry = FindOrCreatePendingEntry(resumeState, lane.Id, request.FullName);
                 if (entry is null) return false;
                 entry.Skipped = request.Skipped;
                 return true;
@@ -300,16 +303,15 @@ public static class RunEndpoints
         // Removed entry around (same FindOrCreatePendingEntry path skip/preset-override use) keeps
         // the file in trackedPaths so the rescan leaves it alone, while ComputeUpNext's own
         // pendingFiles filter hides it from the list.
-        app.MapPost("/api/run/queue/remove", (RemoveQueueEntryRequest request, IConfigStore configStore, IPathExpander pathExpander, IResumeStateStore resumeStore) =>
+        app.MapPost("/api/run/queue/remove", (RemoveQueueEntryRequest request, IConfigStore configStore, IResumeStateStore resumeStore) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             var lane = config.Lanes.FirstOrDefault(l => l.Id == request.LaneId);
             if (lane is null) return Results.NotFound();
 
-            var inputPath = pathExpander.Expand(lane.Input);
             var found = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
             {
-                var entry = FindOrCreatePendingEntry(resumeState, lane.Id, inputPath, request.FileName);
+                var entry = FindOrCreatePendingEntry(resumeState, lane.Id, request.FullName);
                 if (entry is null) return false;
                 entry.Removed = true;
                 entry.Skipped = true;
@@ -322,16 +324,15 @@ public static class RunEndpoints
         // Per-file preset override, set by clicking the preset name on a queue row - overrides the
         // lane's TvPreset/MoviePreset for this one file only. Passing null/empty Preset clears the
         // override back to the lane default.
-        app.MapPost("/api/run/queue/preset-override", (PresetOverrideRequest request, IConfigStore configStore, IPathExpander pathExpander, IResumeStateStore resumeStore) =>
+        app.MapPost("/api/run/queue/preset-override", (PresetOverrideRequest request, IConfigStore configStore, IResumeStateStore resumeStore) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             var lane = config.Lanes.FirstOrDefault(l => l.Id == request.LaneId);
             if (lane is null) return Results.NotFound();
 
-            var inputPath = pathExpander.Expand(lane.Input);
             var found = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
             {
-                var entry = FindOrCreatePendingEntry(resumeState, lane.Id, inputPath, request.FileName);
+                var entry = FindOrCreatePendingEntry(resumeState, lane.Id, request.FullName);
                 if (entry is null) return false;
                 entry.PresetOverride = string.IsNullOrWhiteSpace(request.Preset) ? null : request.Preset;
                 return true;
