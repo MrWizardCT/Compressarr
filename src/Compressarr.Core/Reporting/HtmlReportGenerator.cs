@@ -88,9 +88,22 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
   .stat {{ background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem 1.25rem; min-width: 140px; }}
   .stat .label {{ font-size: 0.8em; color: #666; }}
   .stat .value {{ font-size: 1.4em; font-weight: 700; }}
+  .close-btn {{
+    position: fixed; top: 1rem; right: 1rem; width: 2.25rem; height: 2.25rem;
+    border-radius: 50%; border: 1px solid #ddd; background: #fff; color: #666;
+    font-size: 1.25rem; line-height: 1; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+  }}
+  .close-btn:hover {{ background: #f0f0f0; color: #1c1c1c; }}
 </style>
 </head>
 <body>
+<!-- Reports have no way to get back to Compressarr's own UI, and there's nothing else on the
+     page that closes the tab - most noticeable in PWA/standalone mode, which has no browser
+     chrome at all. window.close() is a plain browser API with no fallback: most browsers only
+     honor it on a tab the page itself opened via script, so it may silently no-op on a tab opened
+     via a plain link (which is how every report link in this app opens one) depending on the
+     browser - harmless either way, just not guaranteed universally. -->
+<button type=""button"" class=""close-btn"" title=""Close this tab"" onclick=""window.close()"">&times;</button>
 <div class=""header"">
   {logoTag}
   <h1>Compressarr Report</h1>
