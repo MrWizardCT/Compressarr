@@ -240,6 +240,26 @@ function showInstallBanner(kind) {
   }
 }
 
+// Exposed unconditionally (regardless of standalone state) so Settings' own "Install as app" card
+// (a persistent, on-demand alternative to the one-time toolbar banner below) can drive the exact
+// same install flow, and detect standalone/iOS, without duplicating any of this file's
+// beforeinstallprompt/iOS-detection logic. There is deliberately no uninstall() counterpart here -
+// no browser exposes a web-page-triggerable "uninstall this PWA" API at all (letting a site
+// force-remove an installed app would be an obvious abuse vector), so Settings can only ever show
+// instructions for the browser's own uninstall UI, never a working button.
+window.CompressarrPwa = {
+  isStandalone: isRunningStandalone,
+  isIos: isIosDevice,
+  canInstall: () => deferredInstallPrompt !== null,
+  promptInstall: async () => {
+    if (!deferredInstallPrompt) return false;
+    deferredInstallPrompt.prompt();
+    const choice = await deferredInstallPrompt.userChoice; // single-use regardless of accept/dismiss
+    deferredInstallPrompt = null;
+    return choice.outcome === 'accepted';
+  }
+};
+
 function initInstallPrompt() {
   if (isRunningStandalone()) return;
 
@@ -251,6 +271,7 @@ function initInstallPrompt() {
     e.preventDefault();
     deferredInstallPrompt = e;
     showInstallBanner('android');
+    window.dispatchEvent(new CustomEvent('compressarr-install-available'));
   });
 
   window.addEventListener('appinstalled', () => {

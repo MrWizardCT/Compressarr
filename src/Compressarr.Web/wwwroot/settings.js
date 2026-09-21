@@ -508,4 +508,45 @@ async function restoreBackup(fileName) {
   }
 }
 
+// Settings' own persistent "Install as app" card - separate from nav.js's one-time toolbar
+// banner, and reachable any time rather than only until dismissed. window.CompressarrPwa (defined
+// unconditionally in nav.js, loaded before this file) is the single source of truth for all three
+// mutually-exclusive states below, so this never re-implements standalone/iOS/install detection.
+function initPwaCard() {
+  const installBlock = document.getElementById('pwaInstallBlock');
+  const iosBlock = document.getElementById('pwaIosBlock');
+  const uninstallBlock = document.getElementById('pwaUninstallBlock');
+  if (!installBlock || !iosBlock || !uninstallBlock || !window.CompressarrPwa) return;
+
+  if (window.CompressarrPwa.isStandalone()) {
+    // Already running as the installed app - there's no page-triggerable uninstall API on any
+    // browser (an obvious abuse vector if there were one), so this is instructions only, not a
+    // button.
+    uninstallBlock.hidden = false;
+    return;
+  }
+
+  if (window.CompressarrPwa.isIos()) {
+    iosBlock.hidden = false;
+    return;
+  }
+
+  const installBtn = document.getElementById('pwaInstallBtn');
+  const refreshInstallVisibility = () => { installBlock.hidden = !window.CompressarrPwa.canInstall(); };
+  refreshInstallVisibility(); // covers the (uncommon) case beforeinstallprompt already fired before this ran
+
+  // beforeinstallprompt is timing-dependent - the browser may not have decided installability yet
+  // when this page first loads, so react to it arriving late instead of only checking once.
+  window.addEventListener('compressarr-install-available', refreshInstallVisibility);
+
+  installBtn.addEventListener('click', async () => {
+    installBtn.disabled = true;
+    await window.CompressarrPwa.promptInstall();
+    installBtn.disabled = false;
+  });
+
+  window.addEventListener('appinstalled', () => { installBlock.hidden = true; });
+}
+
 loadSettings();
+initPwaCard();
