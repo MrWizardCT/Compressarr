@@ -22,7 +22,6 @@ async function loadAbout() {
   const res = await fetch('/api/about');
   const dto = await res.json();
   versionText.textContent = `Version ${dto.version}`;
-  document.getElementById('repoLink').href = dto.repoUrl;
 }
 
 async function loadHandBrakeVersion() {

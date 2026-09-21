@@ -7,19 +7,13 @@ namespace Compressarr.Web.Endpoints;
 
 public static class AboutEndpoints
 {
-    private const string RepoOwner = "MrWizardCT";
-    private const string RepoName = "Compressarr";
-
     private static string InstalledVersionString => FormatVersion(typeof(AboutEndpoints).Assembly.GetName().Version);
 
     public static void MapAboutEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/about", () => Results.Json(new
         {
-            version = InstalledVersionString,
-            // The "Original v1.1" link specifically - v1.1 (PowerShell) lives on the 1.x branch
-            // now that main hosts v2's own source.
-            repoUrl = $"https://github.com/{RepoOwner}/{RepoName}/tree/1.x"
+            version = InstalledVersionString
         }));
 
         // The toolbar's ambient indicator (nav.js, on every page load) - purely reads
