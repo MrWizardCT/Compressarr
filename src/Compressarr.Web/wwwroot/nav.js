@@ -177,11 +177,14 @@ function renderNav(activePage) {
   checkForUpdate();
 }
 
-// ---- PWA: service worker registration + install prompt banner. Both are best-effort and must
-// never break page load if unsupported/unavailable - a service worker in particular silently
-// fails on any non-secure context other than localhost (see manifest.json's own real-world caveat:
-// a phone opening Compressarr over a plain-http LAN address, not localhost, gets no install
-// prompt and no service worker at all, by browser design, not a bug here).
+// ---- PWA: service worker registration + install support. Best-effort and must never break page
+// load if unsupported/unavailable - a service worker in particular silently fails on any
+// non-secure context other than localhost (see manifest.json's own real-world caveat: a phone
+// opening Compressarr over a plain-http LAN address, not localhost, gets no install prompt and no
+// service worker at all, by browser design, not a bug here). Install itself has no toolbar banner
+// any more (removed once Settings > Web UI grew its own persistent "Install as app" card) - this
+// file's only remaining job here is capturing beforeinstallprompt so that card has something to
+// call, and exposing standalone/iOS detection for its other two states.
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.register('/sw.js').catch(() => {
@@ -189,7 +192,6 @@ function registerServiceWorker() {
   });
 }
 
-const INSTALL_DISMISSED_KEY = 'compressarr.installBannerDismissedV1';
 let deferredInstallPrompt = null;
 
 function isRunningStandalone() {
@@ -200,49 +202,8 @@ function isIosDevice() {
   return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
 }
 
-function showInstallBanner(kind) {
-  if (document.getElementById('installBanner')) return; // already showing
-  if (localStorage.getItem(INSTALL_DISMISSED_KEY) === 'true') return;
-  if (isRunningStandalone()) return;
-
-  const mainCol = document.querySelector('.main-col');
-  const toolbar = document.querySelector('.toolbar');
-  if (!mainCol || !toolbar) return;
-
-  const banner = document.createElement('div');
-  banner.className = 'install-banner';
-  banner.id = 'installBanner';
-  banner.innerHTML = kind === 'ios'
-    ? `<img src="/assets/icon-192.png" alt="" />
-       <span class="grow">Install Compressarr: tap the Share icon, then "Add to Home Screen".</span>
-       <button type="button" class="dismiss" aria-label="Dismiss">&#10005;</button>`
-    : `<img src="/assets/icon-192.png" alt="" />
-       <span class="grow">Install Compressarr for one-tap access from your home screen.</span>
-       <button type="button" class="install-action">Install</button>
-       <button type="button" class="dismiss" aria-label="Dismiss">&#10005;</button>`;
-
-  toolbar.insertAdjacentElement('afterend', banner);
-
-  banner.querySelector('.dismiss').addEventListener('click', () => {
-    localStorage.setItem(INSTALL_DISMISSED_KEY, 'true');
-    banner.remove();
-  });
-
-  const actionBtn = banner.querySelector('.install-action');
-  if (actionBtn) {
-    actionBtn.addEventListener('click', async () => {
-      if (!deferredInstallPrompt) return;
-      deferredInstallPrompt.prompt();
-      await deferredInstallPrompt.userChoice; // single-use regardless of accept/dismiss
-      deferredInstallPrompt = null;
-      banner.remove();
-    });
-  }
-}
-
 // Exposed unconditionally (regardless of standalone state) so Settings' own "Install as app" card
-// (a persistent, on-demand alternative to the one-time toolbar banner below) can drive the exact
-// same install flow, and detect standalone/iOS, without duplicating any of this file's
+// can drive the install flow, and detect standalone/iOS, without duplicating any of this file's
 // beforeinstallprompt/iOS-detection logic. There is deliberately no uninstall() counterpart here -
 // no browser exposes a web-page-triggerable "uninstall this PWA" API at all (letting a site
 // force-remove an installed app would be an obvious abuse vector), so Settings can only ever show
@@ -261,31 +222,15 @@ window.CompressarrPwa = {
 };
 
 function initInstallPrompt() {
-  if (isRunningStandalone()) return;
-
   // Chrome/Edge/Android - fires only once the browser itself decides the page meets its
-  // installability criteria (valid manifest + registered service worker + secure context).
-  // preventDefault() suppresses the browser's own mini-infobar in favor of this banner, matching
-  // every other page-level notice's look.
+  // installability criteria (valid manifest + registered service worker + secure context), and
+  // never fires at all once already installed/running standalone. preventDefault() suppresses the
+  // browser's own mini-infobar - Settings' "Install as app" card is the only install UI now.
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
     deferredInstallPrompt = e;
-    showInstallBanner('android');
     window.dispatchEvent(new CustomEvent('compressarr-install-available'));
   });
-
-  window.addEventListener('appinstalled', () => {
-    localStorage.setItem(INSTALL_DISMISSED_KEY, 'true');
-    const banner = document.getElementById('installBanner');
-    if (banner) banner.remove();
-  });
-
-  // iOS Safari has no beforeinstallprompt/install API at all - Add to Home Screen is a manual,
-  // user-driven action with nothing a page can trigger. Shown unconditionally for an iOS visitor
-  // (rather than waiting for an event that will never fire) so there's still a path to installing.
-  if (isIosDevice()) {
-    showInstallBanner('ios');
-  }
 }
 
 // Update indicator in the toolbar - visible on every page, same reasoning as the monitoring
