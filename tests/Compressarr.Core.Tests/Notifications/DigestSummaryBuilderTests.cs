@@ -71,12 +71,45 @@ public class DigestSummaryBuilderTests
         Assert.Equal(0, summary.BeginSizeGb);
         Assert.Equal(0, summary.EndSizeGb);
         Assert.Equal(0, summary.SavedPercent); // must not throw on 0/0
+        Assert.Equal(TimeSpan.Zero, summary.TotalDuration);
+    }
+
+    // A private helper's RecordOn above always passes 0h/30m/0s - fixed so every existing test's
+    // own assertions on TotalFiles/BeginSizeGb/EndSizeGb stay exactly as they were, since none of
+    // them care about duration. This one uses its own records with distinct, varied durations
+    // specifically to prove the sum - the actual bug found live: a real Daily/Weekly digest
+    // notification always showed "Duration: 0s" regardless of real processing time, because
+    // ToNotificationEvent hardcoded TimeSpan.Zero instead of ever summing RunHistoryRecord's own
+    // ProcessHours/ProcessMinutes/ProcessSeconds fields across the matching period.
+    [Fact]
+    public void BuildDaily_SumsDurationAcrossMatchingRecords()
+    {
+        var yesterday = Today.AddDays(-1);
+        var history = new[]
+        {
+            new RunHistoryRecord(yesterday.Year, yesterday.Month, yesterday.Day, 10, 5, 3, ProcessHours: 1, ProcessMinutes: 15, ProcessSeconds: 20),
+            new RunHistoryRecord(yesterday.Year, yesterday.Month, yesterday.Day, 8, 4, 2, ProcessHours: 0, ProcessMinutes: 50, ProcessSeconds: 50),
+        };
+
+        var summary = DigestSummaryBuilder.BuildDaily(history, Today);
+
+        Assert.Equal(new TimeSpan(2, 6, 10), summary.TotalDuration);
+    }
+
+    [Fact]
+    public void ToNotificationEvent_UsesSummaryDuration_NotZero()
+    {
+        var summary = new DigestSummary(4, 20, 10, new TimeSpan(3, 30, 0));
+
+        var evt = summary.ToNotificationEvent("Daily Digest");
+
+        Assert.Equal(new TimeSpan(3, 30, 0), evt.Duration);
     }
 
     [Fact]
     public void SavedPercent_ComputesFromBeginAndEnd()
     {
-        var summary = new DigestSummary(10, 100, 40);
+        var summary = new DigestSummary(10, 100, 40, TimeSpan.Zero);
 
         Assert.Equal(60, summary.SavedGb);
         Assert.Equal(60, summary.SavedPercent);
@@ -88,7 +121,7 @@ public class DigestSummaryBuilderTests
     [InlineData(0, "Compressed 0 files, reducing original size from 10 GB to 5 GB, saving 50% of original size.")]
     public void ToMessage_MatchesExactWording(int totalFiles, string expected)
     {
-        var summary = new DigestSummary(totalFiles, 10, 5);
+        var summary = new DigestSummary(totalFiles, 10, 5, TimeSpan.Zero);
 
         Assert.Equal(expected, summary.ToMessage());
     }

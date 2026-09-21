@@ -4,7 +4,7 @@ namespace Compressarr.Core.Notifications;
 
 /// <summary>Aggregate stats for a digest period (a day or a week of runs), built from History
 /// rather than tied to any single run - see DigestSummaryBuilder for how the period is chosen.</summary>
-public sealed record DigestSummary(int TotalFiles, double BeginSizeGb, double EndSizeGb)
+public sealed record DigestSummary(int TotalFiles, double BeginSizeGb, double EndSizeGb, TimeSpan TotalDuration)
 {
     public double SavedGb => BeginSizeGb - EndSizeGb;
     public double SavedPercent => BeginSizeGb > 0 ? SavedGb / BeginSizeGb * 100 : 0;
@@ -20,7 +20,7 @@ public sealed record DigestSummary(int TotalFiles, double BeginSizeGb, double En
     /// (which fires immediately, bypassing the schedule entirely) produces byte-for-byte the same
     /// shape a real digest would.</summary>
     public NotificationEvent ToNotificationEvent(string periodLabel) =>
-        new(NotificationOutcome.Success, $"Compressarr {periodLabel}", ToMessage(), TotalFiles, SavedGb, TimeSpan.Zero, ReportPath: null);
+        new(NotificationOutcome.Success, $"Compressarr {periodLabel}", ToMessage(), TotalFiles, SavedGb, TotalDuration, ReportPath: null);
 }
 
 /// <summary>Builds a DigestSummary from History over a fixed calendar window - not "since the last
@@ -43,9 +43,13 @@ public static class DigestSummaryBuilder
             return d >= start && d <= end;
         }).ToList();
 
+        var totalDuration = matches.Aggregate(TimeSpan.Zero, (sum, r) =>
+            sum + new TimeSpan(r.ProcessHours, r.ProcessMinutes, r.ProcessSeconds));
+
         return new DigestSummary(
             matches.Sum(r => r.FileCount),
             matches.Sum(r => r.BeginSizeGb),
-            matches.Sum(r => r.EndSizeGb));
+            matches.Sum(r => r.EndSizeGb),
+            totalDuration);
     }
 }
