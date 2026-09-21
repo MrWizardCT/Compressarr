@@ -29,11 +29,11 @@ public class NotificationMessageRendererTests
         }
     };
 
-    private static ConversionResult Result(double beforeGb, double afterGb, bool success, string? warning = null) => new()
+    private static ConversionResult Result(double beforeGb, double afterGb, bool success, string? warning = null, string fileName = "file.mkv") => new()
     {
         LaneId = "lane1",
-        FileName = "file.mkv",
-        FullName = @"C:\file.mkv",
+        FileName = fileName,
+        FullName = $@"C:\{fileName}",
         ContentType = "movie",
         BeginSizeGb = beforeGb,
         EndSizeGb = afterGb,
@@ -114,5 +114,37 @@ public class NotificationMessageRendererTests
         var report = SampleReport();
         var rendered = NotificationMessageRenderer.Render("{report_path}", NotificationOutcome.Success, report, @"C:\Compressarr\Reports\r.html");
         Assert.Equal(@"C:\Compressarr\Reports\r.html", rendered);
+    }
+
+    [Fact]
+    public void Render_FileListToken_JoinsFileNamesAcrossAllLanes()
+    {
+        var report = new ReportModel
+        {
+            GeneratedAt = new DateTime(2026, 9, 11),
+            RunTime = TimeSpan.Zero,
+            Lanes = new[]
+            {
+                new LaneReportSection { LaneDisplayName = "Movies", Results = new[] { Result(10, 5, success: true, fileName: "a.mkv") } },
+                new LaneReportSection { LaneDisplayName = "TV", Results = new[] { Result(10, 5, success: true, fileName: "b.mkv") } },
+            }
+        };
+
+        var rendered = NotificationMessageRenderer.Render("{file_list}", NotificationOutcome.Success, report, "");
+
+        Assert.Equal("a.mkv\nb.mkv", rendered);
+    }
+
+    [Fact]
+    public void Render_FileListToken_NotReferencedByAnyBuiltInPreset()
+    {
+        // {file_list} is the one token that can put a media filename in front of a third-party
+        // service - it must stay opt-in (Custom templates only), never silently picked up by a
+        // built-in style.
+        foreach (var (title, body) in NotificationMessagePresets.Templates.Values)
+        {
+            Assert.DoesNotContain("{file_list}", title);
+            Assert.DoesNotContain("{file_list}", body);
+        }
     }
 }

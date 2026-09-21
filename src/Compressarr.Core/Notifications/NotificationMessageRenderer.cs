@@ -45,6 +45,12 @@ public static class NotificationMessageRenderer
         yield return ("{month_saved_gb}", RollupSavedGb(report.ThisMonth).ToString("0.##"));
         yield return ("{year_files}", (report.ThisYear?.FileCount ?? 0).ToString());
         yield return ("{year_saved_gb}", RollupSavedGb(report.ThisYear).ToString("0.##"));
+        // Deliberately absent from every built-in NotificationMessagePresets template - the only
+        // token that can put a media filename in front of a third-party service, so it only ever
+        // reaches a real message if a user's own Custom template asks for it by name. Every
+        // channel type still gets it for free the moment a Custom template uses it, same as every
+        // other token here - this isn't a channel-level opt-in, just a template-content one.
+        yield return ("{file_list}", string.Join('\n', report.Lanes.SelectMany(l => l.Results).Select(r => r.FileName)));
     }
 
     private static double RollupSavedGb(HistoryRollup? rollup) => rollup is null ? 0 : rollup.BeforeGb - rollup.AfterGb;

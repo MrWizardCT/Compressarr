@@ -103,6 +103,13 @@
             <code>{warning_count}</code> <code>{retries_succeeded}</code> <code>{report_path}</code>
             <code>{today_files}</code> <code>{today_saved_gb}</code> <code>{month_files}</code>
             <code>{month_saved_gb}</code> <code>{year_files}</code> <code>{year_saved_gb}</code>
+            <code>{file_list}</code>
+          </p>
+          <p style="color: var(--text-dim); font-size: 12.5px; margin: 0 0 10px;">
+            <code>{file_list}</code> is the filename(s) processed this run, one per line - the
+            only token that can include a media filename. It's left out of every built-in style on
+            purpose; only include it here if you're comfortable with this channel's destination
+            seeing your filenames.
           </p>
         </div>
         <div class="field-row">

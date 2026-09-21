@@ -340,6 +340,11 @@ literal text rather than breaking the message:
 | `{today_files}` / `{today_saved_gb}` | Rollup for today so far |
 | `{month_files}` / `{month_saved_gb}` | Rollup for this calendar month so far |
 | `{year_files}` / `{year_saved_gb}` | Rollup for this calendar year so far |
+| `{file_list}` | This run's filenames, one per line - see below |
+
+`{file_list}` is deliberately left out of Minimal/Standard/Detailed and every other token's data -
+it's the one token that can put a media filename in front of wherever a Custom template sends it,
+so it only ever appears in a message if you type it into a Custom template yourself.
 
 **What data is sent**: every channel receives the run number, an aggregate summary (e.g. "12
 file(s) processed, 4.2 GB saved"), and the outcome (success/warning/error) - never filenames,
@@ -350,6 +355,11 @@ include - worth knowing before pointing either at a third-party service, since a
 other channel type (Discord, Slack, Telegram, Pushover, ntfy, Gotify, Notifiarr) never sends the
 report path at all. A digest isn't tied to any single run, so it never includes a report path
 either way, regardless of channel type.
+
+The other exception is filenames themselves, but only if you opt in: a Custom template that uses
+`{file_list}` sends whatever filenames it renders to that channel's destination. No built-in style
+does this, and a digest can't use Custom templates at all, so this only ever happens if you've
+deliberately added `{file_list}` to a channel's own Custom Title/Body.
 
 #### Supported services
 
