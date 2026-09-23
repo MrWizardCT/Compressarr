@@ -22,6 +22,7 @@ public sealed record SkipQueueEntryRequest(string LaneId, string FullName, bool 
 public sealed record ReorderQueueItem(string LaneId, string FullName);
 public sealed record ReorderQueueRequest(List<ReorderQueueItem> Items);
 public sealed record PresetOverrideRequest(string LaneId, string FullName, string? Preset);
+public sealed record ReassignLaneRequest(string LaneId, string FullName, string NewLaneId);
 
 public static class RunEndpoints
 {
@@ -74,13 +75,24 @@ public static class RunEndpoints
             // own real entry (the Error bucket below, or invisible-but-real for MoveFailed).
             var trackedPaths = resumeState.Where(e => e.LaneId == lane.Id).Select(e => e.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+            // A file physically still sitting in this lane's own Input folder, but reassigned (the
+            // Monitor page's "Move to lane" queue control) to track under a DIFFERENT lane's
+            // LaneId, is that other lane's item to show now - excluding it here keeps this display
+            // in sync with ConversionOrchestrator.PrepareLaneAsync's own identical guard, so a
+            // reassigned file is never shown twice (once under its new lane, once "rediscovered" as
+            // new under the old one).
+            var reassignedElsewhere = resumeState
+                .Where(e => e.LaneId != lane.Id && e.Status is ResumeStatus.Pending or ResumeStatus.MoveFailed or ResumeStatus.CompanionMoveFailed or ResumeStatus.CleanupPending)
+                .Select(e => e.FullName)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
             // One single natural-order scan drives the fallback ordering for every file that has no
             // EXPLICIT user-set Order (a real drag-reorder on the Monitor page) - both genuinely
             // untracked ("New") files and Pending entries that only exist because a skip/preset-
             // override/remove action touched them (FindOrCreatePendingEntry, ResumeEntry.
             // CreatedByQueueEdit above) but were never actually dragged.
             var scannedFiles = scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit)
-                .Where(f => !trackedPaths.Contains(f.FullName) || pendingByPath.ContainsKey(f.FullName))
+                .Where(f => (!trackedPaths.Contains(f.FullName) || pendingByPath.ContainsKey(f.FullName)) && !reassignedElsewhere.Contains(f.FullName))
                 .ToList();
             var naturalIndex = scannedFiles
                 .Select((f, idx) => (f.FullName, idx))
@@ -335,6 +347,31 @@ public static class RunEndpoints
                 var entry = FindOrCreatePendingEntry(resumeState, lane.Id, request.FullName);
                 if (entry is null) return false;
                 entry.PresetOverride = string.IsNullOrWhiteSpace(request.Preset) ? null : request.Preset;
+                return true;
+            });
+
+            return found ? Results.Ok() : Results.NotFound();
+        });
+
+        // "Move to lane" from the queue's 3-dot menu - changes which lane's Output/TvPreset/
+        // MoviePreset/TvShowBasePath/MovieBasePath apply to this one file, without touching it on
+        // disk or waiting for a re-scan (it stays sitting in its original lane's Input folder;
+        // only the ResumeEntry's own LaneId changes). ConversionOrchestrator.PrepareLaneAsync and
+        // ComputeUpNext above both know to stop treating this path as "new" for its old lane once
+        // it's tracked under a different one, so it's never picked up (or shown) by both at once.
+        app.MapPost("/api/run/queue/reassign-lane", (ReassignLaneRequest request, IConfigStore configStore, IResumeStateStore resumeStore) =>
+        {
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+            var lane = config.Lanes.FirstOrDefault(l => l.Id == request.LaneId);
+            if (lane is null) return Results.NotFound();
+            var newLane = config.Lanes.FirstOrDefault(l => l.Id == request.NewLaneId);
+            if (newLane is null) return Results.NotFound();
+
+            var found = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
+            {
+                var entry = FindOrCreatePendingEntry(resumeState, lane.Id, request.FullName);
+                if (entry is null) return false;
+                entry.LaneId = newLane.Id;
                 return true;
             });
 

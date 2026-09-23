@@ -2926,4 +2926,45 @@ public class ConversionOrchestratorTests : IDisposable
 
         Assert.Equal(@"C:\Expanded\FileBot.exe", fileBotRunner.ReceivedCliPath);
     }
+
+    [Fact]
+    public async Task PrepareLaneAsync_FileReassignedToAnotherLane_IsNotRediscoveredAsNewByItsOldLane()
+    {
+        // Real risk this guards against: a file reassigned to a different lane (the Monitor page's
+        // "Move to lane" queue control - see RunEndpoints' reassign-lane endpoint) physically stays
+        // put in its original lane's Input folder; only its ResumeEntry.LaneId changes. Without
+        // this guard, the OLD lane's own next scan would rediscover it as "new" and track a SECOND
+        // Pending entry under its own LaneId - a straight duplicate that could win the race to
+        // actually get encoded under the WRONG lane's Output/preset settings, defeating the entire
+        // point of reassigning it away.
+        var inputDir = Path.Combine(_tempDir, "Input");
+        Directory.CreateDirectory(inputDir);
+
+        var filePath = Path.Combine(inputDir, "episode.mkv");
+        File.WriteAllText(filePath, "1");
+
+        var lane1 = new LaneConfig { Id = "lane1", DisplayName = "Lane One", Enabled = true, Input = inputDir, Output = Path.Combine(_tempDir, "Output1"), MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane1);
+        config.Lanes.Add(new LaneConfig { Id = "lane2", DisplayName = "Lane Two", Enabled = true, Input = Path.Combine(_tempDir, "Input2"), Output = Path.Combine(_tempDir, "Output2"), MoviePreset = "Any Preset" });
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        // Simulates the file already having been reassigned - the queue control only ever changes
+        // LaneId, never the physical file location.
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "lane2", FullName = filePath, Status = ResumeStatus.Pending }
+        };
+
+        var context = await orchestrator.PrepareLaneAsync(lane1, config, resumeState, Path.Combine(_tempDir, "resume.json"));
+
+        var entry = Assert.Single(resumeState);
+        Assert.Equal("lane2", entry.LaneId);
+        Assert.Equal(0, context!.FileTotal); // lane1 has nothing of its own left to process
+    }
 }

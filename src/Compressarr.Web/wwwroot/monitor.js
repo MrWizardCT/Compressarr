@@ -145,6 +145,10 @@ let selectOpenKey = null;
 let ghostEl = null;
 let grabOffsetY = 0;
 let presetNames = [];
+// Loaded once alongside presetNames below - same "load once" pattern, since the lane list rarely
+// changes while Monitor is open and a Settings/Lanes-page edit needing a Monitor reload to show up
+// matches the existing precedent for presetNames/queueEtaFormat above.
+let allLanes = [];
 // Loaded once at startup alongside the preset list below (same settings fetch, no extra round
 // trip) - a Settings-page change to this while Monitor is already open needs a Monitor page
 // reload to take effect, same "load once" pattern this function already had for presetNames.
@@ -166,6 +170,13 @@ async function loadQueuePresetNames() {
   } catch { /* best-effort - the preset-override dropdown just stays empty if this fails */ }
 }
 
+async function loadLanes() {
+  try {
+    const res = await fetch('/api/lanes');
+    allLanes = await res.json();
+  } catch { /* best-effort - "Move to lane" just won't offer any other lane if this fails */ }
+}
+
 // Same pattern lanes.js's fillPresetSelect uses for the lane card's own TV/Movie preset
 // dropdowns - a plain native <select>, not a custom popover list, so a long presets.json reads
 // the same familiar, scrollable way everywhere in the app.
@@ -183,6 +194,16 @@ function fillQueuePresetSelect(select, item) {
   const resetOption = item.isCustomPreset ? `<option value="${PRESET_DEFAULT_VALUE}">Use lane default</option>` : '';
   select.innerHTML = resetOption + names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
   select.value = currentValue;
+}
+
+// Same plain-native-<select> pattern as fillQueuePresetSelect above - lets a queued file be moved
+// to a different lane (that lane's own Output/TvPreset/MoviePreset/TvShowBasePath/MovieBasePath
+// then apply to it) without touching the file on disk or waiting for a re-scan. Always lists every
+// lane, including the current one, so the dropdown reads as "which lane is this file's" rather
+// than a hidden action - selecting the same value again is simply a no-op (see the change handler).
+function fillQueueLaneSelect(select, item) {
+  select.innerHTML = allLanes.map(l => `<option value="${escapeHtml(l.id)}">${escapeHtml(l.displayName)}</option>`).join('');
+  select.value = item.laneId;
 }
 
 // fullName, not fileName - two different files can legitimately share the same leaf name in
@@ -259,7 +280,9 @@ function renderQueueList() {
       ${item.isError ? '' : `<span class="queue-handle">${QUEUE_ICON_GRIP}</span>`}
       <span class="queue-badge ${queueBadgeClass(item)}">${item.isSkipped ? 'Skipped' : queueBadgeLabel(item)}</span>
       ${item.isFileBotUnmatched ? '<span class="queue-badge unmatched">Unmatched</span>' : ''}
-      <div class="queue-lane">${escapeHtml(item.laneDisplayName)}</div>
+      ${item.isError
+        ? `<div class="queue-lane">${escapeHtml(item.laneDisplayName)}</div>`
+        : `<select class="queue-lane queue-lane-select"></select>`}
       <div class="queue-file">${escapeHtml(item.fileName)}</div>
       <div class="queue-meta">${item.sizeGb.toFixed(2)} GB</div>
       ${item.isError
@@ -302,6 +325,24 @@ function renderQueueList() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ laneId: item.laneId, fullName: item.fullName, preset: chosen })
         });
+        poll();
+      });
+
+      const laneSelect = row.querySelector('.queue-lane-select');
+      fillQueueLaneSelect(laneSelect, item);
+      laneSelect.addEventListener('click', e => e.stopPropagation());
+      laneSelect.addEventListener('focus', () => { selectOpenKey = key; });
+      laneSelect.addEventListener('blur', () => { if (selectOpenKey === key) selectOpenKey = null; });
+      laneSelect.addEventListener('change', async e => {
+        selectOpenKey = null;
+        const newLaneId = e.target.value;
+        if (newLaneId !== item.laneId) {
+          await fetch('/api/run/queue/reassign-lane', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ laneId: item.laneId, fullName: item.fullName, newLaneId })
+          });
+        }
         poll();
       });
     }
@@ -483,6 +524,7 @@ document.addEventListener('click', () => {
 });
 
 loadQueuePresetNames();
+loadLanes();
 
 function escapeHtml(text) {
   const div = document.createElement('div');

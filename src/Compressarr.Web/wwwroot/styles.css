@@ -1242,6 +1242,12 @@ td { font-variant-numeric: tabular-nums; }
 .queue-preset-select.custom { color: var(--accent); }
 .queue-preset-static { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); padding: 3px 6px; flex-shrink: 0; }
 
+/* Same override reasoning as .queue-preset-select above - .queue-lane already sets the plain
+   dimmed font-size/color/min-width this needs (kept as a second class alongside this one, see
+   monitor.js), this just cancels the shared input/select { flex: 1 } rule and tightens the
+   padding/max-width to still read as a plain label at a glance, not a bulky form control. */
+.queue-lane-select { flex: 0 0 auto; width: auto; max-width: 140px; padding: 3px 5px; }
+
 .queue-dots-btn {
   background: none;
   border: none;
@@ -1315,6 +1321,10 @@ td { font-variant-numeric: tabular-nums; }
     padding-top: 6px;
     border-top: 1px solid var(--border);
   }
+  /* .queue-lane-select's own max-width (desktop: keeps it compact next to the filename) would
+     otherwise leak through here and cap it well short of the full-width row above sets it up
+     for. */
+  .queue-lane-select { max-width: none; }
 
   .queue-item .queue-meta { order: 6; }
 

@@ -720,7 +720,18 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         }
         else
         {
-            videoFiles = scanned;
+            // A file physically still sitting in this lane's own Input folder, but reassigned (the
+            // Monitor page's "Move to lane" queue control) to track under a DIFFERENT lane's
+            // LaneId, is that other lane's responsibility now - excluded here so it's never
+            // rediscovered as "new" and double-tracked. Without this, whichever lane's pass reached
+            // it first would win the race to actually encode it - silently defeating the whole
+            // point of reassigning it away in the first place, roughly half the time.
+            bool isReassignedElsewhere(string fullName) => resumeState.Any(e =>
+                e.LaneId != lane.Id &&
+                string.Equals(e.FullName, fullName, StringComparison.OrdinalIgnoreCase) &&
+                e.Status is ResumeStatus.Pending or ResumeStatus.MoveFailed or ResumeStatus.CompanionMoveFailed or ResumeStatus.CleanupPending);
+
+            videoFiles = scanned.Where(f => !isReassignedElsewhere(f.FullName)).ToList();
             foreach (var f in videoFiles)
             {
                 // A file can reappear at a path that already has a resume entry - e.g. the same
