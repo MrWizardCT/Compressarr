@@ -100,6 +100,19 @@ public static class RunEndpoints
 
             var files = scannedFiles.Where(f => !(pendingByPath.TryGetValue(f.FullName, out var e) && e.Removed)).ToList();
 
+            // A Pending entry reassigned INTO this lane (the Monitor page's lane dropdown) has its
+            // own real file physically sitting in a DIFFERENT lane's Input folder - the scan above,
+            // scoped to THIS lane's own Input, can never find it. Added directly from its own
+            // tracked FullName here, the same way ConversionOrchestrator.PrepareLaneAsync's own
+            // pending-entries branch already does - without this, a reassigned file vanished from
+            // the Monitor page entirely (correctly excluded from its old lane by reassignedElsewhere
+            // above, but never actually appearing anywhere else either), even though it was still
+            // genuinely queued and would still be picked up for real by the next pass.
+            var scannedPaths = scannedFiles.Select(f => f.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            files.AddRange(pending
+                .Where(p => !p.Removed && !scannedPaths.Contains(p.FullName) && File.Exists(p.FullName))
+                .Select(p => new FileInfo(p.FullName)));
+
             // Whether this lane genuinely had incomplete work outstanding when its OWN most recent
             // pass began - recorded once by RunOrchestrator (via CurrentRunStateService.LaneStarted)
             // right before PrepareLane's own bookkeeping could add fresh Pending entries and make it
@@ -141,7 +154,11 @@ public static class RunEndpoints
                 var sizeGb = Math.Round(file.Length / (double)BytesPerGb, 3);
                 var isFileBotUnmatched = entry?.FileBotUnmatched ?? false;
                 var item = new UpNextItem(lane.Id, lane.DisplayName, file.Name, file.FullName, sizeGb, preset, isResumed, IsError: false, isSkipped, hasOverride, isFileBotUnmatched);
-                candidates.Add((item, laneOrderIndex, entry?.Order, naturalIndex[file.FullName]));
+                // A reassigned-in file (added above, never part of this lane's own scan) has no
+                // natural scan position here at all - falls to the back of this lane's own tie-break
+                // order, same as PrepareLaneAsync's identical NaturalOrderIndex fallback.
+                var naturalOrder = naturalIndex.TryGetValue(file.FullName, out var idx) ? idx : int.MaxValue;
+                candidates.Add((item, laneOrderIndex, entry?.Order, naturalOrder));
             }
 
             var errorEntries = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Error).ToList();
