@@ -3034,4 +3034,73 @@ public class ConversionOrchestratorTests : IDisposable
         Assert.True(Directory.Exists(lane1Input), "the file's TRUE owning lane's Input root must never be removed, regardless of which lane is now processing it");
         Assert.False(Directory.Exists(sourceSubfolder), "the now-empty per-movie subfolder should still be cleaned up correctly");
     }
+
+    [Fact]
+    public void BackfillMissingOrder_FreezesTodaysDisplayOrder_SoReassignmentAfterwardNeverMovesAFile()
+    {
+        // The actual user complaint this exists to fix: reassigning a file's lane used to visibly
+        // move it in the combined queue - falling to the very bottom, since a reassigned file's own
+        // natural scan index no longer means anything once it's grouped under a lane it doesn't
+        // physically belong to. The real fix is that EVERY file's Order becomes a permanent,
+        // persisted fact once backfilled - reassignment only ever changes LaneId, never Order, so a
+        // backfilled file's position in the combined OrderBy(Order) sort can no longer be perturbed
+        // by anything except an explicit drag-to-reorder.
+        var lane1Input = Path.Combine(_tempDir, "Lane1Input");
+        var lane2Input = Path.Combine(_tempDir, "Lane2Input");
+        Directory.CreateDirectory(lane1Input);
+        Directory.CreateDirectory(lane2Input);
+
+        // Lane1 gets two pre-existing (pre-upgrade, Order-less) files; lane2 gets one - matching
+        // today's real, already-displayed queue order this backfill must freeze in place.
+        var lane1FileA = Path.Combine(lane1Input, "a.mkv");
+        var lane1FileB = Path.Combine(lane1Input, "b.mkv");
+        var lane2FileC = Path.Combine(lane2Input, "c.mkv");
+        File.WriteAllText(lane1FileA, "a");
+        File.WriteAllText(lane1FileB, "b");
+        File.WriteAllText(lane2FileC, "c");
+
+        var lane1 = new LaneConfig { Id = "lane1", DisplayName = "Lane One", Enabled = true, Input = lane1Input, Output = Path.Combine(_tempDir, "Output1"), MoviePreset = "Any Preset" };
+        var lane2 = new LaneConfig { Id = "lane2", DisplayName = "Lane Two", Enabled = true, Input = lane2Input, Output = Path.Combine(_tempDir, "Output2"), MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane1);
+        config.Lanes.Add(lane2);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var entryA = new ResumeEntry { LaneId = "lane1", FullName = lane1FileA, Status = ResumeStatus.Pending };
+        var entryB = new ResumeEntry { LaneId = "lane1", FullName = lane1FileB, Status = ResumeStatus.Pending };
+        var entryC = new ResumeEntry { LaneId = "lane2", FullName = lane2FileC, Status = ResumeStatus.Pending };
+        var resumeState = new List<ResumeEntry> { entryA, entryB, entryC };
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+
+        orchestrator.BackfillMissingOrder(config, resumeState, resumeFilePath);
+
+        // Every entry now has a real, distinct Order, in lane-then-natural-scan sequence (lane1
+        // before lane2, matching config.Lanes order; a before b within lane1's own scan).
+        Assert.NotNull(entryA.Order);
+        Assert.NotNull(entryB.Order);
+        Assert.NotNull(entryC.Order);
+        Assert.True(entryA.Order < entryB.Order);
+        Assert.True(entryB.Order < entryC.Order);
+
+        // Calling it again must be a true no-op - nobody's Order changes just because the method
+        // ran a second time (the common case, every pass after the first).
+        var (a0, b0, c0) = (entryA.Order, entryB.Order, entryC.Order);
+        orchestrator.BackfillMissingOrder(config, resumeState, resumeFilePath);
+        Assert.Equal(a0, entryA.Order);
+        Assert.Equal(b0, entryB.Order);
+        Assert.Equal(c0, entryC.Order);
+
+        // Now reassign entryA (currently first) to lane2 - simulating the Monitor page's lane
+        // dropdown, which only ever changes LaneId. Its relative rank against B and C, by the app's
+        // own real combined-queue sort key, must be completely unchanged.
+        entryA.LaneId = "lane2";
+
+        var order = resumeState.OrderBy(e => e.Order ?? int.MaxValue).ToList();
+        Assert.Equal(new[] { entryA, entryB, entryC }, order);
+    }
 }

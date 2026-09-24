@@ -112,6 +112,16 @@ public interface IConversionOrchestrator
     /// adopted as a new entry. The caller is responsible for calling this before picking the next
     /// file to process, across every lane - see RunOrchestrator's global picking loop.</summary>
     void RefreshResumeState(List<ResumeEntry> resumeState, string resumeFilePath);
+
+    /// <summary>One-time migration: gives every pre-existing Pending entry that still lacks an
+    /// Order (i.e. it predates ResumeEntry.Order being stamped automatically at creation time) a
+    /// permanent one, computed by freezing today's own effective display order - the same
+    /// Order-null → lane's position in config.Lanes → natural per-lane scan order tie-break
+    /// RunEndpoints.ComputeUpNext already computes independently - as everyone's new permanent
+    /// position. A cheap no-op on every call after the first: bails immediately once every Pending
+    /// entry already has one. Called once per pass, before any lane is prepared, so the ordering it
+    /// freezes reflects the queue exactly as it looked before this pass could touch anything.</summary>
+    void BackfillMissingOrder(CompressarrConfig config, List<ResumeEntry> resumeState, string resumeFilePath);
 }
 
 public sealed class ConversionOrchestrator : IConversionOrchestrator
@@ -1420,6 +1430,72 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         {
             return false;
         }
+    }
+
+    public void BackfillMissingOrder(CompressarrConfig config, List<ResumeEntry> resumeState, string resumeFilePath)
+    {
+        var pending = resumeState.Where(e => e.Status == ResumeStatus.Pending).ToList();
+        if (pending.All(e => e.Order.HasValue)) return;
+
+        // Freezes today's own effective display order - Order-null already sorts by (lane's
+        // position in config.Lanes, then that lane's own natural scan order), the exact tie-break
+        // RunEndpoints.ComputeUpNext independently computes for the very same entries - as
+        // everyone's new permanent Order, so upgrading to this version doesn't visibly reshuffle an
+        // already-familiar queue the moment it's first applied.
+        var ranked = new List<(ResumeEntry Entry, int LaneOrderIndex, int NaturalIndex)>();
+        var laneOrderIndex = 0;
+        foreach (var lane in config.Lanes)
+        {
+            var lanePending = pending.Where(e => e.LaneId == lane.Id && !e.Order.HasValue).ToList();
+            if (lanePending.Count > 0)
+            {
+                // This runs once, before Phase 1's own per-lane try/catch even begins - a single
+                // lane's scan failing here (an unreachable network path, a permissions error) must
+                // never take down the whole pass over what's otherwise just a one-time migration
+                // step. Worst case, that lane's own entries fall back to int.MaxValue (same as
+                // "genuinely not found in the scan") and still get a real, stable Order below -
+                // just not necessarily today's exact natural position for that one lane.
+                Dictionary<string, int> naturalIndex;
+                try
+                {
+                    var inputPath = _pathExpander.Expand(lane.Input);
+                    naturalIndex = !string.IsNullOrWhiteSpace(inputPath) && Directory.Exists(inputPath)
+                        ? _scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit)
+                            .Select((f, idx) => (f.FullName, idx))
+                            .ToDictionary(x => x.FullName, x => x.idx, StringComparer.OrdinalIgnoreCase)
+                        : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Log($"  Order backfill: couldn't scan lane '{lane.DisplayName}' ({ex.Message}) - its own entries will still get a stable position, just not necessarily today's exact order.", LogSeverity.Error);
+                    naturalIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                foreach (var entry in lanePending)
+                {
+                    var natural = naturalIndex.TryGetValue(entry.FullName, out var idx) ? idx : int.MaxValue;
+                    ranked.Add((entry, laneOrderIndex, natural));
+                }
+            }
+            laneOrderIndex++;
+        }
+
+        var nextOrder = ResumeQueueOrder.NextOrder(resumeState);
+        foreach (var (entry, _, _) in ranked.OrderBy(r => r.LaneOrderIndex).ThenBy(r => r.NaturalIndex))
+        {
+            entry.Order = nextOrder++;
+        }
+
+        // Catch-all for anything the per-lane loop above couldn't place (a LaneId that no longer
+        // matches any currently-configured lane, e.g. one that's since been deleted) - appended at
+        // the very end rather than left permanently null, so it still eventually gets a real,
+        // stable position instead of falling back to sorting last forever.
+        foreach (var entry in pending.Where(e => !e.Order.HasValue))
+        {
+            entry.Order = nextOrder++;
+        }
+
+        _resumeStore.Save(resumeState, resumeFilePath);
     }
 
     public void RefreshResumeState(List<ResumeEntry> resumeState, string resumeFilePath)
