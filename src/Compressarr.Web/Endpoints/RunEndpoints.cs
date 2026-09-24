@@ -228,81 +228,6 @@ public static class RunEndpoints
         return created;
     }
 
-    /// <summary>Ensures every file currently visible as part of the "New"/unlocked queue - across
-    /// EVERY enabled lane, not just the one a single-file request is about to touch - has a real,
-    /// permanently Order-stamped Pending entry, before that request's own FindOrCreatePendingEntry
-    /// call runs.
-    ///
-    /// Real gap found live: a single-file queue-control action (skip/preset-override/reassign-lane/
-    /// remove) only ever created/stamped an Order for the ONE file it targeted - every other
-    /// genuinely-new file sitting around it kept sorting by live natural scan order (Order == null,
-    /// i.e. sorts last). The moment the touched file got a real, low Order while its siblings stayed
-    /// at "last", it visibly jumped ahead of files that were ahead of it moments earlier - breaking
-    /// "once files appear in the queue, their order is locked" any time Monitor wasn't actively
-    /// mid-pass to backfill everyone at once (ConversionOrchestrator.BackfillMissingOrder only ever
-    /// runs once per RunOrchestrator pass, not on every queue-control request).
-    ///
-    /// Mirrors ComputeUpNext's own per-lane scan/exclusion logic (trackedPaths, reassignedElsewhere,
-    /// natural scan order) so the set of files this locks in - and the order it locks them into -
-    /// always matches what's already on screen.</summary>
-    private static void LockInVisibleQueueOrder(CompressarrConfig config, List<ResumeEntry> resumeState, IPathExpander pathExpander, IVideoFileScanner scanner)
-    {
-        var nextOrder = ResumeQueueOrder.NextOrder(resumeState);
-
-        foreach (var lane in config.Lanes)
-        {
-            if (!lane.Enabled) continue;
-
-            var inputPath = pathExpander.Expand(lane.Input);
-            if (string.IsNullOrWhiteSpace(inputPath) || !Directory.Exists(inputPath)) continue;
-
-            var trackedPaths = resumeState.Where(e => e.LaneId == lane.Id).Select(e => e.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var reassignedElsewhere = resumeState
-                .Where(e => e.LaneId != lane.Id && e.Status is ResumeStatus.Pending or ResumeStatus.MoveFailed or ResumeStatus.CompanionMoveFailed or ResumeStatus.CleanupPending)
-                .Select(e => e.FullName)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            List<FileInfo> scannedFiles;
-            try
-            {
-                scannedFiles = scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit)
-                    .Where(f => !reassignedElsewhere.Contains(f.FullName))
-                    .ToList();
-            }
-            catch
-            {
-                // An unreachable Input path here just means this lane's own files stay unlocked
-                // until the next request that can actually scan it - never worth failing the
-                // caller's own single-file action over.
-                continue;
-            }
-
-            var naturalIndex = scannedFiles
-                .Select((f, idx) => (f.FullName, idx))
-                .ToDictionary(x => x.FullName, x => x.idx, StringComparer.OrdinalIgnoreCase);
-
-            var unlocked = resumeState
-                .Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending && !e.Order.HasValue)
-                .Select(e => (Natural: naturalIndex.TryGetValue(e.FullName, out var idx) ? idx : int.MaxValue, Entry: (ResumeEntry?)e, NewFullName: (string?)null))
-                .Concat(scannedFiles
-                    .Where(f => !trackedPaths.Contains(f.FullName))
-                    .Select(f => (Natural: naturalIndex.TryGetValue(f.FullName, out var idx) ? idx : int.MaxValue, Entry: (ResumeEntry?)null, NewFullName: (string?)f.FullName)))
-                .OrderBy(x => x.Natural);
-
-            foreach (var item in unlocked)
-            {
-                if (item.Entry is not null)
-                {
-                    item.Entry.Order = nextOrder++;
-                }
-                else
-                {
-                    resumeState.Add(new ResumeEntry { LaneId = lane.Id, FullName = item.NewFullName!, Status = ResumeStatus.Pending, Order = nextOrder++ });
-                }
-            }
-        }
-    }
-
     public static void MapRunEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/run/once", async (IConfigStore configStore, IRunOrchestrator runOrchestrator) =>
@@ -385,7 +310,7 @@ public static class RunEndpoints
         // "Skip" from the queue's 3-dot menu - the entry stays visible (dimmed) but
         // ConversionOrchestrator excludes it from what actually gets encoded. Persists until
         // toggled back off from the same menu, not a true one-shot skip (see ResumeEntry.Skipped).
-        app.MapPost("/api/run/queue/skip", (SkipQueueEntryRequest request, IConfigStore configStore, IResumeStateStore resumeStore, IPathExpander pathExpander, IVideoFileScanner scanner) =>
+        app.MapPost("/api/run/queue/skip", (SkipQueueEntryRequest request, IConfigStore configStore, IResumeStateStore resumeStore) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             var lane = config.Lanes.FirstOrDefault(l => l.Id == request.LaneId);
@@ -393,7 +318,6 @@ public static class RunEndpoints
 
             var found = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
             {
-                LockInVisibleQueueOrder(config, resumeState, pathExpander, scanner);
                 var entry = FindOrCreatePendingEntry(resumeState, lane.Id, request.FullName);
                 if (entry is null) return false;
                 entry.Skipped = request.Skipped;
@@ -412,7 +336,7 @@ public static class RunEndpoints
         // Removed entry around (same FindOrCreatePendingEntry path skip/preset-override use) keeps
         // the file in trackedPaths so the rescan leaves it alone, while ComputeUpNext's own
         // pendingFiles filter hides it from the list.
-        app.MapPost("/api/run/queue/remove", (RemoveQueueEntryRequest request, IConfigStore configStore, IResumeStateStore resumeStore, IPathExpander pathExpander, IVideoFileScanner scanner) =>
+        app.MapPost("/api/run/queue/remove", (RemoveQueueEntryRequest request, IConfigStore configStore, IResumeStateStore resumeStore) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             var lane = config.Lanes.FirstOrDefault(l => l.Id == request.LaneId);
@@ -420,7 +344,6 @@ public static class RunEndpoints
 
             var found = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
             {
-                LockInVisibleQueueOrder(config, resumeState, pathExpander, scanner);
                 var entry = FindOrCreatePendingEntry(resumeState, lane.Id, request.FullName);
                 if (entry is null) return false;
                 entry.Removed = true;
@@ -434,7 +357,7 @@ public static class RunEndpoints
         // Per-file preset override, set by clicking the preset name on a queue row - overrides the
         // lane's TvPreset/MoviePreset for this one file only. Passing null/empty Preset clears the
         // override back to the lane default.
-        app.MapPost("/api/run/queue/preset-override", (PresetOverrideRequest request, IConfigStore configStore, IResumeStateStore resumeStore, IPathExpander pathExpander, IVideoFileScanner scanner) =>
+        app.MapPost("/api/run/queue/preset-override", (PresetOverrideRequest request, IConfigStore configStore, IResumeStateStore resumeStore) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             var lane = config.Lanes.FirstOrDefault(l => l.Id == request.LaneId);
@@ -442,7 +365,6 @@ public static class RunEndpoints
 
             var found = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
             {
-                LockInVisibleQueueOrder(config, resumeState, pathExpander, scanner);
                 var entry = FindOrCreatePendingEntry(resumeState, lane.Id, request.FullName);
                 if (entry is null) return false;
                 entry.PresetOverride = string.IsNullOrWhiteSpace(request.Preset) ? null : request.Preset;
@@ -458,7 +380,7 @@ public static class RunEndpoints
         // only the ResumeEntry's own LaneId changes). ConversionOrchestrator.PrepareLaneAsync and
         // ComputeUpNext above both know to stop treating this path as "new" for its old lane once
         // it's tracked under a different one, so it's never picked up (or shown) by both at once.
-        app.MapPost("/api/run/queue/reassign-lane", (ReassignLaneRequest request, IConfigStore configStore, IResumeStateStore resumeStore, IPathExpander pathExpander, IVideoFileScanner scanner) =>
+        app.MapPost("/api/run/queue/reassign-lane", (ReassignLaneRequest request, IConfigStore configStore, IResumeStateStore resumeStore) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             var lane = config.Lanes.FirstOrDefault(l => l.Id == request.LaneId);
@@ -468,7 +390,6 @@ public static class RunEndpoints
 
             var found = resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
             {
-                LockInVisibleQueueOrder(config, resumeState, pathExpander, scanner);
                 var entry = FindOrCreatePendingEntry(resumeState, lane.Id, request.FullName);
                 if (entry is null) return false;
                 entry.LaneId = newLane.Id;
