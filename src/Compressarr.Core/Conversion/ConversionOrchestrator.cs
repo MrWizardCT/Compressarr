@@ -122,17 +122,6 @@ public interface IConversionOrchestrator
     /// entry already has one. Called once per pass, before any lane is prepared, so the ordering it
     /// freezes reflects the queue exactly as it looked before this pass could touch anything.</summary>
     void BackfillMissingOrder(CompressarrConfig config, List<ResumeEntry> resumeState, string resumeFilePath);
-
-    /// <summary>Removes any resume entry whose LaneId doesn't match any currently-configured lane -
-    /// the lane it belonged to was since renamed or deleted. Every one of PrepareLaneAsync's own
-    /// dead-entry/retry loops is scoped to `e.LaneId == lane.Id` while iterating config.Lanes, so an
-    /// entry like this is invisible to all of them and would otherwise sit in resume.json forever:
-    /// inflating "Resuming previous incomplete run"'s tracked count on every pass and, per the
-    /// comment on deadEntries in PrepareLaneAsync, permanently blocking RunOrchestrator's end-of-pass
-    /// stillOutstanding check from ever wiping the file once every real lane's own work is done.
-    /// Called once per pass, before that log line, so both the count and the end-of-pass check
-    /// reflect only lanes that still exist.</summary>
-    void PruneOrphanedLaneEntries(CompressarrConfig config, List<ResumeEntry> resumeState, string resumeFilePath);
 }
 
 public sealed class ConversionOrchestrator : IConversionOrchestrator
@@ -1506,20 +1495,6 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             entry.Order = nextOrder++;
         }
 
-        _resumeStore.Save(resumeState, resumeFilePath);
-    }
-
-    public void PruneOrphanedLaneEntries(CompressarrConfig config, List<ResumeEntry> resumeState, string resumeFilePath)
-    {
-        var configuredLaneIds = config.Lanes.Select(l => l.Id).ToHashSet();
-        var orphaned = resumeState.Where(e => !configuredLaneIds.Contains(e.LaneId)).ToList();
-        if (orphaned.Count == 0) return;
-
-        foreach (var entry in orphaned)
-        {
-            _logger.Log($"Resume entry for '{entry.FullName}' belongs to a lane that no longer exists - removing it.", LogSeverity.Error);
-            resumeState.Remove(entry);
-        }
         _resumeStore.Save(resumeState, resumeFilePath);
     }
 
