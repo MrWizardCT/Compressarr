@@ -201,6 +201,13 @@ public sealed class RunOrchestrator : IRunOrchestrator
 
         var resumeFilePath = AppPaths.GetResumeFilePath();
         var resumeState = _resumeStore.Load(resumeFilePath);
+
+        // Must run before the tracked-count log line below - an entry under a since-deleted lane
+        // is invisible to every one of PrepareLaneAsync's own per-lane cleanup loops (see the
+        // comment on deadEntries there), so left unpruned it inflates this count and permanently
+        // blocks the end-of-pass stillOutstanding wipe, even once every real lane is fully caught up.
+        _conversionOrchestrator.PruneOrphanedLaneEntries(config, resumeState, resumeFilePath);
+
         if (resumeState.Count > 0)
         {
             _logger.Log($"Resuming previous incomplete run ({resumeState.Count} file(s) tracked).");

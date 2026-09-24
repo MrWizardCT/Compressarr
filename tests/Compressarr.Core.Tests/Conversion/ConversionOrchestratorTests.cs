@@ -3103,4 +3103,44 @@ public class ConversionOrchestratorTests : IDisposable
         var order = resumeState.OrderBy(e => e.Order ?? int.MaxValue).ToList();
         Assert.Equal(new[] { entryA, entryB, entryC }, order);
     }
+
+    [Fact]
+    public void PruneOrphanedLaneEntries_RemovesEntriesUnderADeletedLane_ButLeavesRealLanesAlone()
+    {
+        // The actual user-reported symptom this exists to fix: "Resuming previous incomplete run
+        // (N file(s) tracked)" kept repeating forever, and growing, even with an empty visible
+        // queue. Root cause found on the user's real production resume.json: one leftover Pending
+        // entry's LaneId no longer matched any configured lane (the lane it belonged to had since
+        // been deleted). Every one of PrepareLaneAsync's own dead-entry/retry loops is scoped to
+        // `e.LaneId == lane.Id` while iterating config.Lanes, so that entry was invisible to all of
+        // them and sat there forever - inflating the tracked count on every pass and permanently
+        // blocking RunOrchestrator's end-of-pass stillOutstanding wipe, so even the legitimately
+        // Completed history entries sitting alongside it never got cleaned up either.
+        var lane1Input = Path.Combine(_tempDir, "Lane1Input");
+        Directory.CreateDirectory(lane1Input);
+        var lane1 = new LaneConfig { Id = "lane1", DisplayName = "Lane One", Enabled = true, Input = lane1Input, Output = Path.Combine(_tempDir, "Output1"), MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane1);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var realEntry = new ResumeEntry { LaneId = "lane1", FullName = Path.Combine(lane1Input, "a.mkv"), Status = ResumeStatus.Completed };
+        var orphaned = new ResumeEntry { LaneId = "deleted-lane-guid", FullName = Path.Combine(_tempDir, "Corrupt Test File (2020).mkv"), Status = ResumeStatus.Pending, Removed = true, Skipped = true };
+        var resumeState = new List<ResumeEntry> { realEntry, orphaned };
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+
+        orchestrator.PruneOrphanedLaneEntries(config, resumeState, resumeFilePath);
+
+        var remaining = Assert.Single(resumeState);
+        Assert.Same(realEntry, remaining);
+
+        // A second call with nothing left to prune must be a true no-op, not throw or re-save
+        // needlessly.
+        orchestrator.PruneOrphanedLaneEntries(config, resumeState, resumeFilePath);
+        Assert.Single(resumeState);
+    }
 }
