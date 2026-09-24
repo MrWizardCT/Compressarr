@@ -219,7 +219,11 @@ public static class RunEndpoints
 
         if (!File.Exists(fullName)) return null;
 
-        var created = new ResumeEntry { LaneId = laneId, FullName = fullName, Status = ResumeStatus.Pending, CreatedByQueueEdit = true };
+        // Stamped here too, same as ConversionOrchestrator's own entry-creation - a file touched by
+        // a queue-control action before the engine ever tracked it still gets a permanent queue
+        // position from the moment it's first created, not a null Order that would otherwise sort
+        // it ahead of every already-known file.
+        var created = new ResumeEntry { LaneId = laneId, FullName = fullName, Status = ResumeStatus.Pending, CreatedByQueueEdit = true, Order = ResumeQueueOrder.NextOrder(resumeState) };
         resumeState.Add(created);
         return created;
     }

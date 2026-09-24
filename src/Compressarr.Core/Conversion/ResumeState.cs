@@ -83,9 +83,17 @@ public sealed class ResumeEntry
     /// re-derive the *arr lookup name and TV/movie classification for a fresh rescan attempt).</summary>
     public string? PendingCompanionVideoDestPath { get; set; }
 
-    /// <summary>User-set queue position within this lane's Pending entries, lower first - drives
-    /// drag-to-reorder on the Monitor page's In Queue list. Entries without an explicit Order
-    /// (existing/untouched files) sort after any that have one, in their original order.</summary>
+    /// <summary>This entry's permanent position in the combined, cross-lane queue, lower first -
+    /// stamped once, automatically, the moment an entry is first created (see
+    /// ResumeQueueOrder.NextOrder below), and afterward only ever changed by an explicit
+    /// drag-to-reorder on the Monitor page. Deliberately NOT recomputed from a live folder scan on
+    /// every poll the way it used to be - a file's position must never silently shift just because
+    /// something else changed (a new file arrived earlier in scan order, or this file was moved to
+    /// a different lane), only because the user actually dragged it. Null only for the rare entry
+    /// that predates this field (a fallback to sorting last still applies, but a one-time backfill -
+    /// see RunOrchestrator - assigns every pre-existing Pending entry one on the first pass after
+    /// upgrading, using that pass's own natural order as the starting point, so today's visible
+    /// queue order survives the upgrade unchanged).</summary>
     public int? Order { get; set; }
 
     /// <summary>User-set "skip this pass" - a Skipped Pending entry stays visible in the queue
@@ -124,6 +132,18 @@ public sealed class ResumeEntry
     /// treated as "FileBot didn't/couldn't confidently match this one." Drives the Monitor page's
     /// "Unmatched" queue badge. Never recomputed for an already-tracked entry.</summary>
     public bool FileBotUnmatched { get; set; }
+}
+
+/// <summary>Shared by every place a brand-new ResumeEntry gets created (ConversionOrchestrator's own
+/// scan, and RunEndpoints.FindOrCreatePendingEntry for a queue-control action touching an
+/// untracked file) so a fresh entry always appends after every entry that already has a real
+/// Order, rather than sorting before them (which a null Order would do under the queue's own
+/// OrderBy(Order ?? int.MaxValue)). One shared helper instead of two copies so the two entry-
+/// creation sites - in different projects - can never drift on what "next" means.</summary>
+public static class ResumeQueueOrder
+{
+    public static int NextOrder(IEnumerable<ResumeEntry> resumeState) =>
+        resumeState.Where(e => e.Order.HasValue).Select(e => e.Order!.Value).DefaultIfEmpty(-1).Max() + 1;
 }
 
 public interface IResumeStateStore

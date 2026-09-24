@@ -432,20 +432,31 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 // own call site for why.
                 if (retryDestPath is not null && !companionMoveFailed && arrCleanupSafe)
                 {
-                    try
+                    // See FindOwningLaneInputPath's own doc comment - a reassigned file's true
+                    // physical root can differ from this lane's own inputPath.
+                    var trueInputRoot = FindOwningLaneInputPath(config, inputPath, originalSourceDirectory);
+                    if (trueInputRoot is null)
                     {
-                        _companionFiles.CleanUpEmptySourceFolder(originalSourceDirectory, inputPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
-                    }
-                    catch (Exception ex)
-                    {
-                        // Code-review finding: a filesystem-level cleanup failure (locked file,
-                        // permission, antivirus interference, etc) was logged here but otherwise
-                        // ignored - the entry still ended up Completed below regardless, so a
-                        // transient cleanup error was just as permanently forgotten as an
-                        // unconfirmed rescan used to be. Treated the same way now: falls through
-                        // to CleanupPending just like arrCleanupSafe == false does.
-                        _logger.Log($"  Source folder cleanup skipped on move retry: {ex.Message}", LogSeverity.Error);
+                        _logger.Log($"  Source folder cleanup skipped on move retry - couldn't confirm '{originalSourceDirectory}' belongs to any currently-configured lane's Input folder.", LogSeverity.Error);
                         cleanupFailed = true;
+                    }
+                    else
+                    {
+                        try
+                        {
+                            _companionFiles.CleanUpEmptySourceFolder(originalSourceDirectory, trueInputRoot, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
+                        }
+                        catch (Exception ex)
+                        {
+                            // Code-review finding: a filesystem-level cleanup failure (locked file,
+                            // permission, antivirus interference, etc) was logged here but otherwise
+                            // ignored - the entry still ended up Completed below regardless, so a
+                            // transient cleanup error was just as permanently forgotten as an
+                            // unconfirmed rescan used to be. Treated the same way now: falls through
+                            // to CleanupPending just like arrCleanupSafe == false does.
+                            _logger.Log($"  Source folder cleanup skipped on move retry: {ex.Message}", LogSeverity.Error);
+                            cleanupFailed = true;
+                        }
                     }
                 }
             }
@@ -511,22 +522,31 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
                 if (arrCleanupSafe)
                 {
-                    try
+                    var trueInputRoot = FindOwningLaneInputPath(config, inputPath, sourceDirectory);
+                    if (trueInputRoot is null)
                     {
-                        _companionFiles.CleanUpEmptySourceFolder(sourceDirectory, inputPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
-                        entry.Status = ResumeStatus.Completed;
-                        entry.PendingCompanionSourceDirectory = null;
-                        entry.PendingCompanionVideoDestPath = null;
-                    }
-                    catch (Exception ex)
-                    {
-                        // Code-review finding: a filesystem-level cleanup failure here used to be
-                        // logged and then ignored - the entry still ended up Completed regardless,
-                        // permanently forgetting the still-outstanding folder. PendingCompanion*
-                        // fields are already correct (unchanged from the CompanionMoveFailed values
-                        // above), so no need to re-set them - just stay in the cleanup lifecycle.
-                        _logger.Log($"  Source folder cleanup skipped on companion retry: {ex.Message}", LogSeverity.Error);
+                        _logger.Log($"  Source folder cleanup skipped on companion retry - couldn't confirm '{sourceDirectory}' belongs to any currently-configured lane's Input folder.", LogSeverity.Error);
                         entry.Status = ResumeStatus.CleanupPending;
+                    }
+                    else
+                    {
+                        try
+                        {
+                            _companionFiles.CleanUpEmptySourceFolder(sourceDirectory, trueInputRoot, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
+                            entry.Status = ResumeStatus.Completed;
+                            entry.PendingCompanionSourceDirectory = null;
+                            entry.PendingCompanionVideoDestPath = null;
+                        }
+                        catch (Exception ex)
+                        {
+                            // Code-review finding: a filesystem-level cleanup failure here used to be
+                            // logged and then ignored - the entry still ended up Completed regardless,
+                            // permanently forgetting the still-outstanding folder. PendingCompanion*
+                            // fields are already correct (unchanged from the CompanionMoveFailed values
+                            // above), so no need to re-set them - just stay in the cleanup lifecycle.
+                            _logger.Log($"  Source folder cleanup skipped on companion retry: {ex.Message}", LogSeverity.Error);
+                            entry.Status = ResumeStatus.CleanupPending;
+                        }
                     }
                 }
                 else
@@ -610,33 +630,49 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
             if (arrCleanupSafe)
             {
-                try
+                var trueInputRoot = FindOwningLaneInputPath(config, inputPath, sourceDirectory);
+                if (trueInputRoot is null)
                 {
-                    _companionFiles.CleanUpEmptySourceFolder(sourceDirectory, inputPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
-                    _logger.Log($"  Retried source folder cleanup for '{desiredFileName}' - succeeded.");
-                    entry.Status = ResumeStatus.Completed;
-                    entry.PendingCompanionSourceDirectory = null;
-                    entry.PendingCompanionVideoDestPath = null;
-                    entry.LastRetryFailureMessage = null;
-                    retriesSucceeded++;
-                }
-                catch (Exception ex)
-                {
-                    // Code-review finding: this used to be a "best-effort, log and move on"
-                    // failure like every other cleanup call site - but for THIS status, the *arr
-                    // confirmation is the only piece being tracked, so treating the whole entry as
-                    // Completed the moment CleanUpEmptySourceFolder merely THREW (rather than
-                    // actually succeeding) permanently forgot a transient filesystem problem
-                    // (locked file, permission, antivirus interference, network share hiccup) with
-                    // no path back to retrying it. Stays CleanupPending instead - same Error-once/
-                    // Info-on-repeat dedup as the "not confirmed" branch below, keyed off the same
-                    // LastRetryFailureMessage field (only one of the two branches runs per pass, so
-                    // there's no ambiguity about which kind of failure it's tracking at any time).
-                    var isSameAsLastPoll = entry.LastRetryFailureMessage == ex.Message;
+                    // Same Error-once/Info-on-repeat dedup as the exception branch below - this can
+                    // recur every pass for as long as it stays unresolved (e.g. the file's true
+                    // owning lane has since been deleted or renamed).
+                    var message = $"couldn't confirm '{sourceDirectory}' belongs to any currently-configured lane's Input folder";
+                    var isSameAsLastPoll = entry.LastRetryFailureMessage == message;
                     var severity = isSameAsLastPoll ? LogSeverity.Info : LogSeverity.Error;
                     var suffix = isSameAsLastPoll ? " (still failing, same as last check)" : "";
-                    _logger.Log($"  Source folder cleanup failed on cleanup retry: {ex.Message}{suffix}", severity);
-                    entry.LastRetryFailureMessage = ex.Message;
+                    _logger.Log($"  Source folder cleanup skipped on cleanup retry: {message}{suffix}", severity);
+                    entry.LastRetryFailureMessage = message;
+                }
+                else
+                {
+                    try
+                    {
+                        _companionFiles.CleanUpEmptySourceFolder(sourceDirectory, trueInputRoot, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
+                        _logger.Log($"  Retried source folder cleanup for '{desiredFileName}' - succeeded.");
+                        entry.Status = ResumeStatus.Completed;
+                        entry.PendingCompanionSourceDirectory = null;
+                        entry.PendingCompanionVideoDestPath = null;
+                        entry.LastRetryFailureMessage = null;
+                        retriesSucceeded++;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Code-review finding: this used to be a "best-effort, log and move on"
+                        // failure like every other cleanup call site - but for THIS status, the *arr
+                        // confirmation is the only piece being tracked, so treating the whole entry as
+                        // Completed the moment CleanUpEmptySourceFolder merely THREW (rather than
+                        // actually succeeding) permanently forgot a transient filesystem problem
+                        // (locked file, permission, antivirus interference, network share hiccup) with
+                        // no path back to retrying it. Stays CleanupPending instead - same Error-once/
+                        // Info-on-repeat dedup as the "not confirmed" branch below, keyed off the same
+                        // LastRetryFailureMessage field (only one of the two branches runs per pass, so
+                        // there's no ambiguity about which kind of failure it's tracking at any time).
+                        var isSameAsLastPoll = entry.LastRetryFailureMessage == ex.Message;
+                        var severity = isSameAsLastPoll ? LogSeverity.Info : LogSeverity.Error;
+                        var suffix = isSameAsLastPoll ? " (still failing, same as last check)" : "";
+                        _logger.Log($"  Source folder cleanup failed on cleanup retry: {ex.Message}{suffix}", severity);
+                        entry.LastRetryFailureMessage = ex.Message;
+                    }
                 }
             }
             else
@@ -756,7 +792,10 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 }
                 else
                 {
-                    resumeState.Add(new ResumeEntry { LaneId = lane.Id, FullName = f.FullName, Status = ResumeStatus.Pending, FileBotUnmatched = fileBotUnmatched.Contains(f.FullName) });
+                    // Stamped once, here, so this file's queue position is a permanent fact from the
+                    // moment it's first seen - never silently recomputed from a live scan again (see
+                    // ResumeEntry.Order's own doc comment for why).
+                    resumeState.Add(new ResumeEntry { LaneId = lane.Id, FullName = f.FullName, Status = ResumeStatus.Pending, FileBotUnmatched = fileBotUnmatched.Contains(f.FullName), Order = ResumeQueueOrder.NextOrder(resumeState) });
                 }
             }
             _resumeStore.Save(resumeState, resumeFilePath);
@@ -1150,24 +1189,41 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             // companion still waiting to be moved, not a genuine orphan to sweep.
             if (routedDestPath is not null && !companionMoveFailed && arrCleanupSafe)
             {
-                try
+                // See FindOwningLaneInputPath's own doc comment - a file reassigned to a different
+                // lane via the Monitor page's queue control still physically sits in its ORIGINAL
+                // lane's Input tree, not this (its current) lane's own inputPath. A real, confirmed
+                // data-loss bug found via live use: passing the wrong root here let cleanup treat a
+                // completely different lane's real Input root (or one of its ancestors) as ordinary
+                // orphaned content safe to sweep and delete.
+                var trueInputRoot = FindOwningLaneInputPath(config, inputPath, file.DirectoryName!);
+                if (trueInputRoot is null)
                 {
-                    _companionFiles.CleanUpEmptySourceFolder(file.DirectoryName!, inputPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
-                }
-                catch (Exception ex)
-                {
-                    // Code-review finding: a filesystem-level cleanup failure (locked file,
-                    // permission, antivirus interference, etc) was logged here but otherwise
-                    // ignored - the entry still ended up Completed below regardless, so a
-                    // transient cleanup error was just as permanently forgotten as an unconfirmed
-                    // rescan used to be. Treated the same way now: falls through to CleanupPending
-                    // just like arrCleanupSafe == false does. Code-review follow-up finding: unlike
-                    // the sibling !arrCleanupSafe branch above, this didn't append a
-                    // PostProcessWarning - the report could show a plain, unqualified "OK" for a
-                    // file whose folder cleanup actually failed and is still pending retry.
-                    _logger.Log($"  Source folder cleanup skipped: {ex.Message}", LogSeverity.Error);
-                    postProcessWarning = AppendWarning(postProcessWarning, $"Source folder cleanup deferred: {ex.Message}");
+                    var message = $"couldn't confirm '{file.DirectoryName}' belongs to any currently-configured lane's Input folder";
+                    _logger.Log($"  Source folder cleanup skipped: {message}", LogSeverity.Error);
+                    postProcessWarning = AppendWarning(postProcessWarning, $"Source folder cleanup deferred: {message}");
                     cleanupFailed = true;
+                }
+                else
+                {
+                    try
+                    {
+                        _companionFiles.CleanUpEmptySourceFolder(file.DirectoryName!, trueInputRoot, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Code-review finding: a filesystem-level cleanup failure (locked file,
+                        // permission, antivirus interference, etc) was logged here but otherwise
+                        // ignored - the entry still ended up Completed below regardless, so a
+                        // transient cleanup error was just as permanently forgotten as an unconfirmed
+                        // rescan used to be. Treated the same way now: falls through to CleanupPending
+                        // just like arrCleanupSafe == false does. Code-review follow-up finding: unlike
+                        // the sibling !arrCleanupSafe branch above, this didn't append a
+                        // PostProcessWarning - the report could show a plain, unqualified "OK" for a
+                        // file whose folder cleanup actually failed and is still pending retry.
+                        _logger.Log($"  Source folder cleanup skipped: {ex.Message}", LogSeverity.Error);
+                        postProcessWarning = AppendWarning(postProcessWarning, $"Source folder cleanup deferred: {ex.Message}");
+                        cleanupFailed = true;
+                    }
                 }
             }
 
@@ -1313,6 +1369,58 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
     /// the same file, and neither should silently overwrite the other's message.</summary>
     private static string AppendWarning(string? existing, string next) =>
         existing is null ? next : $"{existing}; {next}";
+
+    /// <summary>Finds whichever currently-configured lane's own Input path is the TRUE physical
+    /// ancestor of fileDirectory - almost always knownInputPath (the current lane's own, already-
+    /// expanded Input), which covers the overwhelming common case where a file has never been
+    /// reassigned. A file reassigned to a DIFFERENT lane via the Monitor page's "Move to lane"
+    /// queue control keeps sitting in its ORIGINAL lane's Input tree even though this method's
+    /// caller is now driven by a different lane's own context - CleanUpEmptySourceFolder's entire
+    /// "never touch the Input root itself" safety guarantee, including its own cascade-upward-
+    /// through-empty-parents cleanup, depends on being told the file's REAL owning root, not
+    /// whichever lane happens to be driving its processing right now. Passing the wrong one there
+    /// is not cosmetic: it can make cleanup treat a completely different lane's real Input root (or
+    /// one of ITS ancestor folders) as ordinary orphaned content safe to sweep and delete - a real,
+    /// confirmed data-loss bug found via live use immediately after lane reassignment shipped,
+    /// affecting every status this file could end up in afterward (Completed via the main path
+    /// below, or a later retry from MoveFailed/CompanionMoveFailed/CleanupPending - reassignment
+    /// only ever changes LaneId, so the SAME mismatch persists into every one of those retry loops
+    /// too, not just the first attempt).
+    ///
+    /// Returns null if no currently-configured lane's Input path actually contains fileDirectory
+    /// (its owning lane has since been deleted or renamed) - the caller must skip cleanup entirely
+    /// rather than guess, since getting this wrong risks deleting real content outside any real
+    /// lane's boundary.</summary>
+    private string? FindOwningLaneInputPath(CompressarrConfig config, string knownInputPath, string fileDirectory)
+    {
+        if (IsUnderOrEqual(fileDirectory, knownInputPath)) return knownInputPath;
+
+        foreach (var lane in config.Lanes)
+        {
+            var candidate = _pathExpander.Expand(lane.Input);
+            if (!string.IsNullOrWhiteSpace(candidate) && IsUnderOrEqual(fileDirectory, candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsUnderOrEqual(string directory, string root)
+    {
+        try
+        {
+            var fullDir = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return fullDir.Equals(fullRoot, StringComparison.OrdinalIgnoreCase) ||
+                   fullDir.StartsWith(fullRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     public void RefreshResumeState(List<ResumeEntry> resumeState, string resumeFilePath)
     {

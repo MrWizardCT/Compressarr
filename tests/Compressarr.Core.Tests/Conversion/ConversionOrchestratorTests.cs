@@ -2967,4 +2967,71 @@ public class ConversionOrchestratorTests : IDisposable
         Assert.Equal("lane2", entry.LaneId);
         Assert.Equal(0, context!.FileTotal); // lane1 has nothing of its own left to process
     }
+
+    [Fact]
+    public async Task ProcessOneFileAsync_FileReassignedToAnotherLane_CleansUpUnderItsTrueOwningLaneNotTheNewOne()
+    {
+        // Real, confirmed data-loss bug found via live use immediately after lane reassignment
+        // shipped: a reassigned file physically stays put in its ORIGINAL lane's Input tree - only
+        // its ResumeEntry.LaneId changes - but ProcessOneFileAsync is driven by whichever lane's
+        // context now matches that LaneId, including THAT lane's own InputPath. CleanUpEmptySourceFolder
+        // treats its inputRoot argument as a folder it must never remove or cascade past - passing
+        // the wrong (new) lane's InputPath there let it treat the file's REAL owning lane's own
+        // Input root (and its ancestor folders) as ordinary orphaned content safe to sweep and
+        // delete, since that root no longer matched the (wrong) protected boundary it was given.
+        var lane1Input = Path.Combine(_tempDir, "Lane1Input");
+        var lane2Input = Path.Combine(_tempDir, "Lane2Input");
+        var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(lane1Input);
+        Directory.CreateDirectory(lane2Input);
+
+        // The file physically lives in a SUBFOLDER of lane1's own Input - not lane2's - so a
+        // correct fix must actually find lane1 as the true owner by checking config.Lanes, not
+        // just happen to work because the file sits directly in some lane's root.
+        var sourceSubfolder = Path.Combine(lane1Input, "Caddyshack (1980)");
+        Directory.CreateDirectory(sourceSubfolder);
+        var sourcePath = Path.Combine(sourceSubfolder, "Caddyshack (1980).mkv");
+        File.WriteAllText(sourcePath, "source");
+
+        var lane1 = new LaneConfig { Id = "lane1", DisplayName = "Lane One", Enabled = true, Input = lane1Input, Output = Path.Combine(_tempDir, "Lane1Output"), MoviePreset = "Any Preset" };
+        var lane2 = new LaneConfig { Id = "lane2", DisplayName = "Lane Two", Enabled = true, Input = lane2Input, Output = Path.Combine(_tempDir, "Lane2Output"), MoviePreset = "Any Preset", MovieBasePath = movieBaseDir };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = true, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane1);
+        config.Lanes.Add(lane2);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        // Real CompanionFileService (not a NoOp) so CleanUpEmptySourceFolder's actual behavior -
+        // including the dangerous cascade-upward-through-empty-parents path - is genuinely
+        // exercised, not just assumed.
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RecursiveFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new CompanionFileService(new DeletingTrashService()), new NoOpArrUnmonitorService(),
+            new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        // Already tracked under lane2 - simulating "reassigned via the Monitor page's queue
+        // control before this pass began" - even though the real file still sits under lane1's
+        // own Input tree.
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "lane2", FullName = sourcePath, Status = ResumeStatus.Pending }
+        };
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+
+        var context = await orchestrator.PrepareLaneAsync(lane2, config, resumeState, resumeFilePath);
+        Assert.NotNull(context);
+        var entry = Assert.Single(resumeState);
+
+        var result = await orchestrator.ProcessOneFileAsync(context!, entry, _tempDir, "20260101_000000", resumeState, resumeFilePath, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.True(File.Exists(Path.Combine(movieBaseDir, "Caddyshack (1980)", "Caddyshack (1980).mkv")));
+
+        // The decisive assertion: lane1's own real Input root - the file's TRUE owning lane, not
+        // lane2 which is now driving its processing - must survive intact, even though it's now
+        // completely empty. Before the fix, this failed: cleanup received lane2's InputPath as the
+        // "never touch" boundary, which doesn't match lane1Input, so it cascaded straight through
+        // lane1Input and deleted it.
+        Assert.True(Directory.Exists(lane1Input), "the file's TRUE owning lane's Input root must never be removed, regardless of which lane is now processing it");
+        Assert.False(Directory.Exists(sourceSubfolder), "the now-empty per-movie subfolder should still be cleaned up correctly");
+    }
 }
