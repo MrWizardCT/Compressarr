@@ -134,14 +134,8 @@ public static class RunEndpoints
 
             foreach (var file in files)
             {
-                // Matched on FullName alone, not laneDisplayName+leaf-name - real bug found live:
-                // a file reassigned to a different lane mid-encode keeps displaying under its NEW
-                // lane (its resume entry's LaneId already changed), but currentRun still reports
-                // the ORIGINAL lane it's physically encoding under - the old lane+name pairing can
-                // never match once those diverge, so the file showed as both "in progress" and
-                // "up next" at once. FullName is globally unique regardless of which lane currently
-                // claims the entry, so it can't be fooled by a reassignment.
-                if (string.Equals(file.FullName, currentRun.FileFullName, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(lane.DisplayName, currentRun.LaneDisplayName, StringComparison.Ordinal) &&
+                    string.Equals(file.Name, currentRun.FileName, StringComparison.Ordinal))
                 {
                     continue;
                 }

@@ -881,7 +881,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         var startTime = DateTime.Now;
 
         _logger.FileStart(lane.DisplayName, i, fileCount, file.Name, beginSizeGb, contentType, presetName);
-        _progress.FileStarted(lane.Id, i, fileCount, file.Name, file.FullName, presetName, beginSizeGb);
+        _progress.FileStarted(lane.Id, i, fileCount, file.Name, presetName, beginSizeGb);
 
         if (string.IsNullOrWhiteSpace(presetName))
         {

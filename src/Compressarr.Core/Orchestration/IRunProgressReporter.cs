@@ -32,17 +32,8 @@ public interface IRunProgressReporter
     /// live throughput estimate can be derived from an in-progress encode's own elapsed time and
     /// percent-complete, well before it actually finishes. Long individual encodes would otherwise
     /// leave the queue-ETA feature stuck on a stale/seeded rate for however long that one file
-    /// takes.
-    ///
-    /// fullName is the file's real absolute path, carried alongside the display-only fileName -
-    /// real bug found live: ComputeUpNext used to exclude the in-flight file from "up next" by
-    /// matching laneDisplayName+fileName, which breaks the moment a file is reassigned to a
-    /// different lane mid-encode (its resume entry's LaneId - and so its displayed lane - changes,
-    /// but it's still physically processing under the ORIGINAL lane this event was raised for), so
-    /// the file kept showing as both "in progress" and "up next" at once. FullName is globally
-    /// unique regardless of which lane currently claims it, so matching on that alone is
-    /// reassignment-proof.</summary>
-    void FileStarted(string laneId, int index, int total, string fileName, string fullName, string? presetName, double sizeGb);
+    /// takes.</summary>
+    void FileStarted(string laneId, int index, int total, string fileName, string? presetName, double sizeGb);
 
     /// <summary>Live progress within the file currently being encoded, parsed from HandBrakeCLI's
     /// own stdout ("Encoding: task 1 of 1, 42.10 % ..."). Fired frequently (roughly once a
