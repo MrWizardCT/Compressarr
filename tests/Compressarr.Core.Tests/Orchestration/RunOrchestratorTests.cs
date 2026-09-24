@@ -125,7 +125,7 @@ file sealed class NoOpProgressReporter : IRunProgressReporter
     public void LaneStarted(string laneId, string laneDisplayName, bool isResumed) { }
     public void FileBotStarted(string laneId) { }
     public void FileBotCompleted(string laneId) { }
-    public void FileStarted(string laneId, int index, int total, string fileName, string? presetName, double sizeGb) { }
+    public void FileStarted(string laneId, int index, int total, string fileName, string fullName, string? presetName, double sizeGb) { }
     public void FileProgress(string laneId, double percent, double? fps, string? eta) { }
     public void FileCompleted(string laneId, string fileName, bool success) { }
     public void FileThroughputSample(string? presetName, double gb, TimeSpan duration) { }

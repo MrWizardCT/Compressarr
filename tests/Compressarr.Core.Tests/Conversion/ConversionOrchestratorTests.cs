@@ -255,7 +255,7 @@ file sealed class NoOpProgressReporter : IRunProgressReporter
     public void LaneStarted(string laneId, string laneDisplayName, bool isResumed) { }
     public void FileBotStarted(string laneId) { }
     public void FileBotCompleted(string laneId) { }
-    public void FileStarted(string laneId, int index, int total, string fileName, string? presetName, double sizeGb) { }
+    public void FileStarted(string laneId, int index, int total, string fileName, string fullName, string? presetName, double sizeGb) { }
     public void FileProgress(string laneId, double percent, double? fps, string? eta) { }
     public void FileCompleted(string laneId, string fileName, bool success) { }
     public void FileThroughputSample(string? presetName, double gb, TimeSpan duration) { }
@@ -2925,5 +2925,43 @@ public class ConversionOrchestratorTests : IDisposable
         await orchestrator.PrepareLaneAsync(lane, config, new List<ResumeEntry>(), Path.Combine(_tempDir, "resume.json"));
 
         Assert.Equal(@"C:\Expanded\FileBot.exe", fileBotRunner.ReceivedCliPath);
+    }
+
+    [Fact]
+    public void PruneOrphanedLaneEntries_RemovesEntriesUnderADeletedLane_ButLeavesRealLanesAlone()
+    {
+        // Real gap found live: a resume entry's LaneId can outlive the lane itself (renamed or
+        // deleted from config) - every one of PrepareLaneAsync's own dead-entry/retry loops is
+        // scoped to `e.LaneId == lane.Id` while iterating config.Lanes, so such an entry is
+        // invisible to all of them and sits in resume.json forever - inflating "Resuming previous
+        // incomplete run"'s tracked count on every pass and permanently blocking
+        // RunOrchestrator's end-of-pass stillOutstanding wipe, so even legitimately-Completed
+        // history entries sitting alongside it never get cleaned up either.
+        var lane1Input = Path.Combine(_tempDir, "Lane1Input");
+        Directory.CreateDirectory(lane1Input);
+        var lane1 = new LaneConfig { Id = "lane1", DisplayName = "Lane One", Enabled = true, Input = lane1Input, Output = Path.Combine(_tempDir, "Output1"), MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane1);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var realEntry = new ResumeEntry { LaneId = "lane1", FullName = Path.Combine(lane1Input, "a.mkv"), Status = ResumeStatus.Completed };
+        var orphaned = new ResumeEntry { LaneId = "deleted-lane-guid", FullName = Path.Combine(_tempDir, "Corrupt Test File (2020).mkv"), Status = ResumeStatus.Pending, Removed = true, Skipped = true };
+        var resumeState = new List<ResumeEntry> { realEntry, orphaned };
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+
+        orchestrator.PruneOrphanedLaneEntries(config, resumeState, resumeFilePath);
+
+        var remaining = Assert.Single(resumeState);
+        Assert.Same(realEntry, remaining);
+
+        // A second call with nothing left to prune must be a true no-op, not throw or re-save
+        // needlessly.
+        orchestrator.PruneOrphanedLaneEntries(config, resumeState, resumeFilePath);
+        Assert.Single(resumeState);
     }
 }

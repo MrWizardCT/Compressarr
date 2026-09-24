@@ -109,8 +109,13 @@ public static class RunEndpoints
 
             foreach (var file in files)
             {
-                if (string.Equals(lane.DisplayName, currentRun.LaneDisplayName, StringComparison.Ordinal) &&
-                    string.Equals(file.Name, currentRun.FileName, StringComparison.Ordinal))
+                // Matched on FullName alone, not laneDisplayName+leaf-name - leaf FileName is NOT
+                // unique (lanes intentionally support recursive Input folders, so two different
+                // files can share the same leaf name in different subfolders - see this file's own
+                // top comment). Matching on the weaker pair could wrongly exclude a second,
+                // not-currently-encoding file that happens to share the active file's leaf name.
+                // FullName is globally unique, so it can't be fooled by a name collision.
+                if (string.Equals(file.FullName, currentRun.FileFullName, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }

@@ -201,6 +201,14 @@ public sealed class RunOrchestrator : IRunOrchestrator
 
         var resumeFilePath = AppPaths.GetResumeFilePath();
         var resumeState = _resumeStore.Load(resumeFilePath);
+
+        // Must run before the tracked-count log line below - an entry under a since-deleted lane
+        // is invisible to every one of PrepareLaneAsync's own per-lane cleanup loops (a lane no
+        // longer in config.Lanes is never iterated), so left unpruned it inflates this count and
+        // permanently blocks the end-of-pass stillOutstanding wipe, even once every real lane is
+        // fully caught up.
+        _conversionOrchestrator.PruneOrphanedLaneEntries(config, resumeState, resumeFilePath);
+
         if (resumeState.Count > 0)
         {
             _logger.Log($"Resuming previous incomplete run ({resumeState.Count} file(s) tracked).");
@@ -287,8 +295,13 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 // Captured from resumeState before PrepareLane touches it - a lane starting clean
                 // writes its own fresh Pending entries for bookkeeping before converting anything,
                 // which would otherwise make it look "resumed" a moment later even though nothing
-                // was ever interrupted.
-                var laneIsResumed = resumeState.Any(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending);
+                // was ever interrupted. Also excludes CreatedByQueueEdit entries - matching
+                // RunEndpoints.ComputeUpNext's own equivalent fallback check - since an entry that
+                // only exists because a skip/preset-override/remove/reorder action touched a
+                // never-before-tracked file isn't genuinely resumed work either; without this, one
+                // such entry sitting Pending when this lane's next real pass begins mislabels every
+                // other file in the lane "Resumed" too, even though nothing was ever interrupted.
+                var laneIsResumed = resumeState.Any(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending && !e.CreatedByQueueEdit);
                 _progress.LaneStarted(lane.Id, lane.DisplayName, laneIsResumed);
 
                 var context = await _conversionOrchestrator.PrepareLaneAsync(lane, config, resumeState, resumeFilePath, thisLaneProblems, token);
