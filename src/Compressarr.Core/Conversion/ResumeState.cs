@@ -83,9 +83,14 @@ public sealed class ResumeEntry
     /// re-derive the *arr lookup name and TV/movie classification for a fresh rescan attempt).</summary>
     public string? PendingCompanionVideoDestPath { get; set; }
 
-    /// <summary>User-set queue position within this lane's Pending entries, lower first - drives
-    /// drag-to-reorder on the Monitor page's In Queue list. Entries without an explicit Order
-    /// (existing/untouched files) sort after any that have one, in their original order.</summary>
+    /// <summary>Permanent queue position, lower first - stamped once, automatically, the moment a
+    /// file is first tracked (by a real scan or by any queue-control action), then never
+    /// recomputed again except by an explicit user reorder (drag, or move to top/bottom, which is
+    /// just a reorder submission on the frontend). Deliberately NOT a "user-set override that
+    /// falls back to live natural order otherwise" - a file's queue position must be locked the
+    /// instant it appears and stay put through preset overrides, skips, or anything else that
+    /// isn't a direct reorder. See ResumeQueueOrder.NextOrder for how a fresh Order value is
+    /// chosen (always appended after the current maximum, so a new file lands at the end).</summary>
     public int? Order { get; set; }
 
     /// <summary>User-set "skip this pass" - a Skipped Pending entry stays visible in the queue
@@ -124,6 +129,15 @@ public sealed class ResumeEntry
     /// treated as "FileBot didn't/couldn't confidently match this one." Drives the Monitor page's
     /// "Unmatched" queue badge. Never recomputed for an already-tracked entry.</summary>
     public bool FileBotUnmatched { get; set; }
+}
+
+/// <summary>The single source of truth for "what Order value does a newly-tracked file get" -
+/// always one past the current maximum, so a fresh entry always lands at the very end of the
+/// queue rather than sorting ambiguously (null) or colliding with an existing position.</summary>
+public static class ResumeQueueOrder
+{
+    public static int NextOrder(IEnumerable<ResumeEntry> resumeState) =>
+        resumeState.Where(e => e.Order.HasValue).Select(e => e.Order!.Value).DefaultIfEmpty(-1).Max() + 1;
 }
 
 public interface IResumeStateStore

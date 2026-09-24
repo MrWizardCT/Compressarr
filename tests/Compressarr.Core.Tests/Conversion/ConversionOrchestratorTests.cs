@@ -2964,4 +2964,117 @@ public class ConversionOrchestratorTests : IDisposable
         orchestrator.PruneOrphanedLaneEntries(config, resumeState, resumeFilePath);
         Assert.Single(resumeState);
     }
+
+    [Fact]
+    public async Task PrepareLaneAsync_FreshlyScannedFiles_GetPermanentSequentialOrderStamped()
+    {
+        // The core of the queue-order-locking requirement: the moment a file is first discovered
+        // by a real scan, it must get a permanent Order - not stay null and keep sorting by
+        // whatever the live filesystem enumeration happens to return (VideoFileScanner walks the
+        // directory tree via Directory.EnumerateFiles/EnumerateDirectories, which is NOT
+        // guaranteed to put a newly-added file last, or even stay stable run to run).
+        var inputDir = Path.Combine(_tempDir, "Input");
+        Directory.CreateDirectory(inputDir);
+        var fileA = Path.Combine(inputDir, "a.mkv");
+        var fileB = Path.Combine(inputDir, "b.mkv");
+        File.WriteAllText(fileA, "a");
+        File.WriteAllText(fileB, "b");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = Path.Combine(_tempDir, "Output"), MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var resumeState = new List<ResumeEntry>();
+        await orchestrator.PrepareLaneAsync(lane, config, resumeState, Path.Combine(_tempDir, "resume.json"));
+
+        Assert.Equal(2, resumeState.Count);
+        Assert.All(resumeState, e => Assert.True(e.Order.HasValue));
+        Assert.Equal(resumeState.Select(e => e.Order).Distinct().Count(), resumeState.Count);
+
+        // Simulate both files having since finished processing (PrepareLaneAsync only re-scans a
+        // lane's Input folder for brand-new files once its Pending backlog is fully drained - see
+        // its own pending.Count > 0 branch), then a new file appears that would sort ALPHABETICALLY
+        // FIRST. It must still be appended AFTER both already-known files' Order values, never
+        // inserted ahead of them just because of where it happens to sort in a live scan.
+        foreach (var e in resumeState) e.Status = ResumeStatus.Completed;
+        var maxOrderSoFar = resumeState.Max(e => e.Order)!.Value;
+
+        var fileEarlyAlphabetically = Path.Combine(inputDir, "AAA_should_still_go_last.mkv");
+        File.WriteAllText(fileEarlyAlphabetically, "c");
+        await orchestrator.PrepareLaneAsync(lane, config, resumeState, Path.Combine(_tempDir, "resume.json"));
+
+        var newEntry = Assert.Single(resumeState, e => e.FullName == fileEarlyAlphabetically);
+        Assert.True(newEntry.Order > maxOrderSoFar, "a newly-discovered file must be appended after every already-known Order, never inserted ahead of them");
+    }
+
+    [Fact]
+    public void BackfillMissingOrder_FreezesTodaysDisplayOrder_SoAPresetOverrideAfterwardNeverMovesAFile()
+    {
+        // The actual user requirement this exists to satisfy: "once files appear in the queue,
+        // they must be locked in that order no matter what... if any changes are made to the
+        // preset, they should NOT change the order... only the user has the power to change the
+        // order of processing." Backfill exists to give every PRE-EXISTING (pre-upgrade,
+        // Order-less) entry a permanent position too, not just newly-discovered ones.
+        var lane1Input = Path.Combine(_tempDir, "Lane1Input");
+        var lane2Input = Path.Combine(_tempDir, "Lane2Input");
+        Directory.CreateDirectory(lane1Input);
+        Directory.CreateDirectory(lane2Input);
+
+        var lane1FileA = Path.Combine(lane1Input, "a.mkv");
+        var lane1FileB = Path.Combine(lane1Input, "b.mkv");
+        var lane2FileC = Path.Combine(lane2Input, "c.mkv");
+        File.WriteAllText(lane1FileA, "a");
+        File.WriteAllText(lane1FileB, "b");
+        File.WriteAllText(lane2FileC, "c");
+
+        var lane1 = new LaneConfig { Id = "lane1", DisplayName = "Lane One", Enabled = true, Input = lane1Input, Output = Path.Combine(_tempDir, "Output1"), MoviePreset = "Any Preset" };
+        var lane2 = new LaneConfig { Id = "lane2", DisplayName = "Lane Two", Enabled = true, Input = lane2Input, Output = Path.Combine(_tempDir, "Output2"), MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane1);
+        config.Lanes.Add(lane2);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+
+        var entryA = new ResumeEntry { LaneId = "lane1", FullName = lane1FileA, Status = ResumeStatus.Pending };
+        var entryB = new ResumeEntry { LaneId = "lane1", FullName = lane1FileB, Status = ResumeStatus.Pending };
+        var entryC = new ResumeEntry { LaneId = "lane2", FullName = lane2FileC, Status = ResumeStatus.Pending };
+        var resumeState = new List<ResumeEntry> { entryA, entryB, entryC };
+        var resumeFilePath = Path.Combine(_tempDir, "resume.json");
+
+        orchestrator.BackfillMissingOrder(config, resumeState, resumeFilePath);
+
+        // Every entry now has a real, distinct Order, in lane-then-natural-scan sequence (lane1
+        // before lane2, matching config.Lanes order; a before b within lane1's own scan).
+        Assert.NotNull(entryA.Order);
+        Assert.NotNull(entryB.Order);
+        Assert.NotNull(entryC.Order);
+        Assert.True(entryA.Order < entryB.Order);
+        Assert.True(entryB.Order < entryC.Order);
+
+        // Calling it again must be a true no-op - nobody's Order changes just because the method
+        // ran a second time (the common case, every pass after the first).
+        var (a0, b0, c0) = (entryA.Order, entryB.Order, entryC.Order);
+        orchestrator.BackfillMissingOrder(config, resumeState, resumeFilePath);
+        Assert.Equal(a0, entryA.Order);
+        Assert.Equal(b0, entryB.Order);
+        Assert.Equal(c0, entryC.Order);
+
+        // Now override entryA's (currently first) preset - simulating the Monitor page's preset
+        // click, which only ever changes PresetOverride. Its relative rank against B and C, by the
+        // app's own real combined-queue sort key, must be completely unchanged.
+        entryA.PresetOverride = "Some Other Preset";
+
+        var order = resumeState.OrderBy(e => e.Order ?? int.MaxValue).ToList();
+        Assert.Equal(new[] { entryA, entryB, entryC }, order);
+    }
 }

@@ -214,6 +214,12 @@ public sealed class RunOrchestrator : IRunOrchestrator
             _logger.Log($"Resuming previous incomplete run ({resumeState.Count} file(s) tracked).");
         }
 
+        // One-time migration, cheap no-op on every call after the first - see its own doc comment.
+        // Run here, before ANY lane is prepared, so it captures the queue's own effective order
+        // exactly as it looked walking into this pass, not after Phase 1 below could have already
+        // added fresh Pending entries of its own.
+        _conversionOrchestrator.BackfillMissingOrder(config, resumeState, resumeFilePath);
+
         _metadata.Enabled = config.Processing.ClearTitleMetadata;
 
         var laneResults = new Dictionary<string, List<ConversionResult>>();
