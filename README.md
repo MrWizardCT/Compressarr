@@ -118,7 +118,8 @@ Windows toast notification also confirms completion and opens the report when cl
 report is labeled with a running run number (`Run #237: ...`) - a persistent, cumulative count
 of runs that actually processed at least one file. The History page also lists every report
 still within your configured retention window, with columns for files, before/after size, and
-percent saved.
+percent saved. Every report also has a close button in the upper-right corner - most useful when
+running as an installed app (PWA), which has no browser chrome of its own to close a tab with.
 
 Beyond the toast, the Notifications page can send a message to Discord, Slack, Telegram, Pushover,
 ntfy, Gotify, Notifiarr, IFTTT, or a custom webhook (which also covers Zapier, Make, n8n, Node-RED,
@@ -231,6 +232,13 @@ re-grabbed later. Matching is done entirely through the app's own `/api/v3/parse
 Compressarr hands it the original filename, and the app's own parser reports back which
 series/episode or movie it matches, if any. A miss is always treated as "leave it alone," never
 as a guess.
+
+**Install as app** (Web UI section): the whole app is an installable PWA - useful on a phone or
+tablet, or for one-tap desktop access without a browser tab. This card shows whichever of three
+states actually applies: a real **Install as app** button (Chrome/Edge/Android), static "tap
+Share, then Add to Home Screen" instructions (iOS Safari has no installable prompt at all), or -
+if you're already running the installed app - instructions for uninstalling it from the browser's
+own app list, since no web page can trigger that directly.
 
 ### Backups
 
