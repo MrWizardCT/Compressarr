@@ -724,53 +724,83 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             .Select((f, idx) => (f.FullName, idx))
             .ToDictionary(x => x.FullName, x => x.idx, StringComparer.OrdinalIgnoreCase);
 
+        // FileBot above (and any earlier lane's own prep) can take real wall-clock time, during
+        // which the Monitor page's own poll may have already tracked brand-new files and stamped
+        // their Order on disk. Merge that in before adding anything or saving below - otherwise the
+        // blind Save at the end of this method would silently wipe those entries out, and they'd
+        // have to be re-stamped later, out of the order they actually arrived in.
+        RefreshResumeState(resumeState, resumeFilePath);
+
         var pending = resumeState.Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending).ToList();
-        if (pending.Count > 0)
+        var laneHadPending = pending.Count > 0;
+        var addedUntracked = false;
+
+        foreach (var f in scanned)
+        {
+            // A file can reappear at a path that already has a resume entry - e.g. the same
+            // source re-added after a prior run already completed it. Reuse that entry rather
+            // than adding a second one, or resume.json accumulates duplicate rows for the same
+            // path (a stale Completed entry sitting next to a fresh Pending one).
+            var existing = resumeState.FirstOrDefault(e => e.LaneId == lane.Id && e.FullName == f.FullName);
+            if (existing is null)
+            {
+                // Tracked the first time anything sees it - even while this lane already has a
+                // backlog, which used to skip adopting new files entirely and leave them to be
+                // ordered by live scan order on the Monitor page until the backlog drained, so a
+                // file that arrived later but enumerated earlier displayed (and then got stamped)
+                // above one that was already waiting. Stamped once, here, as the very last
+                // position - see ResumeEntry.Order's own doc comment. CreatedByQueueEdit when the
+                // lane is already resumed, since this is bookkeeping for a brand-new file, not
+                // interrupted work, and would otherwise be mislabeled "Resumed".
+                resumeState.Add(new ResumeEntry
+                {
+                    LaneId = lane.Id,
+                    FullName = f.FullName,
+                    Status = ResumeStatus.Pending,
+                    FileBotUnmatched = fileBotUnmatched.Contains(f.FullName),
+                    CreatedByQueueEdit = laneHadPending,
+                    Order = ResumeQueueOrder.NextOrder(resumeState)
+                });
+                addedUntracked = true;
+            }
+            else if (!laneHadPending
+                && existing.Status is not ResumeStatus.Pending
+                && existing.Status is not ResumeStatus.MoveFailed and not ResumeStatus.CompanionMoveFailed and not ResumeStatus.CleanupPending)
+            {
+                // A MoveFailed entry's source is legitimately still here now that a real move
+                // failure no longer deletes it (finding #1's fix) - it's already being handled
+                // by the retry loop above (move retry only, no re-encode), so this routine
+                // rescan finding it again must NOT silently flip it back to Pending. Real
+                // regression caught live: without this guard, an extended destination outage
+                // re-encoded the same file from scratch on every single poll instead of just
+                // cheaply retrying the move, discarding a perfectly good already-finished encode
+                // each time.
+                //
+                // Re-entering the queue (a Completed/Error entry's source reappearing) is a new
+                // arrival as far as the queue is concerned - restamped at the end instead of
+                // keeping whatever low Order the old entry had, which made a re-added file jump
+                // above everything already waiting.
+                existing.Status = ResumeStatus.Pending;
+                existing.Order = ResumeQueueOrder.NextOrder(resumeState);
+            }
+        }
+
+        if (laneHadPending)
         {
             // User-set Order (drag-to-reorder on the Monitor page) drives processing order - lower
-            // first; entries without one (untouched by the user) sort after, in their original
-            // relative order (OrderBy is a stable sort, and int.MaxValue is the same tie-break
-            // value for every one of them). A Skipped entry stays Pending (still shown in the
-            // queue, still eligible to be un-skipped later) but is excluded from this count.
-            videoFiles = pending
+            // first. A Skipped entry stays Pending (still shown in the queue, still eligible to be
+            // un-skipped later) but is excluded from this count.
+            videoFiles = resumeState
+                .Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending)
                 .OrderBy(p => p.Order ?? int.MaxValue)
                 .Where(p => !p.Skipped && !p.Removed)
                 .Select(p => new FileInfo(p.FullName))
                 .ToList();
+            if (addedUntracked) _resumeStore.Save(resumeState, resumeFilePath);
         }
         else
         {
             videoFiles = scanned;
-            foreach (var f in videoFiles)
-            {
-                // A file can reappear at a path that already has a resume entry - e.g. the same
-                // source re-added after a prior run already completed it. Reuse that entry rather
-                // than adding a second one, or resume.json accumulates duplicate rows for the same
-                // path (a stale Completed entry sitting next to a fresh Pending one).
-                var existing = resumeState.FirstOrDefault(e => e.LaneId == lane.Id && e.FullName == f.FullName);
-                if (existing is not null)
-                {
-                    // A MoveFailed entry's source is legitimately still here now that a real move
-                    // failure no longer deletes it (finding #1's fix) - it's already being handled
-                    // by the retry loop above (move retry only, no re-encode), so this routine
-                    // rescan finding it again must NOT silently flip it back to Pending. Real
-                    // regression caught live: without this guard, an extended destination outage
-                    // re-encoded the same file from scratch on every single poll instead of just
-                    // cheaply retrying the move, discarding a perfectly good already-finished encode
-                    // each time.
-                    if (existing.Status is not ResumeStatus.MoveFailed and not ResumeStatus.CompanionMoveFailed and not ResumeStatus.CleanupPending)
-                    {
-                        existing.Status = ResumeStatus.Pending;
-                    }
-                }
-                else
-                {
-                    // Stamped here, once, the moment this file is first tracked - a permanent
-                    // position from now on, not a live-recomputed one - see ResumeEntry.Order's own
-                    // doc comment for why.
-                    resumeState.Add(new ResumeEntry { LaneId = lane.Id, FullName = f.FullName, Status = ResumeStatus.Pending, FileBotUnmatched = fileBotUnmatched.Contains(f.FullName), Order = ResumeQueueOrder.NextOrder(resumeState) });
-                }
-            }
             _resumeStore.Save(resumeState, resumeFilePath);
         }
 

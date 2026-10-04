@@ -3013,6 +3013,73 @@ public class ConversionOrchestratorTests : IDisposable
         Assert.True(newEntry.Order > maxOrderSoFar, "a newly-discovered file must be appended after every already-known Order, never inserted ahead of them");
     }
 
+    private ConversionOrchestrator NewOrderTestOrchestrator(LaneConfig lane, out CompressarrConfig config)
+    {
+        config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+        return new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FakeProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+    }
+
+    [Fact]
+    public async Task PrepareLaneAsync_LaneAlreadyHasABacklog_NewFilesAreStillTrackedAtTheEndInsteadOfLeftToLiveScanOrder()
+    {
+        // Real bug: PrepareLaneAsync only scanned for new files when the lane had zero Pending
+        // entries. While a backlog existed (any long encode), a new file stayed untracked and the
+        // Monitor page ordered it by live folder-scan position - so a file that arrived later but
+        // enumerated earlier displayed above one already waiting, and when the backlog finally
+        // drained, both were stamped in scan order, making that wrong order permanent.
+        var inputDir = Path.Combine(_tempDir, "Input");
+        Directory.CreateDirectory(inputDir);
+        var waiting = Path.Combine(inputDir, "zzz_already_waiting.mkv");
+        File.WriteAllText(waiting, "w");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = Path.Combine(_tempDir, "Output"), MoviePreset = "Any Preset" };
+        var orchestrator = NewOrderTestOrchestrator(lane, out var config);
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "lane1", FullName = waiting, Status = ResumeStatus.Pending, Order = 0 }
+        };
+
+        var arrivedLater = Path.Combine(inputDir, "aaa_arrived_later.mkv");
+        File.WriteAllText(arrivedLater, "n");
+        await orchestrator.PrepareLaneAsync(lane, config, resumeState, Path.Combine(_tempDir, "resume.json"));
+
+        var newEntry = Assert.Single(resumeState, e => e.FullName == arrivedLater);
+        Assert.Equal(ResumeStatus.Pending, newEntry.Status);
+        Assert.True(newEntry.Order > 0, "a file arriving while others are already waiting must be stamped after them");
+        Assert.Equal(new[] { waiting, arrivedLater }, resumeState.OrderBy(e => e.Order).Select(e => e.FullName));
+    }
+
+    [Fact]
+    public async Task PrepareLaneAsync_ReaddedFileWithOldCompletedEntry_GoesToTheEndInsteadOfKeepingItsOldLowOrder()
+    {
+        // Real bug: a file reappearing at a path that already had a Completed (or Error) entry was
+        // flipped back to Pending but kept that entry's old Order - usually a low number - so a
+        // re-added file jumped above everything actually waiting.
+        var inputDir = Path.Combine(_tempDir, "Input");
+        Directory.CreateDirectory(inputDir);
+        var readded = Path.Combine(inputDir, "readded.mkv");
+        File.WriteAllText(readded, "r");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = Path.Combine(_tempDir, "Output"), MoviePreset = "Any Preset" };
+        var orchestrator = NewOrderTestOrchestrator(lane, out var config);
+        var oldEntry = new ResumeEntry { LaneId = "lane1", FullName = readded, Status = ResumeStatus.Completed, Order = 0 };
+        var resumeState = new List<ResumeEntry>
+        {
+            oldEntry,
+            new() { LaneId = "lane1", FullName = Path.Combine(inputDir, "long_gone.mkv"), Status = ResumeStatus.Completed, Order = 7 }
+        };
+
+        await orchestrator.PrepareLaneAsync(lane, config, resumeState, Path.Combine(_tempDir, "resume.json"));
+
+        Assert.Equal(ResumeStatus.Pending, oldEntry.Status);
+        Assert.True(oldEntry.Order > 7, "a re-added file is a new arrival and belongs at the end, not at its old position");
+    }
+
     [Fact]
     public void BackfillMissingOrder_FreezesTodaysDisplayOrder_SoAPresetOverrideAfterwardNeverMovesAFile()
     {

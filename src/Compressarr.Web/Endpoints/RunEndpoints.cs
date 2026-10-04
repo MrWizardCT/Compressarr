@@ -50,9 +50,11 @@ public static class RunEndpoints
         IPathExpander pathExpander,
         IVideoFileScanner scanner,
         IResumeStateStore resumeStore,
-        RunStateSnapshot currentRun)
+        RunStateSnapshot currentRun,
+        out bool sawUntracked)
     {
         var resumeState = resumeStore.Load(AppPaths.GetResumeFilePath());
+        sawUntracked = false;
 
         var candidates = new List<(UpNextItem Item, int LaneOrderIndex, int? Order, int NaturalIndex)>();
         var errorItems = new List<UpNextItem>();
@@ -121,6 +123,7 @@ public static class RunEndpoints
                 }
 
                 pendingByPath.TryGetValue(file.FullName, out var entry);
+                if (entry is null) sawUntracked = true;
 
                 // A freshly-scanned file with no Pending entry yet is always "New", regardless of
                 // whatever this lane's own overall pass-resumed state is - it was never tracked
@@ -267,7 +270,10 @@ public static class RunEndpoints
                 }
                 else
                 {
-                    resumeState.Add(new ResumeEntry { LaneId = lane.Id, FullName = item.NewFullName!, Status = ResumeStatus.Pending, Order = nextOrder++ });
+                    // CreatedByQueueEdit: this is bookkeeping for a brand-new file, not interrupted
+                    // work - without it the Monitor page would label it "Resumed" whenever its lane
+                    // already has other tracked entries.
+                    resumeState.Add(new ResumeEntry { LaneId = lane.Id, FullName = item.NewFullName!, Status = ResumeStatus.Pending, CreatedByQueueEdit = true, Order = nextOrder++ });
                 }
             }
         }
@@ -453,7 +459,21 @@ public static class RunEndpoints
                 : Math.Max(0, (int)Math.Ceiling((nextRunUtc.Value - DateTimeOffset.UtcNow).TotalSeconds));
 
             var config = configStore.Load(AppPaths.GetConfigFilePath());
-            var upNext = ComputeUpNext(config, pathExpander, scanner, resumeStore, snapshot);
+            var upNext = ComputeUpNext(config, pathExpander, scanner, resumeStore, snapshot, out var sawUntracked);
+            if (sawUntracked)
+            {
+                // A file nobody has tracked yet is ordered here by live folder-scan position, which
+                // isn't arrival order - a later arrival that enumerates earlier would display above
+                // one already waiting. Lock every such file in right now, at the end of the queue,
+                // the first time anything sees it (this poll, or the engine's own pass - whichever
+                // comes first), then redisplay so what's shown matches what's now permanent.
+                resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
+                {
+                    LockInVisibleQueueOrder(config, resumeState, pathExpander, scanner);
+                    return true;
+                });
+                upNext = ComputeUpNext(config, pathExpander, scanner, resumeStore, snapshot, out _);
+            }
             var queueEtaText = ComputeQueueEtaText(upNext, runState);
 
             return Results.Json(new
