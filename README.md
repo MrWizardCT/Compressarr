@@ -99,8 +99,11 @@ Monitoring**, which lets the file currently converting finish normally and then 
 starting the next one (both the page and the tray icon reflect a stop the moment it's requested,
 from either surface). The **In Queue** section lists every file still waiting across all enabled
 lanes - lane, size, and preset - so you can see what's coming up without waiting for the current
-file to finish. Drag a queued file to reorder it within its lane, or use its menu to skip it,
-remove it from the queue, or override its preset for just that one file. The recent-log panel and
+file to finish. A file's place in the queue is locked in the moment Compressarr first sees it -
+new arrivals always join at the end, and only you can move one afterward (nothing else, including
+presets, skips, or later arrivals, ever reshuffles it). Drag a queued file to reorder it within
+its lane, or use its menu to skip it, remove it from the queue, or override its preset for just
+that one file. The recent-log panel and
 CPU usage update live while a pass runs.
 
 <img src="Assets/Screenshots/monitor-page.png" alt="Compressarr Monitor page, showing a real conversion in progress with live percent/fps/ETA and the In Queue list" width="700">
