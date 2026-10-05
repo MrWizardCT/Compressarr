@@ -25,7 +25,7 @@ file sealed class RealFolderScanner : IVideoFileScanner
 
 file sealed class NoOpFileBotRunner : IFileBotRunner
 {
-    public HashSet<string> Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger) => new();
+    public FileBotRunResult Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger) => FileBotRunResult.Empty;
 }
 
 file sealed class FixedExtensionPresetService : IHandBrakePresetService

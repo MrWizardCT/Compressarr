@@ -59,7 +59,7 @@ public class FileBotRunnerTests : IDisposable
         var logger = new RecordingRunLogger();
         var settings = new FileBotSettings { Enabled = false, CliPath = @"C:\does\not\exist.exe" };
 
-        var result = runner.Run(settings, @"C:\Input", new List<string> { "mkv" }, logger);
+        var result = runner.Run(settings, @"C:\Input", new List<string> { "mkv" }, logger).Unmatched;
 
         Assert.Empty(result);
         Assert.Empty(logger.Logs);
@@ -72,7 +72,7 @@ public class FileBotRunnerTests : IDisposable
         var logger = new RecordingRunLogger();
         var settings = new FileBotSettings { Enabled = true, CliPath = @"C:\does\not\exist.exe" };
 
-        var result = runner.Run(settings, @"C:\Input", new List<string> { "mkv" }, logger);
+        var result = runner.Run(settings, @"C:\Input", new List<string> { "mkv" }, logger).Unmatched;
 
         Assert.Empty(result);
         Assert.Contains(logger.Logs, l => l.Severity == LogSeverity.Error);
@@ -89,7 +89,7 @@ public class FileBotRunnerTests : IDisposable
         var logger = new RecordingRunLogger();
         var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvArgs = "   " };
 
-        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger).Unmatched;
 
         Assert.Contains(tvPath, result);
         Assert.Contains(logger.Logs, l => l.Severity == LogSeverity.Error && l.Message.Contains("TV"));
@@ -104,7 +104,7 @@ public class FileBotRunnerTests : IDisposable
         var logger = new RecordingRunLogger();
         var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, MovieArgs = "" };
 
-        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger).Unmatched;
 
         Assert.Contains(moviePath, result);
         Assert.Contains(logger.Logs, l => l.Severity == LogSeverity.Error && l.Message.Contains("movie"));
@@ -122,7 +122,7 @@ public class FileBotRunnerTests : IDisposable
         var logger = new RecordingRunLogger();
         var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvArgs = "", MovieArgs = "" };
 
-        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger).Unmatched;
 
         Assert.Equal(2, result.Count);
         Assert.Contains(logger.Logs, l => l.Message.Contains("1 TV file"));
@@ -137,7 +137,7 @@ public class FileBotRunnerTests : IDisposable
         var logger = new RecordingRunLogger();
         var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvEnabled = false, TvArgs = "/c exit 0 {files}" };
 
-        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger).Unmatched;
 
         Assert.DoesNotContain(tvPath, result);
         Assert.Empty(logger.Logs);
@@ -155,7 +155,7 @@ public class FileBotRunnerTests : IDisposable
         var logger = new RecordingRunLogger();
         var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvArgs = $"/c del \"{tvPath}\"" };
 
-        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger).Unmatched;
 
         Assert.DoesNotContain(tvPath, result);
         Assert.False(File.Exists(tvPath));
@@ -169,7 +169,7 @@ public class FileBotRunnerTests : IDisposable
         var logger = new RecordingRunLogger();
         var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvArgs = "/c exit 0" };
 
-        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger).Unmatched;
 
         Assert.Contains(tvPath, result);
     }
@@ -187,7 +187,7 @@ public class FileBotRunnerTests : IDisposable
         var logger = new RecordingRunLogger();
         var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvArgs = $"/c echo Skipped \"{tvPath}\" because already exists" };
 
-        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger).Unmatched;
 
         Assert.DoesNotContain(tvPath, result);
         Assert.True(File.Exists(tvPath));
@@ -240,6 +240,88 @@ public class FileBotRunnerTests : IDisposable
         runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
 
         Assert.False(File.Exists(moviePath));
+    }
+
+    // ---- Renames (Phase 2b): old -> new pairs read from FileBot's own output ----------------
+
+    [Fact]
+    public void ParseRenames_ReadsRenameLines_AndIgnoresEverythingElse()
+    {
+        var output = string.Join("\n",
+            @"Processing 3 files",
+            @"[MOVE] Rename [D:\In\old one.mkv] to [D:\In\New One (2020).mkv]",
+            @"[MOVE] Skipped [D:\In\ok.mkv] because [D:\In\ok.mkv] already exists",
+            @"[MOVE] Rename [D:\In\same.mkv] to [D:\In\same.mkv]",
+            @"[MOVE] Rename [\\nas\share\a.mkv] to [\\nas\share\Show - S01E01 - A.mkv]",
+            @"[MOVE] Moving [/media/in/b.mkv] to [/media/in/Show/b.mkv]",
+            @"Processed 3 files");
+
+        var renames = FileBotRunner.ParseRenames(output);
+
+        Assert.Equal(3, renames.Count);
+        Assert.Equal(@"D:\In\New One (2020).mkv", renames[@"D:\In\old one.mkv"]);
+        Assert.Equal(@"\\nas\share\Show - S01E01 - A.mkv", renames[@"\\nas\share\a.mkv"]);
+        Assert.Equal("/media/in/Show/b.mkv", renames["/media/in/b.mkv"]);
+    }
+
+    [Fact]
+    public void ParseRenames_ReadsRealFileBotOutputFormat()
+    {
+        // Lines copied from a real production FileBot log: "from [old] to [new]", and the
+        // "Skipped ... already exists" line for a file that was already correctly named.
+        var output = string.Join("\n",
+            @"Rename episodes using [TheTVDB] with [Airdate Order]",
+            @"[MOVE] from [D:\Media\Media Landing\Bluey (2018) S03E01 - Perfect.mp4] to [D:\Media\Media Landing\Bluey (2018) - S03E01 - Perfect.mp4]",
+            @"[MOVE] Skipped [D:\Media\Media Landing\Bluey (2018) - S03E02 - Bedroom.mp4] because [D:\Media\Media Landing\Bluey (2018) - S03E02 - Bedroom.mp4] already exists");
+
+        var renames = FileBotRunner.ParseRenames(output);
+
+        var pair = Assert.Single(renames);
+        Assert.Equal(@"D:\Media\Media Landing\Bluey (2018) S03E01 - Perfect.mp4", pair.Key);
+        Assert.Equal(@"D:\Media\Media Landing\Bluey (2018) - S03E01 - Perfect.mp4", pair.Value);
+    }
+
+    [Fact]
+    public void ParseRenames_HandlesBracketsInsideFileNames_AndWindowsLineEndings()
+    {
+        var output = "[MOVE] Rename [D:\\In\\Movie [1080p] x.mkv] to [D:\\In\\Movie (2020).mkv]\r\nnoise\r\n";
+
+        var renames = FileBotRunner.ParseRenames(output);
+
+        Assert.Equal(@"D:\In\Movie (2020).mkv", Assert.Single(renames).Value);
+        Assert.Equal(@"D:\In\Movie [1080p] x.mkv", renames.Keys.Single());
+    }
+
+    [Fact]
+    public void ParseRenames_NothingToParse_IsEmpty()
+    {
+        Assert.Empty(FileBotRunner.ParseRenames(""));
+        Assert.Empty(FileBotRunner.ParseRenames("Processed 0 files"));
+    }
+
+    [Fact]
+    public void Run_ReportsTheRenamesFileBotPrinted()
+    {
+        var oldPath = CreateFile("Show.S01E01.mkv");
+        var newPath = Path.Combine(_tempDir, "Show - S01E01 - Pilot.mkv");
+        var runner = new FileBotRunner(new RealFolderScanner());
+        var logger = new RecordingRunLogger();
+        var settings = new FileBotSettings { Enabled = true, CliPath = CmdExe, TvArgs = $"/c \"echo [MOVE] Rename [{oldPath}] to [{newPath}]\"" };
+
+        var result = runner.Run(settings, _tempDir, new List<string> { "mkv" }, logger);
+
+        Assert.Equal(newPath, Assert.Single(result.Renames).Value);
+        Assert.Equal(oldPath, result.Renames.Keys.Single());
+    }
+
+    [Fact]
+    public void Run_Disabled_ReportsNoRenames()
+    {
+        var runner = new FileBotRunner(new EmptyScanner());
+
+        var result = runner.Run(new FileBotSettings { Enabled = false }, @"C:\Input", new List<string> { "mkv" }, new RecordingRunLogger());
+
+        Assert.Empty(result.Renames);
     }
 
     [Fact]

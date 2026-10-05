@@ -709,7 +709,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             _progress.FileBotStarted(lane.Id);
             _logger.Log("Renaming files with FileBot...");
         }
-        var fileBotUnmatched = _fileBotRunner.Run(expandedFileBotSettings, inputPath, config.Processing.VidTypes, _logger);
+        var fileBotResult = _fileBotRunner.Run(expandedFileBotSettings, inputPath, config.Processing.VidTypes, _logger);
+        var fileBotUnmatched = fileBotResult.Unmatched;
         if (config.FileBot.Enabled)
         {
             _progress.FileBotCompleted(lane.Id);
@@ -730,6 +731,12 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         // have to be re-stamped later, out of the order they actually arrived in.
         RefreshResumeState(resumeState, resumeFilePath);
 
+        // A file FileBot just renamed keeps its place in line (and any skip / preset override)
+        // rather than being tracked as a new arrival at the end - this has to run after the refresh
+        // above (so a user edit made to the old name is already merged in) and before tracking below
+        // (so the renamed file isn't added as new).
+        var remappedRenames = QueueRules.RemapRenamedFiles(resumeState, lane.Id, fileBotResult.Renames);
+
         // Which files are tracked, in what order, and what happens when one reappears all live in
         // QueueRules - see its TrackScannedFiles for the reasoning behind each case.
         var laneHadPending = resumeState.Any(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending);
@@ -741,7 +748,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             videoFiles = QueueRules.WaitingEntriesInOrder(resumeState, lane.Id)
                 .Select(p => new FileInfo(p.FullName))
                 .ToList();
-            if (addedUntracked) _resumeStore.Save(resumeState, resumeFilePath);
+            if (addedUntracked || remappedRenames) _resumeStore.Save(resumeState, resumeFilePath);
         }
         else
         {

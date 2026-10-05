@@ -400,6 +400,122 @@ public sealed class QueueRulesTests : IDisposable
         Assert.Equal(new[] { "untracked.mkv" }, upNext.Select(i => i.FileName).ToArray());
     }
 
+    // ---- RemapRenamedFiles ------------------------------------------------------------------
+
+    private static Dictionary<string, string> Renames(string from, string to) => new(StringComparer.OrdinalIgnoreCase) { [from] = to };
+
+    [Fact]
+    public void RemapRenamedFiles_MovesTheEntryToTheNewPath_KeepingEveryUserSetting()
+    {
+        var folder = Folder("a");
+        var oldPath = Path.Combine(folder, "old.mkv"); // FileBot moved it, so it no longer exists
+        var newPath = Touch(folder, "New Name.mkv");
+        var other = Touch(folder, "other.mkv");
+        var entry = new ResumeEntry { LaneId = "laneA", FullName = oldPath, Status = ResumeStatus.Pending, Order = 0, Skipped = true, PresetOverride = "Fast", CreatedByQueueEdit = true };
+        var state = new List<ResumeEntry> { entry, Pending("laneA", other, order: 1) };
+
+        var changed = QueueRules.RemapRenamedFiles(state, "laneA", Renames(oldPath, newPath));
+
+        Assert.True(changed);
+        Assert.Same(entry, state[0]); // same entry, just re-pointed
+        Assert.Equal(newPath, entry.FullName);
+        Assert.Equal(0, entry.Order);
+        Assert.True(entry.Skipped);
+        Assert.Equal("Fast", entry.PresetOverride);
+        Assert.Equal(2, state.Count);
+    }
+
+    [Fact]
+    public void RemapRenamedFiles_WhenTheNewPathWasAlreadyTrackedAsANewArrival_ItInheritsAndTheOldEntryGoes()
+    {
+        // The Monitor page's poll can track the renamed file while FileBot is still running.
+        var folder = Folder("a");
+        var oldPath = Path.Combine(folder, "old.mkv");
+        var newPath = Touch(folder, "New Name.mkv");
+        var state = new List<ResumeEntry>
+        {
+            new() { LaneId = "laneA", FullName = oldPath, Status = ResumeStatus.Pending, Order = 1, PresetOverride = "Fast", Removed = true, Skipped = true },
+            new() { LaneId = "laneA", FullName = newPath, Status = ResumeStatus.Pending, Order = 9, CreatedByQueueEdit = true }
+        };
+
+        var changed = QueueRules.RemapRenamedFiles(state, "laneA", Renames(oldPath, newPath));
+
+        Assert.True(changed);
+        var survivor = Assert.Single(state);
+        Assert.Equal(newPath, survivor.FullName);
+        Assert.Equal(1, survivor.Order);
+        Assert.Equal("Fast", survivor.PresetOverride);
+        Assert.True(survivor.Skipped);
+        Assert.True(survivor.Removed);
+    }
+
+    [Fact]
+    public void RemapRenamedFiles_WhenTheNewPathIsTrackedUnderAnotherStatus_NothingIsRemapped()
+    {
+        var folder = Folder("a");
+        var oldPath = Path.Combine(folder, "old.mkv");
+        var newPath = Touch(folder, "New Name.mkv");
+        var state = new List<ResumeEntry>
+        {
+            Pending("laneA", oldPath, order: 1),
+            new() { LaneId = "laneA", FullName = newPath, Status = ResumeStatus.Completed, Order = 4 }
+        };
+
+        var changed = QueueRules.RemapRenamedFiles(state, "laneA", Renames(oldPath, newPath));
+
+        Assert.False(changed);
+        Assert.Equal(2, state.Count);
+        Assert.Equal(oldPath, state[0].FullName);
+        Assert.Equal(ResumeStatus.Completed, state[1].Status);
+    }
+
+    [Fact]
+    public void RemapRenamedFiles_IgnoresARenameThatDidNotHappen()
+    {
+        var folder = Folder("a");
+        var stillThere = Touch(folder, "old.mkv");
+        var neverCreated = Path.Combine(folder, "new.mkv");
+        var state = new List<ResumeEntry> { Pending("laneA", stillThere, order: 3) };
+
+        Assert.False(QueueRules.RemapRenamedFiles(state, "laneA", Renames(stillThere, neverCreated)));
+        Assert.Equal(stillThere, state.Single().FullName);
+
+        // ...nor one where the old file is gone but the new one never showed up.
+        var gone = Path.Combine(folder, "gone.mkv");
+        state = new List<ResumeEntry> { Pending("laneA", gone, order: 3) };
+        Assert.False(QueueRules.RemapRenamedFiles(state, "laneA", Renames(gone, neverCreated)));
+        Assert.Equal(gone, state.Single().FullName);
+    }
+
+    [Fact]
+    public void RemapRenamedFiles_OnlyTouchesWaitingEntriesInTheSameLane()
+    {
+        var folder = Folder("a");
+        var oldPath = Path.Combine(folder, "old.mkv");
+        var newPath = Touch(folder, "New Name.mkv");
+        var otherLane = Pending("laneB", oldPath, order: 1);
+        var errored = new ResumeEntry { LaneId = "laneA", FullName = oldPath, Status = ResumeStatus.Error, Order = 2 };
+        var state = new List<ResumeEntry> { otherLane, errored };
+
+        var changed = QueueRules.RemapRenamedFiles(state, "laneA", Renames(oldPath, newPath));
+
+        Assert.False(changed);
+        Assert.Equal(oldPath, otherLane.FullName);
+        Assert.Equal(oldPath, errored.FullName);
+    }
+
+    [Fact]
+    public void RemapRenamedFiles_MatchesPathsIgnoringCase()
+    {
+        var folder = Folder("a");
+        var oldPath = Path.Combine(folder, "Old.mkv");
+        var newPath = Touch(folder, "New Name.mkv");
+        var state = new List<ResumeEntry> { Pending("laneA", oldPath.ToUpperInvariant(), order: 2) };
+
+        Assert.True(QueueRules.RemapRenamedFiles(state, "laneA", Renames(oldPath, newPath)));
+        Assert.Equal(newPath, state.Single().FullName);
+    }
+
     // ---- BackfillMissingOrder ---------------------------------------------------------------
 
     [Fact]

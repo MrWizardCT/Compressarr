@@ -34,23 +34,45 @@ file sealed class RecursiveFolderScanner : IVideoFileScanner
 
 file sealed class NoOpFileBotRunner : IFileBotRunner
 {
-    public HashSet<string> Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger) => new();
+    public FileBotRunResult Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger) => FileBotRunResult.Empty;
 }
 
 file sealed class FixedUnmatchedFileBotRunner : IFileBotRunner
 {
     private readonly HashSet<string> _unmatched;
     public FixedUnmatchedFileBotRunner(HashSet<string> unmatched) => _unmatched = unmatched;
-    public HashSet<string> Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger) => _unmatched;
+    public FileBotRunResult Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger) => new(_unmatched, new Dictionary<string, string>());
+}
+
+/// <summary>Stands in for FileBot renaming files: really moves each file on disk (unless told to
+/// only announce it) and reports the old -> new pairs the way the real runner parses them.</summary>
+file sealed class RenamingFileBotRunner : IFileBotRunner
+{
+    private readonly Dictionary<string, string> _renames;
+    private readonly bool _actuallyMove;
+    public RenamingFileBotRunner(Dictionary<string, string> renames, bool actuallyMove = true)
+    {
+        _renames = renames;
+        _actuallyMove = actuallyMove;
+    }
+
+    public FileBotRunResult Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger)
+    {
+        if (_actuallyMove)
+        {
+            foreach (var (from, to) in _renames) File.Move(from, to);
+        }
+        return new FileBotRunResult(new HashSet<string>(), _renames);
+    }
 }
 
 file sealed class RecordingFileBotRunner : IFileBotRunner
 {
     public string? ReceivedCliPath { get; private set; }
-    public HashSet<string> Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger)
+    public FileBotRunResult Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger)
     {
         ReceivedCliPath = settings.CliPath;
-        return new HashSet<string>();
+        return FileBotRunResult.Empty;
     }
 }
 
@@ -2893,6 +2915,93 @@ public class ConversionOrchestratorTests : IDisposable
         var unmatchedEntry = Assert.Single(resumeState, e => e.FullName == unmatchedPath);
         Assert.False(matchedEntry.FileBotUnmatched);
         Assert.True(unmatchedEntry.FileBotUnmatched);
+    }
+
+    private ConversionOrchestrator OrchestratorWithFileBot(IFileBotRunner fileBot, CompressarrConfig config) => new(
+        new PassThroughPathExpander(), new RealFolderScanner(), fileBot,
+        new FixedExtensionPresetService(), new MetadataService(), new FakeProcessRunner(), new FileRouter(),
+        new NoOpCompanionFileService(), new NoOpArrUnmonitorService(), new RecordingTrashService(), new NoOpRunLogger(),
+        new NoOpResumeStateStore(), new NoOpProgressReporter(), new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue));
+
+    [Fact]
+    public async Task PrepareLane_FileBotRenamesAQueuedFile_ItKeepsItsPlaceSkipAndPresetOverride()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        Directory.CreateDirectory(inputDir);
+        var a = Path.Combine(inputDir, "a.mkv");
+        var b = Path.Combine(inputDir, "b.mkv");
+        var c = Path.Combine(inputDir, "c.mkv");
+        foreach (var p in new[] { a, b, c }) File.WriteAllText(p, "x");
+        var renamedB = Path.Combine(inputDir, "Show - S01E02 - Pilot.mkv");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = Path.Combine(_tempDir, "Output"), MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var orchestrator = OrchestratorWithFileBot(new RenamingFileBotRunner(new() { [b] = renamedB }), config);
+
+        // The user dragged b to the front, skipped it and gave it its own preset.
+        var resumeState = new List<ResumeEntry>
+        {
+            new() { LaneId = "lane1", FullName = a, Status = ResumeStatus.Pending, Order = 2 },
+            new() { LaneId = "lane1", FullName = b, Status = ResumeStatus.Pending, Order = 0, Skipped = true, PresetOverride = "Fast 1080p30" },
+            new() { LaneId = "lane1", FullName = c, Status = ResumeStatus.Pending, Order = 1 }
+        };
+        await orchestrator.PrepareLaneAsync(lane, config, resumeState, Path.Combine(_tempDir, "resume.json"));
+
+        Assert.Equal(3, resumeState.Count);
+        Assert.DoesNotContain(resumeState, e => e.FullName == b);
+        var renamed = Assert.Single(resumeState, e => e.FullName == renamedB);
+        Assert.Equal(0, renamed.Order);
+        Assert.True(renamed.Skipped);
+        Assert.Equal("Fast 1080p30", renamed.PresetOverride);
+        Assert.Equal(2, resumeState.Single(e => e.FullName == a).Order); // untouched
+        Assert.Equal(1, resumeState.Single(e => e.FullName == c).Order); // untouched
+    }
+
+    [Fact]
+    public async Task PrepareLane_FileBotAnnouncesARenameThatDidNotHappen_NothingIsRemapped()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        Directory.CreateDirectory(inputDir);
+        var a = Path.Combine(inputDir, "a.mkv");
+        File.WriteAllText(a, "x");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = Path.Combine(_tempDir, "Output"), MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var orchestrator = OrchestratorWithFileBot(new RenamingFileBotRunner(new() { [a] = Path.Combine(inputDir, "never-created.mkv") }, actuallyMove: false), config);
+
+        var resumeState = new List<ResumeEntry> { new() { LaneId = "lane1", FullName = a, Status = ResumeStatus.Pending, Order = 5 } };
+        await orchestrator.PrepareLaneAsync(lane, config, resumeState, Path.Combine(_tempDir, "resume.json"));
+
+        var entry = Assert.Single(resumeState);
+        Assert.Equal(a, entry.FullName);
+        Assert.Equal(5, entry.Order);
+    }
+
+    [Fact]
+    public async Task PrepareLane_FileBotRenamesAFileTheQueueNeverTracked_ItIsJustANewArrival()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        Directory.CreateDirectory(inputDir);
+        var waiting = Path.Combine(inputDir, "waiting.mkv");
+        var fresh = Path.Combine(inputDir, "fresh.mkv");
+        File.WriteAllText(waiting, "x");
+        File.WriteAllText(fresh, "x");
+        var renamedFresh = Path.Combine(inputDir, "A Fresh Name.mkv"); // sorts before "waiting" on a scan
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = Path.Combine(_tempDir, "Output"), MoviePreset = "Any Preset" };
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.Lanes.Add(lane);
+        var orchestrator = OrchestratorWithFileBot(new RenamingFileBotRunner(new() { [fresh] = renamedFresh }), config);
+
+        var resumeState = new List<ResumeEntry> { new() { LaneId = "lane1", FullName = waiting, Status = ResumeStatus.Pending, Order = 0 } };
+        await orchestrator.PrepareLaneAsync(lane, config, resumeState, Path.Combine(_tempDir, "resume.json"));
+
+        // Never tracked before, so there was no place in line to keep: it joins at the end.
+        Assert.Equal(2, resumeState.Count);
+        Assert.Equal(0, resumeState.Single(e => e.FullName == waiting).Order);
+        Assert.Equal(1, resumeState.Single(e => e.FullName == renamedFresh).Order);
     }
 
     [Fact]

@@ -389,6 +389,56 @@ public static class QueueRules
             .ThenBy(e => naturalIndexOf(e.LaneId, e.FullName))
             .FirstOrDefault(e => File.Exists(e.FullName));
 
+    /// <summary>Carries a waiting file's place in line over to its new name after FileBot renamed or
+    /// moved it. Without this the old entry (its file now gone) dies and the renamed file is tracked
+    /// as a brand-new arrival at the end of the queue, silently undoing any manual reorder, skip or
+    /// preset override. renames is old full path -> new full path (FileBotRunResult.Renames).
+    ///
+    /// Only a Pending entry in this lane whose old file really is gone while the new one really exists
+    /// is touched - a rename FileBot merely announced (a dry run, or a failed move) changes nothing.
+    /// If the new path already has an entry (the Monitor page's own poll can track the renamed file
+    /// as a new arrival while FileBot is still running), that Pending entry takes over the old one's
+    /// Order / Skipped / PresetOverride / Removed and the old entry is dropped, so the file is never
+    /// tracked twice. If the new path is already tracked under any other status (e.g. a copy that
+    /// was encoded earlier) nothing is remapped: that entry is a different piece of work.
+    /// Returns true if anything changed (the caller saves).</summary>
+    public static bool RemapRenamedFiles(List<ResumeEntry> resumeState, string laneId, IReadOnlyDictionary<string, string> renames)
+    {
+        var changed = false;
+
+        foreach (var (from, to) in renames)
+        {
+            var old = resumeState.FirstOrDefault(e =>
+                e.LaneId == laneId &&
+                e.Status == ResumeStatus.Pending &&
+                string.Equals(e.FullName, from, StringComparison.OrdinalIgnoreCase));
+            if (old is null) continue;
+            if (File.Exists(from) || !File.Exists(to)) continue;
+
+            var target = resumeState.FirstOrDefault(e =>
+                e.LaneId == laneId &&
+                !ReferenceEquals(e, old) &&
+                string.Equals(e.FullName, to, StringComparison.OrdinalIgnoreCase));
+
+            if (target is null)
+            {
+                old.FullName = to;
+                changed = true;
+            }
+            else if (target.Status == ResumeStatus.Pending)
+            {
+                target.Order = old.Order;
+                target.Skipped = old.Skipped;
+                target.Removed = old.Removed;
+                target.PresetOverride = old.PresetOverride;
+                resumeState.Remove(old);
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
     /// <summary>Merges the user-owned queue fields (Order / Skipped / PresetOverride / Removed) from
     /// what's currently on disk onto the matching in-memory entries (by LaneId + FullName). Deliberately
     /// narrow: only those four fields are ever touched, never Status or EncodedFilePath, so this can

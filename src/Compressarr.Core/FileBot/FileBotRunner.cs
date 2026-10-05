@@ -6,10 +6,21 @@ using Compressarr.Core.Logging;
 
 namespace Compressarr.Core.FileBot;
 
+/// <summary>What one FileBot pass found out about a lane's files.</summary>
+/// <param name="Unmatched">Files FileBot never engaged with (see IFileBotRunner.Run).</param>
+/// <param name="Renames">Old full path -> new full path for every file FileBot renamed or moved,
+/// read from FileBot's own output. The queue uses it to carry a file's place in line (Order, Skip,
+/// preset override) over to its new name instead of treating the renamed file as a new arrival.</param>
+public sealed record FileBotRunResult(HashSet<string> Unmatched, IReadOnlyDictionary<string, string> Renames)
+{
+    public static FileBotRunResult Empty => new(new HashSet<string>(StringComparer.OrdinalIgnoreCase), new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+}
+
 public interface IFileBotRunner
 {
     /// <summary>Runs FileBot against inputPath if settings.Enabled and CliPath resolves to a real
-    /// file; no-ops (returns an empty set, no process started) otherwise. Splits the folder's video
+    /// file; no-ops (returns an empty result, no process started) otherwise. Also reports every
+    /// old -> new path pair FileBot said it renamed/moved (Renames). Splits the folder's video
     /// files into TV/movie groups (via ContentClassifier.IsTvFile, the same classifier Compressarr's
     /// own routing already trusts) and invokes FileBot once per group that's enabled and has files,
     /// using that group's own Args - never both groups in one call, so each group's own --db/--format
@@ -20,7 +31,7 @@ public interface IFileBotRunner
     /// entirely). A file FileBot confirmed was already correctly named - logged as "[MOVE] Skipped
     /// [X] because [X] already exists," its path unchanged but still mentioned - is NOT unmatched,
     /// since FileBot did successfully identify it.</summary>
-    HashSet<string> Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger);
+    FileBotRunResult Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger);
 }
 
 /// <summary>Optional pre-processing pass, invoked once per lane right before Compressarr's own
@@ -50,9 +61,9 @@ public sealed class FileBotRunner : IFileBotRunner
         _scanner = scanner;
     }
 
-    public HashSet<string> Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger)
+    public FileBotRunResult Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger)
     {
-        if (!settings.Enabled) return new HashSet<string>();
+        if (!settings.Enabled) return FileBotRunResult.Empty;
 
         if (string.IsNullOrWhiteSpace(settings.CliPath) || !File.Exists(settings.CliPath))
         {
@@ -62,7 +73,7 @@ public sealed class FileBotRunner : IFileBotRunner
             // single poll for as long as it stays broken - the same standing-condition
             // file-proliferation problem RunOrchestrator's own config checks have.
             logger.LogProblem($"filebot-path-missing:{inputPath}", $"FileBot is enabled but its path '{settings.CliPath}' was not found - skipping.");
-            return new HashSet<string>();
+            return FileBotRunResult.Empty;
         }
         logger.ClearProblem($"filebot-path-missing:{inputPath}");
 
@@ -71,23 +82,31 @@ public sealed class FileBotRunner : IFileBotRunner
         var movieFiles = allFiles.Except(tvFiles).ToList();
 
         var unmatched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        unmatched.UnionWith(RunGroup(settings.CliPath, settings.TvArgs, tvFiles, settings.TvEnabled, "TV", logger));
-        unmatched.UnionWith(RunGroup(settings.CliPath, settings.MovieArgs, movieFiles, settings.MovieEnabled, "movie", logger));
-        return unmatched;
+        var renames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (groupUnmatched, groupRenames) in new[]
+        {
+            RunGroup(settings.CliPath, settings.TvArgs, tvFiles, settings.TvEnabled, "TV", logger),
+            RunGroup(settings.CliPath, settings.MovieArgs, movieFiles, settings.MovieEnabled, "movie", logger)
+        })
+        {
+            unmatched.UnionWith(groupUnmatched);
+            foreach (var (from, to) in groupRenames) renames[from] = to;
+        }
+        return new FileBotRunResult(unmatched, renames);
     }
 
-    private HashSet<string> RunGroup(string cliPath, string? argsTemplate, List<FileInfo> files, bool typeEnabled, string label, IRunLogger logger)
+    private (HashSet<string> Unmatched, Dictionary<string, string> Renames) RunGroup(string cliPath, string? argsTemplate, List<FileInfo> files, bool typeEnabled, string label, IRunLogger logger)
     {
-        if (files.Count == 0) return new HashSet<string>();
+        if (files.Count == 0) return (new HashSet<string>(), new Dictionary<string, string>());
 
         // A deliberate per-type opt-out is quiet - nothing to warn about, the user asked for this.
-        if (!typeEnabled) return new HashSet<string>();
+        if (!typeEnabled) return (new HashSet<string>(), new Dictionary<string, string>());
 
         var args = (argsTemplate ?? "").Trim();
         if (args.Length == 0)
         {
             logger.Log($"FileBot is enabled but no {label} arguments are configured - {files.Count} {label} file(s) left as-is.", LogSeverity.Error);
-            return files.Select(f => f.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return (files.Select(f => f.FullName).ToHashSet(StringComparer.OrdinalIgnoreCase), new Dictionary<string, string>());
         }
 
         // Tokenize the free-form Args template FIRST (honoring quotes, via the same tokenizer
@@ -119,10 +138,38 @@ public sealed class FileBotRunner : IFileBotRunner
         // Compressarr already routed correctly on an earlier pass triggers this every time it's
         // re-scanned). Only a path that never appears anywhere in FileBot's own output at all - it
         // genuinely never engaged with that file - counts as unmatched.
-        return files
+        var unmatched = files
             .Select(f => f.FullName)
             .Where(path => File.Exists(path) && !output.Contains(path, StringComparison.OrdinalIgnoreCase))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return (unmatched, ParseRenames(output));
+    }
+
+    // A rooted path: a drive letter, a UNC share, or a leading slash. Requiring that is what lets
+    // the lazy source match skip FileBot's own leading "[MOVE] Rename" tags instead of swallowing them.
+    private static readonly System.Text.RegularExpressions.Regex RenameLine = new(
+        @"\[(?<src>(?:[A-Za-z]:[\\/]|\\\\|/).+?)\]\s+to\s+\[(?<dst>(?:[A-Za-z]:[\\/]|\\\\|/).+)\]\s*$",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>Reads FileBot's own output for "[old path] to [new path]" lines (e.g. "[MOVE] Rename
+    /// [D:\In\a.mkv] to [D:\In\A (2020).mkv]") and returns old -> new. Lines that name no path pair,
+    /// or whose old and new path are the same, are ignored. A file name that itself contains "] to ["
+    /// would be misread; the caller only acts on a pair whose old path is a tracked file that has
+    /// really gone missing, so the worst case is the old behavior (the renamed file is treated as a
+    /// new arrival), never a wrong mapping.</summary>
+    public static Dictionary<string, string> ParseRenames(string output)
+    {
+        var renames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in output.Split('\n'))
+        {
+            var match = RenameLine.Match(line.TrimEnd('\r'));
+            if (!match.Success) continue;
+
+            var from = match.Groups["src"].Value;
+            var to = match.Groups["dst"].Value;
+            if (!string.Equals(from, to, StringComparison.OrdinalIgnoreCase)) renames[from] = to;
+        }
+        return renames;
     }
 
     private string InvokeProcess(string cliPath, IReadOnlyList<string> argumentList, IRunLogger logger)

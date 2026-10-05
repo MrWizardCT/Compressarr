@@ -205,7 +205,9 @@ public class ArrUnmonitorServiceTests
         client.CommandStatusResponses.Enqueue(JsonNode.Parse("""{ "id": 5, "status": "started", "result": "unknown" }"""));
         client.CommandStatusResponses.Enqueue(JsonNode.Parse("""{ "id": 5, "status": "completed", "result": "successful" }"""));
 
-        var service = new ArrUnmonitorService(client, new NoOpRunLogger(), TinyInterval, TinyMaxWait, TinyInterval);
+        // Generous max wait: it only bounds a hang (the call returns the moment the command completes), and
+        // the tiny one used elsewhere timed out under a loaded machine before three polls could finish.
+        var service = new ArrUnmonitorService(client, new NoOpRunLogger(), TinyInterval, TimeSpan.FromSeconds(5), TinyInterval);
         var config = ConfigWith(new ArrServiceSettings());
         config.Arrs.Radarr = new ArrServiceSettings { Enabled = true, Url = "http://radarr:7878", ApiKey = "key" };
 
