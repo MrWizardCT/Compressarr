@@ -10,7 +10,7 @@ public static class PresetEndpoints
 {
     public static void MapPresetEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/presets", (string path, IHandBrakePresetService presetService, IPathExpander pathExpander) =>
+        app.MapGet("/api/presets", (string path, IEncoderPresetService presetService, IPathExpander pathExpander) =>
         {
             var expanded = pathExpander.Expand(path);
             if (!File.Exists(expanded)) return Results.Json(Array.Empty<string>());
@@ -32,7 +32,7 @@ public static class PresetEndpoints
             return Results.Json(new { needsMergePrompt = presetInstaller.NeedsMergePrompt(presetsPath) });
         });
 
-        app.MapPost("/api/presets/install", (InstallPresetsRequest request, IConfigStore configStore, IPresetInstaller presetInstaller, IPathExpander pathExpander, IHandBrakePresetService presetService) =>
+        app.MapPost("/api/presets/install", (InstallPresetsRequest request, IConfigStore configStore, IPresetInstaller presetInstaller, IPathExpander pathExpander, IEncoderPresetService presetService) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             var presetsPath = pathExpander.Expand(config.HandBrake.PresetsPath);
@@ -55,7 +55,7 @@ public static class PresetEndpoints
             return Results.Ok();
         });
 
-        app.MapPost("/api/presets/reload", (IConfigStore configStore, IHandBrakePresetService presetService, IPathExpander pathExpander) =>
+        app.MapPost("/api/presets/reload", (IConfigStore configStore, IEncoderPresetService presetService, IPathExpander pathExpander) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             var presetsPath = pathExpander.Expand(config.HandBrake.PresetsPath);

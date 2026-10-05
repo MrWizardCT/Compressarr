@@ -37,7 +37,7 @@ public interface IFileBotRunner
 /// <summary>Optional pre-processing pass, invoked once per lane right before Compressarr's own
 /// Input scan (see ConversionOrchestrator.PrepareLane) - synchronous, one-shot, no live progress
 /// to surface, so this deliberately mirrors RunOrchestrator's simple PostExec invocation rather
-/// than IHandBrakeProcessRunner's async/cancellable/streaming machinery.
+/// than IEncoderRunner's async/cancellable/streaming machinery.
 ///
 /// Confirmed live: a bare "filebot.exe" launch with no arguments at all just opens FileBot's own
 /// GUI (expected behavior for a GUI app given zero CLI args, not a Compressarr bug) - it then sits

@@ -10,7 +10,7 @@ namespace Compressarr.Web.Endpoints;
 
 public static class LaneEndpoints
 {
-    private static List<ValidationIssueDto> Validate(LaneConfig lane, CompressarrConfig config, IPathExpander pathExpander, IHandBrakePresetService presets)
+    private static List<ValidationIssueDto> Validate(LaneConfig lane, CompressarrConfig config, IPathExpander pathExpander, IEncoderPresetService presets)
     {
         var presetsPath = pathExpander.Expand(config.HandBrake.PresetsPath);
         return LaneValidator.Validate(lane, config, presetsPath, pathExpander, presets)
@@ -19,13 +19,13 @@ public static class LaneEndpoints
 
     public static void MapLaneEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/lanes", (IConfigStore configStore, IPathExpander pathExpander, IHandBrakePresetService presets) =>
+        app.MapGet("/api/lanes", (IConfigStore configStore, IPathExpander pathExpander, IEncoderPresetService presets) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             return Results.Json(config.Lanes.Select(lane => ConfigMapping.ToLaneDto(lane, Validate(lane, config, pathExpander, presets))).ToList());
         });
 
-        app.MapPost("/api/lanes", (IConfigStore configStore, IPathExpander pathExpander, IHandBrakePresetService presets) =>
+        app.MapPost("/api/lanes", (IConfigStore configStore, IPathExpander pathExpander, IEncoderPresetService presets) =>
         {
             var dto = configStore.Update(AppPaths.GetConfigFilePath(), config =>
             {
@@ -41,7 +41,7 @@ public static class LaneEndpoints
             return Results.Json(dto);
         });
 
-        app.MapPut("/api/lanes/{id}", (string id, LaneDto dto, IConfigStore configStore, IPathExpander pathExpander, IHandBrakePresetService presets) =>
+        app.MapPut("/api/lanes/{id}", (string id, LaneDto dto, IConfigStore configStore, IPathExpander pathExpander, IEncoderPresetService presets) =>
         {
             var result = configStore.Update(AppPaths.GetConfigFilePath(), config =>
             {

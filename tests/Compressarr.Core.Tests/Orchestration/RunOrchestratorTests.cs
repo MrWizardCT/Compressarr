@@ -28,7 +28,7 @@ file sealed class NoOpFileBotRunner : IFileBotRunner
     public FileBotRunResult Run(FileBotSettings settings, string inputPath, IReadOnlyList<string> vidTypes, IRunLogger logger) => FileBotRunResult.Empty;
 }
 
-file sealed class FixedExtensionPresetService : IHandBrakePresetService
+file sealed class FixedExtensionPresetService : IEncoderPresetService
 {
     public IReadOnlyList<HandBrakePreset> GetPresets(string presetsPath) => Array.Empty<HandBrakePreset>();
     public IReadOnlyList<string> GetPresetNames(string presetsPath) => Array.Empty<string>();
@@ -42,31 +42,27 @@ file sealed class FixedExtensionPresetService : IHandBrakePresetService
 /// path it was asked to encode, in call order - the only way to observe the TRUE global processing
 /// order across lanes, since RunResult.Report.Lanes groups results back by lane afterward and can't
 /// tell you the real interleaved timeline on its own.</summary>
-file sealed class RecordingProcessRunner : IHandBrakeProcessRunner
+file sealed class RecordingProcessRunner : IEncoderRunner
 {
     public List<string> ProcessedInOrder { get; } = new();
     private readonly Action<string>? _onEachRun;
 
     public RecordingProcessRunner(Action<string>? onEachRun = null) => _onEachRun = onEachRun;
 
-    public Task<HandBrakeRunResult> RunAsync(
-        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
-        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken)
+    public Task<EncodeResult> RunAsync(EncodeRequest request, Action<EncodeProgress>? onProgress, CancellationToken cancellationToken)
     {
-        ProcessedInOrder.Add(Path.GetFileName(sourcePath));
-        _onEachRun?.Invoke(sourcePath);
-        File.WriteAllText(tempOutputPath, "fake encoded output");
-        return Task.FromResult(new HandBrakeRunResult(Success: true, DetailLogFile: detailLogFile));
+        ProcessedInOrder.Add(Path.GetFileName(request.SourcePath));
+        _onEachRun?.Invoke(request.SourcePath);
+        File.WriteAllText(request.OutputPath, "fake encoded output");
+        return Task.FromResult(new EncodeResult(Success: true, DetailLogFile: request.DetailLogFile));
     }
 }
 
 /// <summary>Simulates HandBrakeCLI failing every encode (no output file written).</summary>
-file sealed class FailingProcessRunner : IHandBrakeProcessRunner
+file sealed class FailingProcessRunner : IEncoderRunner
 {
-    public Task<HandBrakeRunResult> RunAsync(
-        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
-        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken) =>
-        Task.FromResult(new HandBrakeRunResult(Success: false, DetailLogFile: detailLogFile));
+    public Task<EncodeResult> RunAsync(EncodeRequest request, Action<EncodeProgress>? onProgress, CancellationToken cancellationToken) =>
+        Task.FromResult(new EncodeResult(Success: false, DetailLogFile: request.DetailLogFile));
 }
 
 file sealed class NoOpCompanionFileService : ICompanionFileService
@@ -210,7 +206,7 @@ public class RunOrchestratorTests : IDisposable
     // RecordingProcessRunner can't appear in a member signature of this non-file-local test class,
     // even a private one, so the caller constructs it and passes it in instead of getting it back.
     private (RunOrchestrator Orchestrator, string ResumeFilePath) BuildOrchestrator(
-        CompressarrConfig config, IHandBrakeProcessRunner processRunner, IResumeStateStore? resumeStore = null,
+        CompressarrConfig config, IEncoderRunner processRunner, IResumeStateStore? resumeStore = null,
         IRunLogger? logger = null, TimeSpan? postExecTimeout = null)
     {
         // HandBrakeCLI/presets "paths" just need to exist on disk for PathExists to pass -

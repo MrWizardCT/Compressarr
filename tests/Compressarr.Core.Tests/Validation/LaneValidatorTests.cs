@@ -10,7 +10,7 @@ file sealed class PassThroughPathExpander : IPathExpander
     public bool PathExists(string value) => Directory.Exists(value) || File.Exists(value);
 }
 
-file sealed class FixedExtensionPresetService : IHandBrakePresetService
+file sealed class FixedExtensionPresetService : IEncoderPresetService
 {
     private readonly HashSet<string> _existingPresets;
     public FixedExtensionPresetService(params string[] existingPresets) => _existingPresets = existingPresets.ToHashSet(StringComparer.OrdinalIgnoreCase);

@@ -12,7 +12,7 @@ namespace Compressarr.Core.Conversion;
 /// warning about its otherwise-incomplete config would just be noise.</summary>
 public static class LaneValidator
 {
-    public static List<ValidationIssue> Validate(LaneConfig lane, CompressarrConfig config, string presetsPath, IPathExpander pathExpander, IHandBrakePresetService presets)
+    public static List<ValidationIssue> Validate(LaneConfig lane, CompressarrConfig config, string presetsPath, IPathExpander pathExpander, IEncoderPresetService presets)
     {
         var issues = new List<ValidationIssue>();
         if (!lane.Enabled) return issues;

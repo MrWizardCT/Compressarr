@@ -5,42 +5,59 @@ using System.Text.RegularExpressions;
 
 namespace Compressarr.Core.Conversion;
 
-public sealed record HandBrakeRunResult(bool Success, string DetailLogFile, bool Cancelled = false);
-
-public interface IHandBrakeProcessRunner
+/// <summary>The HandBrakeCLI implementation of <see cref="IEncoderRunner"/>: invokes HandBrakeCLI
+/// and determines success the same way v1 did, plus a real exit-code check - the output temp file
+/// must exist, be non-empty, the stderr detail log must contain a line matching "*Finished work
+/// at*" (HandBrake's own completion banner), AND the process must have exited 0. The exit-code
+/// check is not optional - confirmed live against a genuinely full disk that HandBrakeCLI still
+/// writes "Finished work at" to its log even when the encode fails (mux error, exit code 4) - the
+/// log-banner check alone reports a mid-air-truncated file as a success, which without the exit
+/// code would also delete/route the source out from under it.
+///
+/// Streams stdout line-by-line as HandBrakeCLI writes it (its own progress updates, "Encoding:
+/// task 1 of 1, NN.NN % ...") and reports each parsed reading to onProgress.</summary>
+public sealed class HandBrakeProcessRunner : IEncoderRunner
 {
-    /// <summary>Invokes HandBrakeCLI (one file fully finishes before the caller moves on) and
-    /// determines success the same way v1 did, plus a real exit-code check: the output temp file
-    /// must exist, be non-empty, the stderr detail log must contain a line matching "*Finished
-    /// work at*" (HandBrake's own completion banner), AND the process must have exited 0.
-    /// The exit-code check is not optional - confirmed live against a genuinely full disk that
-    /// HandBrakeCLI still writes "Finished work at" to its log even when the encode fails (mux
-    /// error, exit code 4) - the log-banner check alone reports a mid-air-truncated file as a
-    /// success, which without the exit code would also delete/route the source out from under it.
-    ///
-    /// Streams stdout line-by-line to onOutputLine as HandBrakeCLI writes it (its own progress
-    /// updates, "Encoding: task 1 of 1, NN.NN % ...") so a caller can surface live progress.
-    /// Cancelling cancellationToken kills the HandBrakeCLI process tree immediately and returns a
-    /// result with Cancelled=true instead of throwing - the caller decides what "aborted
-    /// mid-file" means for the rest of the run.</summary>
-    Task<HandBrakeRunResult> RunAsync(
-        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
-        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken);
-}
+    private readonly IActiveEncodeProcess _activeProcess;
 
-public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
-{
-    private readonly IActiveHandBrakeProcess _activeProcess;
-
-    public HandBrakeProcessRunner(IActiveHandBrakeProcess activeProcess)
+    public HandBrakeProcessRunner(IActiveEncodeProcess activeProcess)
     {
         _activeProcess = activeProcess;
     }
 
-    public async Task<HandBrakeRunResult> RunAsync(
-        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
-        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken)
+    /// <summary>The exact HandBrakeCLI argument list for a request. A pure function so the command
+    /// line - the one thing that must never change by accident - is pinned by golden tests without
+    /// starting a process. ArgumentList entries, not a manually quoted Arguments string: each
+    /// element is passed to the child process exactly as given, with no shell-style re-parsing or
+    /// re-quoting step that a path or preset name containing spaces (or, in principle, an embedded
+    /// quote) could ever trip up.</summary>
+    internal static IReadOnlyList<string> BuildArguments(EncodeRequest request)
     {
+        var args = new List<string>
+        {
+            "-i", request.SourcePath,
+            "-t", "1",
+            "-o", request.OutputPath,
+            "--preset-import-file", request.PresetSource,
+            "--preset", request.PresetName
+        };
+
+        if (!string.IsNullOrWhiteSpace(request.ExtraOptions))
+        {
+            // ExtraOptions is the free-form "Extra CLI options" setting - deliberately meant to
+            // represent MULTIPLE arguments (e.g. "--two-pass --optimize"), so it needs splitting
+            // into individual tokens rather than being added as one single (and wrong) argument.
+            args.AddRange(SplitExtraOptions(request.ExtraOptions));
+        }
+
+        return args;
+    }
+
+    public async Task<EncodeResult> RunAsync(EncodeRequest request, Action<EncodeProgress>? onProgress, CancellationToken cancellationToken)
+    {
+        var tempOutputPath = request.OutputPath;
+        var detailLogFile = request.DetailLogFile;
+
         if (File.Exists(detailLogFile))
         {
             File.Delete(detailLogFile);
@@ -48,36 +65,15 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
 
         var startInfo = new ProcessStartInfo
         {
-            FileName = cliPath,
+            FileName = request.ToolPath,
             RedirectStandardError = true,
             RedirectStandardOutput = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
-
-        // ArgumentList, not a manually quoted Arguments string - each element is passed to the
-        // child process exactly as given, with no shell-style re-parsing/re-quoting step that a
-        // path or preset name containing spaces (or, in principle, an embedded quote) could ever
-        // trip up.
-        startInfo.ArgumentList.Add("-i");
-        startInfo.ArgumentList.Add(sourcePath);
-        startInfo.ArgumentList.Add("-t");
-        startInfo.ArgumentList.Add("1");
-        startInfo.ArgumentList.Add("-o");
-        startInfo.ArgumentList.Add(tempOutputPath);
-        startInfo.ArgumentList.Add("--preset-import-file");
-        startInfo.ArgumentList.Add(presetsPath);
-        startInfo.ArgumentList.Add("--preset");
-        startInfo.ArgumentList.Add(presetName);
-        if (!string.IsNullOrWhiteSpace(extraOptions))
+        foreach (var arg in BuildArguments(request))
         {
-            // extraOptions is the free-form "Extra CLI options" setting - deliberately meant to
-            // represent MULTIPLE arguments (e.g. "--two-pass --optimize"), so it needs splitting
-            // into individual tokens rather than being added as one single (and wrong) argument.
-            foreach (var arg in SplitExtraOptions(extraOptions))
-            {
-                startInfo.ArgumentList.Add(arg);
-            }
+            startInfo.ArgumentList.Add(arg);
         }
 
         var stderr = new StringBuilder();
@@ -92,7 +88,9 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
             // progress possible at all.
             process.OutputDataReceived += (_, e) =>
             {
-                if (e.Data is not null) onOutputLine?.Invoke(e.Data);
+                if (e.Data is null || onProgress is null) return;
+                var progress = HandBrakeProgressParser.TryParse(e.Data);
+                if (progress is not null) onProgress(progress);
             };
             process.ErrorDataReceived += (_, e) =>
             {
@@ -147,10 +145,10 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
 
         if (cancelled)
         {
-            return new HandBrakeRunResult(Success: false, DetailLogFile: detailLogFile, Cancelled: true);
+            return new EncodeResult(Success: false, DetailLogFile: detailLogFile, Cancelled: true);
         }
 
-        return new HandBrakeRunResult(DetermineSuccess(tempOutputPath, detailLogFile, exitCode), detailLogFile);
+        return new EncodeResult(DetermineSuccess(tempOutputPath, detailLogFile, exitCode), detailLogFile);
     }
 
     /// <summary>Success requires ALL of: the temp output file exists, is non-empty, the detail
@@ -229,8 +227,6 @@ public sealed class HandBrakeProcessRunner : IHandBrakeProcessRunner
     }
 }
 
-public sealed record HandBrakeProgress(double Percent, double? Fps, string? Eta);
-
 /// <summary>
 /// Parses HandBrakeCLI's own stdout progress line, e.g.:
 ///   "Encoding: task 1 of 1, 42.10 % (23.45 fps, avg 20.12 fps, ETA 00h05m32s)"
@@ -243,7 +239,7 @@ public static class HandBrakeProgressParser
         @"^Encoding:\s*task\s*\d+\s*of\s*\d+,\s*(?<percent>[\d.]+)\s*%(?:\s*\((?:(?<fps>[\d.]+)\s*fps[^,)]*,\s*)?avg\s*[\d.]+\s*fps(?:,\s*ETA\s*(?<eta>[\dhms]+))?\))?",
         RegexOptions.Compiled);
 
-    public static HandBrakeProgress? TryParse(string line)
+    public static EncodeProgress? TryParse(string line)
     {
         var match = ProgressLine.Match(line);
         if (!match.Success) return null;
@@ -260,6 +256,6 @@ public static class HandBrakeProgressParser
 
         string? eta = match.Groups["eta"].Success ? match.Groups["eta"].Value : null;
 
-        return new HandBrakeProgress(percent, fps, eta);
+        return new EncodeProgress(percent, fps, eta);
     }
 }

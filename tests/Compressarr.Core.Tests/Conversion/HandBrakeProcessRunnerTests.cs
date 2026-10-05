@@ -22,6 +22,106 @@ public class HandBrakeProcessRunnerTests : IDisposable
         return path;
     }
 
+    // ---- The HandBrakeCLI command line (golden) ------------------------------------------------
+    // The command line is the one thing the encoder abstraction must never change by accident: every
+    // user's existing presets and Extra CLI options depend on it being exactly this.
+
+    private static EncodeRequest Request(string? extraOptions = null) => new(
+        ToolPath: @"C:\Program Files\HandBrake\HandBrakeCLI.exe",
+        SourcePath: @"D:\Media\Media Landing\Show - S01E01.mkv",
+        OutputPath: @"D:\Media\Temp Processing\Show - S01E01.compressarr-1a2b3c4d.mkv",
+        PresetSource: @"C:\Users\me\AppData\Roaming\HandBrake\presets.json",
+        PresetName: "Compressarr SD-HD",
+        ExtraOptions: extraOptions,
+        DetailLogFile: @"C:\Logs\detail.txt");
+
+    [Fact]
+    public void BuildArguments_NoExtraOptions_IsExactlyTheOriginalCommandLine()
+    {
+        Assert.Equal(
+            new[]
+            {
+                "-i", @"D:\Media\Media Landing\Show - S01E01.mkv",
+                "-t", "1",
+                "-o", @"D:\Media\Temp Processing\Show - S01E01.compressarr-1a2b3c4d.mkv",
+                "--preset-import-file", @"C:\Users\me\AppData\Roaming\HandBrake\presets.json",
+                "--preset", "Compressarr SD-HD"
+            },
+            HandBrakeProcessRunner.BuildArguments(Request()));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void BuildArguments_BlankExtraOptions_AddsNothing(string? extra)
+    {
+        Assert.Equal(10, HandBrakeProcessRunner.BuildArguments(Request(extra)).Count);
+    }
+
+    [Fact]
+    public void BuildArguments_ExtraOptions_AreSplitIntoSeparateArgumentsAfterThePreset()
+    {
+        var args = HandBrakeProcessRunner.BuildArguments(Request("--two-pass --optimize --custom-anamorphic \"16:9 wide\""));
+
+        Assert.Equal(
+            new[] { "--preset", "Compressarr SD-HD", "--two-pass", "--optimize", "--custom-anamorphic", "16:9 wide" },
+            args.Skip(8).ToArray());
+    }
+
+    [Fact]
+    public async Task RunAsync_WithAStandInCli_PassesTheGoldenArguments_ReportsProgress_AndSucceeds()
+    {
+        // A tiny batch file standing in for HandBrakeCLI: records the argument line, prints a real
+        // HandBrake progress line to stdout and the completion banner to stderr, and writes the -o file.
+        var cli = Path.Combine(_tempDir, "FakeHandBrakeCLI.cmd");
+        var argsFile = Path.Combine(_tempDir, "args.txt");
+        File.WriteAllText(cli,
+            "@echo off\r\n" +
+            $"echo %*> \"{argsFile}\"\r\n" +
+            "echo Encoding: task 1 of 1, 42.10 %% (23.45 fps, avg 20.12 fps, ETA 00h05m32s)\r\n" +
+            "echo Finished work at Sat Jan  1 00:00:00 2026 1>&2\r\n" +
+            ":loop\r\n" +
+            "if \"%~1\"==\"\" goto done\r\n" +
+            "if \"%~1\"==\"-o\" echo encoded> \"%~2\"\r\n" +
+            "shift\r\n" +
+            "goto loop\r\n" +
+            ":done\r\n" +
+            "exit /b 0\r\n");
+        var output = Path.Combine(_tempDir, "out file.mkv");
+        var detail = Path.Combine(_tempDir, "detail.txt");
+        var request = new EncodeRequest(cli, Path.Combine(_tempDir, "in file.mkv"), output, Path.Combine(_tempDir, "presets.json"), "My Preset", "--optimize", detail);
+        var readings = new List<EncodeProgress>();
+
+        var result = await new HandBrakeProcessRunner(new ActiveEncodeProcess()).RunAsync(request, readings.Add, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.False(result.Cancelled);
+        Assert.Equal(detail, result.DetailLogFile);
+        Assert.Equal(new EncodeProgress(42.10, 23.45, "00h05m32s"), Assert.Single(readings));
+        var recorded = File.ReadAllText(argsFile).Trim();
+        Assert.Equal(
+            $"-i \"{request.SourcePath}\" -t 1 -o \"{output}\" --preset-import-file {request.PresetSource} --preset \"My Preset\" --optimize",
+            recorded);
+    }
+
+    [Fact]
+    public async Task RunAsync_CancelledMidEncode_ReturnsCancelledInsteadOfThrowing()
+    {
+        var cli = Path.Combine(_tempDir, "SlowHandBrakeCLI.cmd");
+        File.WriteAllText(cli, "@echo off\r\nping -n 30 127.0.0.1 > nul\r\n");
+        var request = new EncodeRequest(cli, "in.mkv", Path.Combine(_tempDir, "out.mkv"), "presets.json", "P", null, Path.Combine(_tempDir, "detail.txt"));
+        using var cts = new CancellationTokenSource();
+
+        var run = new HandBrakeProcessRunner(new ActiveEncodeProcess()).RunAsync(request, null, cts.Token);
+        await Task.Delay(500);
+        cts.Cancel();
+        var result = await run.WaitAsync(TimeSpan.FromSeconds(20));
+
+        Assert.True(result.Cancelled);
+        Assert.False(result.Success);
+    }
+
     [Fact]
     public void DetermineSuccess_OutputExistsAndNonEmpty_FinishedLinePresent_ExitCodeZero_IsSuccess()
     {

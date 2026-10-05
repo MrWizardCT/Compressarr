@@ -19,7 +19,7 @@ namespace Compressarr.Core.Conversion;
 /// while "paused"). OS-level suspension is the same mechanism Task Manager's/Process Explorer's
 /// own "Suspend" does - it freezes every thread in the process, safe to resume mid-encode since
 /// nothing is killed or loses state.</summary>
-public interface IActiveHandBrakeProcess
+public interface IActiveEncodeProcess
 {
     bool IsRunning { get; }
     bool IsPaused { get; }
@@ -39,7 +39,7 @@ public interface IActiveHandBrakeProcess
     void Resume();
 }
 
-public sealed class ActiveHandBrakeProcess : IActiveHandBrakeProcess
+public sealed class ActiveEncodeProcess : IActiveEncodeProcess
 {
     // Undocumented but long-stable NT native APIs - the same mechanism Task Manager's and Process
     // Explorer's own "Suspend Process" use, and the standard technique for this in .NET since

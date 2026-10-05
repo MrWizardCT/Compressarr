@@ -3,23 +3,6 @@ using System.Text.Json.Nodes;
 
 namespace Compressarr.Core.Presets;
 
-public interface IHandBrakePresetService
-{
-    IReadOnlyList<HandBrakePreset> GetPresets(string presetsPath);
-    IReadOnlyList<string> GetPresetNames(string presetsPath);
-    bool PresetExists(string presetName, string presetsPath);
-    HandBrakePreset? GetPreset(string presetName, string presetsPath);
-
-    /// <summary>Maps a preset's FileFormat to an output extension. Tolerates both the modern
-    /// "av_mp4"/"av_mkv" values and the plain "mp4"/"mkv" values seen in older HandBrake preset
-    /// exports — both contain the container name as a substring, so a substring match covers
-    /// both. Defaults to ".mp4" with a warning if the preset is missing or the format is
-    /// unrecognized (ported verbatim from Get-CompressarrPresetExtension).</summary>
-    string GetOutputExtension(string presetName, string presetsPath, out string? warning);
-
-    void InvalidateCache(string? presetsPath = null);
-}
-
 /// <summary>
 /// Parses/flattens a HandBrake presets.json's PresetList/ChildrenArray tree (HandBrake nests
 /// presets under folder groupings) into every leaf preset found. Ported from
@@ -29,7 +12,7 @@ public interface IHandBrakePresetService
 /// same as v1's module-scoped $script:PresetTreeCache — call InvalidateCache() if the underlying
 /// file changes.
 /// </summary>
-public sealed class HandBrakePresetService : IHandBrakePresetService
+public sealed class HandBrakePresetService : IEncoderPresetService
 {
     private readonly ConcurrentDictionary<string, JsonNode?> _treeCache = new();
 

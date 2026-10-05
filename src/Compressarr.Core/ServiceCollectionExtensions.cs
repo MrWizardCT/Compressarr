@@ -29,14 +29,14 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IConfigStore, JsonConfigStore>();
         services.AddSingleton<IPathExpander, PathExpander>();
-        services.AddSingleton<IHandBrakePresetService, HandBrakePresetService>();
+        services.AddSingleton<IEncoderPresetService, HandBrakePresetService>();
         services.AddSingleton<IPresetInstaller, PresetInstaller>();
         services.AddSingleton<IHandBrakeInstaller, HandBrakeInstaller>();
 
         services.AddSingleton<IVideoFileScanner, VideoFileScanner>();
         services.AddSingleton<IFileBotRunner, FileBotRunner>();
-        services.AddSingleton<IActiveHandBrakeProcess, ActiveHandBrakeProcess>();
-        services.AddSingleton<IHandBrakeProcessRunner, HandBrakeProcessRunner>();
+        services.AddSingleton<IActiveEncodeProcess, ActiveEncodeProcess>();
+        services.AddSingleton<IEncoderRunner, HandBrakeProcessRunner>();
         services.AddSingleton<IMetadataService, MetadataService>();
         services.AddSingleton<IResumeStateStore, JsonResumeStateStore>();
         services.AddSingleton<IFileRouter, FileRouter>();

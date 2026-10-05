@@ -85,7 +85,7 @@ file sealed class TokenPathExpander : IPathExpander
     public bool PathExists(string value) => Directory.Exists(value) || File.Exists(value);
 }
 
-file sealed class FixedExtensionPresetService : IHandBrakePresetService
+file sealed class FixedExtensionPresetService : IEncoderPresetService
 {
     public IReadOnlyList<HandBrakePreset> GetPresets(string presetsPath) => Array.Empty<HandBrakePreset>();
     public IReadOnlyList<string> GetPresetNames(string presetsPath) => Array.Empty<string>();
@@ -97,21 +97,19 @@ file sealed class FixedExtensionPresetService : IHandBrakePresetService
 
 /// <summary>Simulates HandBrakeCLI by writing a real (tiny) output file, since the orchestrator
 /// moves/measures it for real afterward.</summary>
-file sealed class FakeProcessRunner : IHandBrakeProcessRunner
+file sealed class FakeProcessRunner : IEncoderRunner
 {
     public int CallCount { get; private set; }
 
-    public Task<HandBrakeRunResult> RunAsync(
-        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
-        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken)
+    public Task<EncodeResult> RunAsync(EncodeRequest request, Action<EncodeProgress>? onProgress, CancellationToken cancellationToken)
     {
         CallCount++;
-        File.WriteAllText(tempOutputPath, "fake encoded output");
+        File.WriteAllText(request.OutputPath, "fake encoded output");
         // Matches real HandBrakeProcessRunner - it always writes a detail log, success or not, so
         // KeepSuccessfulHandBrakeLogs-driven deletion has a real file to actually exercise.
-        Directory.CreateDirectory(Path.GetDirectoryName(detailLogFile)!);
-        File.WriteAllText(detailLogFile, "fake HandBrake detail output");
-        return Task.FromResult(new HandBrakeRunResult(Success: true, DetailLogFile: detailLogFile));
+        Directory.CreateDirectory(Path.GetDirectoryName(request.DetailLogFile)!);
+        File.WriteAllText(request.DetailLogFile, "fake HandBrake detail output");
+        return Task.FromResult(new EncodeResult(Success: true, DetailLogFile: request.DetailLogFile));
     }
 }
 
@@ -120,56 +118,50 @@ file sealed class FakeProcessRunner : IHandBrakeProcessRunner
 /// HandBrakeCLI is still "encoding" the first file, the exact live scenario that exposed the
 /// resume-state lost-update bug (a user's reorder/skip/preset-override change got silently wiped
 /// the moment the in-flight file finished).</summary>
-file sealed class ConcurrentEditProcessRunner : IHandBrakeProcessRunner
+file sealed class ConcurrentEditProcessRunner : IEncoderRunner
 {
     private readonly Action _onFirstRun;
     private bool _fired;
 
     public ConcurrentEditProcessRunner(Action onFirstRun) => _onFirstRun = onFirstRun;
 
-    public Task<HandBrakeRunResult> RunAsync(
-        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
-        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken)
+    public Task<EncodeResult> RunAsync(EncodeRequest request, Action<EncodeProgress>? onProgress, CancellationToken cancellationToken)
     {
         if (!_fired)
         {
             _fired = true;
             _onFirstRun();
         }
-        File.WriteAllText(tempOutputPath, "fake encoded output");
-        return Task.FromResult(new HandBrakeRunResult(Success: true, DetailLogFile: detailLogFile));
+        File.WriteAllText(request.OutputPath, "fake encoded output");
+        return Task.FromResult(new EncodeResult(Success: true, DetailLogFile: request.DetailLogFile));
     }
 }
 
 /// <summary>Simulates the exact real failure captured live against a genuinely full disk: a
-/// truncated temp output file, a failed HandBrakeRunResult, and the real HandBrakeCLI log content
+/// truncated temp output file, a failed EncodeResult, and the real HandBrakeCLI log content
 /// observed (mux error naming "No space left on device", "Finished work at" printed anyway,
 /// "Encode failed").</summary>
-file sealed class FailingProcessRunner : IHandBrakeProcessRunner
+file sealed class FailingProcessRunner : IEncoderRunner
 {
-    public Task<HandBrakeRunResult> RunAsync(
-        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
-        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken)
+    public Task<EncodeResult> RunAsync(EncodeRequest request, Action<EncodeProgress>? onProgress, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(detailLogFile)!);
-        File.WriteAllText(detailLogFile, "Encode failed (error 1).\n");
-        return Task.FromResult(new HandBrakeRunResult(Success: false, DetailLogFile: detailLogFile));
+        Directory.CreateDirectory(Path.GetDirectoryName(request.DetailLogFile)!);
+        File.WriteAllText(request.DetailLogFile, "Encode failed (error 1).\n");
+        return Task.FromResult(new EncodeResult(Success: false, DetailLogFile: request.DetailLogFile));
     }
 }
 
-file sealed class DiskFullProcessRunner : IHandBrakeProcessRunner
+file sealed class DiskFullProcessRunner : IEncoderRunner
 {
-    public Task<HandBrakeRunResult> RunAsync(
-        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
-        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken)
+    public Task<EncodeResult> RunAsync(EncodeRequest request, Action<EncodeProgress>? onProgress, CancellationToken cancellationToken)
     {
-        File.WriteAllText(tempOutputPath, "truncated, disk filled up mid-write");
-        File.WriteAllText(detailLogFile,
+        File.WriteAllText(request.OutputPath, "truncated, disk filled up mid-write");
+        File.WriteAllText(request.DetailLogFile,
             "ERROR: avformatMux: track 0, av_interleaved_write_frame failed with error 'No space left on device'\n" +
             "Finished work at Sat Jan  1 00:00:00 2026\n" +
             "libhb: work result = 4\n" +
             "Encode failed (error 4).\n");
-        return Task.FromResult(new HandBrakeRunResult(Success: false, DetailLogFile: detailLogFile));
+        return Task.FromResult(new EncodeResult(Success: false, DetailLogFile: request.DetailLogFile));
     }
 }
 

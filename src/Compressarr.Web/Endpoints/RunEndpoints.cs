@@ -96,13 +96,13 @@ public static class RunEndpoints
         app.MapPost("/api/run/queue/preset-override", (PresetOverrideRequest request, IConfigStore configStore, IQueueService queue) =>
             ToResult(queue.OverridePreset(configStore.Load(AppPaths.GetConfigFilePath()), request.LaneId, request.FullName, request.Preset)));
 
-        app.MapPost("/api/run/pause", (IActiveHandBrakeProcess activeProcess) =>
+        app.MapPost("/api/run/pause", (IActiveEncodeProcess activeProcess) =>
         {
             activeProcess.Pause();
             return Results.Ok();
         });
 
-        app.MapPost("/api/run/resume", (IActiveHandBrakeProcess activeProcess) =>
+        app.MapPost("/api/run/resume", (IActiveEncodeProcess activeProcess) =>
         {
             activeProcess.Resume();
             return Results.Ok();
@@ -114,7 +114,7 @@ public static class RunEndpoints
             ICpuUsageSampler cpuSampler,
             IConfigStore configStore,
             IQueueService queue,
-            IActiveHandBrakeProcess activeProcess) =>
+            IActiveEncodeProcess activeProcess) =>
         {
             var snapshot = runState.GetSnapshot();
             var cpu = await cpuSampler.SampleAsync();

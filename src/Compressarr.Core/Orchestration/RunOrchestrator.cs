@@ -61,7 +61,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
     private readonly TimeSpan _postExecTimeout;
 
     private readonly IPathExpander _pathExpander;
-    private readonly IHandBrakePresetService _presets;
+    private readonly IEncoderPresetService _presets;
     private readonly IConversionOrchestrator _conversionOrchestrator;
     private readonly IMetadataService _metadata;
     private readonly IResumeStateStore _resumeStore;
@@ -78,7 +78,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
 
     public RunOrchestrator(
         IPathExpander pathExpander,
-        IHandBrakePresetService presets,
+        IEncoderPresetService presets,
         IConversionOrchestrator conversionOrchestrator,
         IMetadataService metadata,
         IResumeStateStore resumeStore,
@@ -106,7 +106,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
     /// an override" shape RunLoopController's own TimeProvider seam already uses.</summary>
     internal RunOrchestrator(
         IPathExpander pathExpander,
-        IHandBrakePresetService presets,
+        IEncoderPresetService presets,
         IConversionOrchestrator conversionOrchestrator,
         IMetadataService metadata,
         IResumeStateStore resumeStore,

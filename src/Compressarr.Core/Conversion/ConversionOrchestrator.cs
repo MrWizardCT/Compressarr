@@ -89,8 +89,8 @@ public interface IConversionOrchestrator
     /// reload, derived paths) so this lane's NEXT call - however many other lanes' files are
     /// processed in between - picks up mid-run settings changes exactly like before.
     ///
-    /// cancellationToken (Abort) kills the in-flight HandBrakeCLI process immediately -
-    /// IHandBrakeProcessRunner registers a Kill(entireProcessTree) callback directly on it. The
+    /// cancellationToken (Abort) kills the in-flight encoder process immediately -
+    /// the encoder runner registers a Kill(entireProcessTree) callback directly on it. The
     /// caller is responsible for checking the separate, gentler stopToken (Stop Monitoring) BEFORE
     /// calling this method for the next file - once a file is in flight here, it always finishes
     /// completely.</summary>
@@ -142,9 +142,9 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
     private readonly IPathExpander _pathExpander;
     private readonly IVideoFileScanner _scanner;
     private readonly IFileBotRunner _fileBotRunner;
-    private readonly IHandBrakePresetService _presets;
+    private readonly IEncoderPresetService _presets;
     private readonly IMetadataService _metadata;
-    private readonly IHandBrakeProcessRunner _processRunner;
+    private readonly IEncoderRunner _processRunner;
     private readonly IFileRouter _fileRouter;
     private readonly ICompanionFileService _companionFiles;
     private readonly IArrUnmonitorService _arrUnmonitor;
@@ -158,9 +158,9 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         IPathExpander pathExpander,
         IVideoFileScanner scanner,
         IFileBotRunner fileBotRunner,
-        IHandBrakePresetService presets,
+        IEncoderPresetService presets,
         IMetadataService metadata,
-        IHandBrakeProcessRunner processRunner,
+        IEncoderRunner processRunner,
         IFileRouter fileRouter,
         ICompanionFileService companionFiles,
         IArrUnmonitorService arrUnmonitor,
@@ -864,11 +864,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         var detailLogFile = Path.Combine(logFilePath, logName);
 
         var lastLoggedPercent = -10.0;
-        void OnOutputLine(string line)
+        void OnProgress(EncodeProgress progress)
         {
-            var progress = HandBrakeProgressParser.TryParse(line);
-            if (progress is null) return;
-
             _progress.FileProgress(lane.Id, progress.Percent, progress.Fps, progress.Eta);
 
             // HandBrakeCLI emits a progress line roughly once a second - logging every one of them
@@ -882,7 +879,10 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             }
         }
 
-        var runResult = await _processRunner.RunAsync(hbloc, file.FullName, tempFileName, presetsPath, presetName, config.HandBrake.Options, detailLogFile, OnOutputLine, cancellationToken);
+        var runResult = await _processRunner.RunAsync(
+            new EncodeRequest(hbloc, file.FullName, tempFileName, presetsPath, presetName, config.HandBrake.Options, detailLogFile),
+            OnProgress,
+            cancellationToken);
         var endTime = DateTime.Now;
 
         // Settings are otherwise only read once, at the start of a manual run or for the whole
