@@ -8,6 +8,7 @@ using Compressarr.Core.FileBot;
 using Compressarr.Core.Logging;
 using Compressarr.Core.Notifications;
 using Compressarr.Core.Orchestration;
+using Compressarr.Core.Queue;
 using Compressarr.Core.Presets;
 using Compressarr.Core.Reporting;
 using Compressarr.Core.Routing;
@@ -76,6 +77,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotificationDispatcher, NotificationDispatcher>();
 
         services.AddSingleton<IActiveRunController, ActiveRunController>();
+        services.AddSingleton<IQueueService, QueueService>();
         services.AddSingleton<IConversionOrchestrator, ConversionOrchestrator>();
         services.AddSingleton<IRunOrchestrator, RunOrchestrator>();
         services.AddSingleton<IRunLoopController, RunLoopController>();
