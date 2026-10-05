@@ -7,7 +7,16 @@ namespace Compressarr.Web.Endpoints;
 
 public static class AboutEndpoints
 {
-    private static string InstalledVersionString => FormatVersion(typeof(AboutEndpoints).Assembly.GetName().Version);
+    // The informational version carries any pre-release suffix ("2.2.0-dev"), which the numeric
+    // assembly version drops - shown so a dev/pre-release build can be told apart from a release.
+    // Build metadata after '+' (the commit hash) is trimmed off.
+    private static string InstalledVersionString =>
+        typeof(AboutEndpoints).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .Select(a => a.InformationalVersion.Split('+')[0])
+            .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))
+        ?? FormatVersion(typeof(AboutEndpoints).Assembly.GetName().Version);
 
     public static void MapAboutEndpoints(this IEndpointRouteBuilder app)
     {
