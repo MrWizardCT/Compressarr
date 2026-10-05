@@ -60,6 +60,15 @@ file sealed class RecordingProcessRunner : IHandBrakeProcessRunner
     }
 }
 
+/// <summary>Simulates HandBrakeCLI failing every encode (no output file written).</summary>
+file sealed class FailingProcessRunner : IHandBrakeProcessRunner
+{
+    public Task<HandBrakeRunResult> RunAsync(
+        string cliPath, string sourcePath, string tempOutputPath, string presetsPath, string presetName,
+        string? extraOptions, string detailLogFile, Action<string>? onOutputLine, CancellationToken cancellationToken) =>
+        Task.FromResult(new HandBrakeRunResult(Success: false, DetailLogFile: detailLogFile));
+}
+
 file sealed class NoOpCompanionFileService : ICompanionFileService
 {
     public void MoveCompanionFiles(string originalFileFullName, string originalFileDirectory, string routedVideoDestPath, DeleteAfterConvertMode deleteAfterConvert, IReadOnlyList<string> companionExtensions, DeleteAfterConvertMode unmatchedCompanionAction, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite) { }
@@ -312,6 +321,52 @@ public class RunOrchestratorTests : IDisposable
         Assert.NotNull(result);
         Assert.Equal(4, result!.TotalFiles);
         Assert.Equal(new[] { "b-file1.mkv", "a-file1.mkv", "b-file2.mkv", "a-file2.mkv" }, processRunner.ProcessedInOrder);
+    }
+
+    private (CompressarrConfig Config, string Input) MakeSingleLaneConfig(params string[] fileNames)
+    {
+        var input = Path.Combine(_tempDir, "Single_Input");
+        var output = Path.Combine(_tempDir, "Single_Output");
+        Directory.CreateDirectory(input);
+        Directory.CreateDirectory(output);
+        foreach (var name in fileNames) File.WriteAllText(Path.Combine(input, name), "video");
+
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.HandBrake.CliPath = Path.Combine(_tempDir, "HandBrakeCLI.exe");
+        config.HandBrake.PresetsPath = Path.Combine(_tempDir, "presets.json");
+        config.Logging.LogFilePath = Path.Combine(_tempDir, "Logs");
+        config.Report.ReportPath = Path.Combine(_tempDir, "Reports");
+        config.Lanes.Add(MakeLane("lane", "Lane", input, output));
+        return (config, input);
+    }
+
+    [Fact]
+    public async Task RunOnceAsync_WhenEveryFileCompleted_DeletesTheWholeResumeFile()
+    {
+        // Characterization (2.1.8): resume.json is only kept while something is still outstanding.
+        // Once every tracked entry is Completed, the file - including the Completed history - is
+        // deleted at the end of the pass.
+        var (config, _) = MakeSingleLaneConfig("a.mkv", "b.mkv");
+        var (orchestrator, resumeFilePath) = BuildOrchestrator(config, new RecordingProcessRunner());
+
+        var result = await orchestrator.RunOnceAsync(config);
+
+        Assert.Equal(2, result!.TotalFiles);
+        Assert.False(File.Exists(resumeFilePath));
+    }
+
+    [Fact]
+    public async Task RunOnceAsync_WhenAFileFailed_KeepsTheResumeFileWithItsErrorEntry()
+    {
+        var (config, input) = MakeSingleLaneConfig("a.mkv");
+        var (orchestrator, resumeFilePath) = BuildOrchestrator(config, new FailingProcessRunner());
+
+        await orchestrator.RunOnceAsync(config);
+
+        Assert.True(File.Exists(resumeFilePath));
+        var entry = Assert.Single(new JsonResumeStateStore().Load(resumeFilePath));
+        Assert.Equal(Path.Combine(input, "a.mkv"), entry.FullName);
+        Assert.Equal(ResumeStatus.Error, entry.Status);
     }
 
     [Fact]

@@ -27,6 +27,18 @@ public class VideoFileScannerTests : IDisposable
     }
 
     [Fact]
+    public void FindVideoFiles_LimitCapsHowManyFilesAreReturned_AndZeroMeansNoLimit()
+    {
+        // Settings' "Max files per run" - a folder that suddenly fills up shouldn't be picked up
+        // all at once. 0 (the default) means unlimited.
+        for (var i = 0; i < 5; i++) File.WriteAllText(Path.Combine(_tempDir, $"f{i}.mkv"), "video");
+
+        Assert.Equal(2, _scanner.FindVideoFiles(_tempDir, new[] { "mkv" }, minSizeBytes: 0, limit: 2).Count);
+        Assert.Equal(5, _scanner.FindVideoFiles(_tempDir, new[] { "mkv" }, minSizeBytes: 0, limit: 0).Count);
+        Assert.Equal(5, _scanner.FindVideoFiles(_tempDir, new[] { "mkv" }, minSizeBytes: 0, limit: 99).Count);
+    }
+
+    [Fact]
     public void FindVideoFiles_ReparsePointDirectory_IsNotTraversed()
     {
         // Real bug flagged in the v2.1.3 code review: the scanner descended into every
