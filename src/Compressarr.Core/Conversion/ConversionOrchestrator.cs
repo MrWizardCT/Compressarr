@@ -721,9 +721,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         // Monitor page's own queue display - both must never disagree about "what's next" for a
         // file nobody has ever dragged.
         var scanned = _scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit).ToList();
-        var naturalOrderIndex = scanned
-            .Select((f, idx) => (f.FullName, idx))
-            .ToDictionary(x => x.FullName, x => x.idx, StringComparer.OrdinalIgnoreCase);
+        var naturalOrderIndex = QueueRules.NaturalIndexMap(scanned);
 
         // FileBot above (and any earlier lane's own prep) can take real wall-clock time, during
         // which the Monitor page's own poll may have already tracked brand-new files and stamped

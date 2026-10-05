@@ -81,15 +81,7 @@ public sealed class QueueService : IQueueService
     {
         _resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState =>
         {
-            for (var i = 0; i < items.Count; i++)
-            {
-                var item = items[i];
-                var lane = config.Lanes.FirstOrDefault(l => l.Id == item.LaneId);
-                if (lane is null) continue;
-
-                var entry = QueueRules.FindOrCreatePendingEntry(resumeState, lane.Id, item.FullName);
-                if (entry is not null) entry.Order = i;
-            }
+            QueueRules.ApplyExplicitOrder(config, resumeState, items);
             return true;
         });
     }

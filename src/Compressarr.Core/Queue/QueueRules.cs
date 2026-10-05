@@ -113,9 +113,7 @@ public static class QueueRules
                 continue;
             }
 
-            var naturalIndex = scannedFiles
-                .Select((f, idx) => (f.FullName, idx))
-                .ToDictionary(x => x.FullName, x => x.idx, StringComparer.OrdinalIgnoreCase);
+            var naturalIndex = NaturalIndexMap(scannedFiles);
 
             var unlocked = resumeState
                 .Where(e => e.LaneId == lane.Id && e.Status == ResumeStatus.Pending && !e.Order.HasValue)
@@ -202,9 +200,7 @@ public static class QueueRules
             var scannedFiles = scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit)
                 .Where(f => !trackedPaths.Contains(f.FullName) || pendingByPath.ContainsKey(f.FullName))
                 .ToList();
-            var naturalIndex = scannedFiles
-                .Select((f, idx) => (f.FullName, idx))
-                .ToDictionary(x => x.FullName, x => x.idx, StringComparer.OrdinalIgnoreCase);
+            var naturalIndex = NaturalIndexMap(scannedFiles);
 
             var files = scannedFiles.Where(f => !(pendingByPath.TryGetValue(f.FullName, out var e) && e.Removed)).ToList();
 
@@ -339,6 +335,32 @@ public static class QueueRules
         return addedUntracked;
     }
 
+    /// <summary>A lane's scan results as FullName -> position in the scan (case-insensitive). This is
+    /// the "natural" order - the last tie-break for a file nobody has positioned - and it is built
+    /// here, once, so the Monitor page and the engine can never derive it differently.</summary>
+    public static Dictionary<string, int> NaturalIndexMap(IEnumerable<FileInfo> scanned) =>
+        scanned
+            .Select((f, idx) => (f.FullName, idx))
+            .ToDictionary(x => x.FullName, x => x.idx, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Applies an explicit user order: each item's Order becomes its position in the list,
+    /// across every lane. Items naming an unconfigured lane or a file that no longer exists are
+    /// skipped (their position is still consumed, as before).</summary>
+    public static void ApplyExplicitOrder(
+        CompressarrConfig config,
+        List<ResumeEntry> resumeState,
+        IReadOnlyList<(string LaneId, string FullName)> items)
+    {
+        for (var i = 0; i < items.Count; i++)
+        {
+            var lane = config.Lanes.FirstOrDefault(l => l.Id == items[i].LaneId);
+            if (lane is null) continue;
+
+            var entry = FindOrCreatePendingEntry(resumeState, lane.Id, items[i].FullName);
+            if (entry is not null) entry.Order = i;
+        }
+    }
+
     /// <summary>This lane's waiting entries in processing order - user-set/stamped Order first. A
     /// Skipped entry stays Pending (still shown in the queue, still eligible to be un-skipped
     /// later) but is excluded here, as is a Removed one.</summary>
@@ -425,9 +447,7 @@ public static class QueueRules
                 {
                     var inputPath = pathExpander.Expand(lane.Input);
                     naturalIndex = !string.IsNullOrWhiteSpace(inputPath) && Directory.Exists(inputPath)
-                        ? scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit)
-                            .Select((f, idx) => (f.FullName, idx))
-                            .ToDictionary(x => x.FullName, x => x.idx, StringComparer.OrdinalIgnoreCase)
+                        ? NaturalIndexMap(scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit))
                         : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 }
                 catch (Exception ex)
