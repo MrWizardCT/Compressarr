@@ -3,6 +3,7 @@ using Compressarr.Core.Conversion;
 using Compressarr.Core.Logging;
 using Compressarr.Core.Notifications;
 using Compressarr.Core.Presets;
+using Compressarr.Core.Queue;
 using Compressarr.Core.Reporting;
 using Compressarr.Core.Routing;
 
@@ -321,11 +322,9 @@ public sealed class RunOrchestrator : IRunOrchestrator
             }
 
             // Phase 2: one global loop across every prepared lane, picking whichever eligible entry
-            // is highest priority regardless of which lane it belongs to - lower explicit Order
-            // first, then (for entries nobody has ever dragged) each lane's own position in
-            // config.Lanes, then that file's natural scan order within its own lane. This is the
-            // same three-level tie-break RunEndpoints.ComputeUpNext computes independently for the
-            // Monitor page's own queue display, so the two can never disagree about "what's next."
+            // is highest priority regardless of which lane it belongs to. The picking rule itself
+            // (QueueRules.SelectNext) is the very same one the Monitor page's queue display
+            // (QueueRules.BuildUpNext) sorts by, so the two can never disagree about "what's next."
             while (true)
             {
                 token.ThrowIfCancellationRequested();
@@ -336,12 +335,10 @@ public sealed class RunOrchestrator : IRunOrchestrator
 
                 _conversionOrchestrator.RefreshResumeState(resumeState, resumeFilePath);
 
-                var next = resumeState
-                    .Where(e => laneContexts.ContainsKey(e.LaneId) && e.Status == ResumeStatus.Pending && !e.Skipped && !e.Removed)
-                    .OrderBy(e => e.Order ?? int.MaxValue)
-                    .ThenBy(e => laneOrderIndex[e.LaneId])
-                    .ThenBy(e => laneContexts[e.LaneId].NaturalOrderIndex.TryGetValue(e.FullName, out var idx) ? idx : int.MaxValue)
-                    .FirstOrDefault(e => File.Exists(e.FullName));
+                var next = QueueRules.SelectNext(
+                    resumeState,
+                    laneOrderIndex,
+                    (laneId, fullName) => laneContexts[laneId].NaturalOrderIndex.TryGetValue(fullName, out var idx) ? idx : int.MaxValue);
 
                 if (next is null) break;
 

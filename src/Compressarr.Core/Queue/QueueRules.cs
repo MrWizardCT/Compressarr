@@ -285,4 +285,181 @@ public static class QueueRules
         items.AddRange(errorItems);
         return items;
     }
+
+    // ---- engine-side rules ------------------------------------------------------------------
+
+    /// <summary>Tracks the files a lane's Input scan found. Returns true if any brand-new entry was
+    /// added (so the caller knows to save).
+    ///
+    /// - A file with no entry at all is tracked the first time anything sees it, stamped as the very
+    ///   last position - even while the lane already has a backlog, which used to skip adopting new
+    ///   files entirely and leave them to be ordered by live scan order on the Monitor page until
+    ///   the backlog drained, so a file that arrived later but enumerated earlier displayed (and
+    ///   then got stamped) above one already waiting. CreatedByQueueEdit when the lane is already
+    ///   resumed, since this is bookkeeping for a brand-new file, not interrupted work, and would
+    ///   otherwise be mislabeled "Resumed".
+    /// - A file reappearing at a path that already has a resume entry (the same source re-added
+    ///   after a prior run completed or failed it) reuses that entry rather than adding a second
+    ///   one - but only while the lane has nothing else pending, and never for a MoveFailed /
+    ///   CompanionMoveFailed / CleanupPending entry: its source is legitimately still there and it
+    ///   is already being handled by the retry loops (move retry only, no re-encode), so a routine
+    ///   rescan must NOT flip it back to Pending (real regression: an extended destination outage
+    ///   re-encoded the same file from scratch on every poll). Re-entering the queue is a new
+    ///   arrival, so it's restamped at the end instead of keeping its old low Order, which made a
+    ///   re-added file jump above everything already waiting.</summary>
+    public static bool TrackScannedFiles(List<ResumeEntry> resumeState, string laneId, IEnumerable<FileInfo> scanned, ISet<string> fileBotUnmatched, bool laneHadPending)
+    {
+        var addedUntracked = false;
+
+        foreach (var f in scanned)
+        {
+            var existing = resumeState.FirstOrDefault(e => e.LaneId == laneId && e.FullName == f.FullName);
+            if (existing is null)
+            {
+                resumeState.Add(new ResumeEntry
+                {
+                    LaneId = laneId,
+                    FullName = f.FullName,
+                    Status = ResumeStatus.Pending,
+                    FileBotUnmatched = fileBotUnmatched.Contains(f.FullName),
+                    CreatedByQueueEdit = laneHadPending,
+                    Order = ResumeQueueOrder.NextOrder(resumeState)
+                });
+                addedUntracked = true;
+            }
+            else if (!laneHadPending
+                && existing.Status is not ResumeStatus.Pending
+                && existing.Status is not ResumeStatus.MoveFailed and not ResumeStatus.CompanionMoveFailed and not ResumeStatus.CleanupPending)
+            {
+                existing.Status = ResumeStatus.Pending;
+                existing.Order = ResumeQueueOrder.NextOrder(resumeState);
+            }
+        }
+
+        return addedUntracked;
+    }
+
+    /// <summary>This lane's waiting entries in processing order - user-set/stamped Order first. A
+    /// Skipped entry stays Pending (still shown in the queue, still eligible to be un-skipped
+    /// later) but is excluded here, as is a Removed one.</summary>
+    public static List<ResumeEntry> WaitingEntriesInOrder(List<ResumeEntry> resumeState, string laneId) =>
+        resumeState
+            .Where(e => e.LaneId == laneId && e.Status == ResumeStatus.Pending)
+            .OrderBy(p => p.Order ?? int.MaxValue)
+            .Where(p => !p.Skipped && !p.Removed)
+            .ToList();
+
+    /// <summary>The next file the engine should process across every prepared lane: the eligible
+    /// entry with the lowest explicit Order, then (for entries nobody ever positioned) its lane's
+    /// position in config.Lanes, then its natural scan position within its own lane. This is the
+    /// same three-level tie-break BuildUpNext uses for the Monitor page, so the queue shown and the
+    /// processing order cannot disagree. laneOrderIndex's keys are the lanes that were prepared this
+    /// pass (an entry from any other lane is never eligible). Entries whose source file is gone are
+    /// skipped.</summary>
+    public static ResumeEntry? SelectNext(
+        IEnumerable<ResumeEntry> resumeState,
+        IReadOnlyDictionary<string, int> laneOrderIndex,
+        Func<string, string, int> naturalIndexOf) =>
+        resumeState
+            .Where(e => laneOrderIndex.ContainsKey(e.LaneId) && e.Status == ResumeStatus.Pending && !e.Skipped && !e.Removed)
+            .OrderBy(e => e.Order ?? int.MaxValue)
+            .ThenBy(e => laneOrderIndex[e.LaneId])
+            .ThenBy(e => naturalIndexOf(e.LaneId, e.FullName))
+            .FirstOrDefault(e => File.Exists(e.FullName));
+
+    /// <summary>Merges the user-owned queue fields (Order / Skipped / PresetOverride / Removed) from
+    /// what's currently on disk onto the matching in-memory entries (by LaneId + FullName). Deliberately
+    /// narrow: only those four fields are ever touched, never Status or EncodedFilePath, so this can
+    /// never resurrect or misclassify an entry actively being driven through the engine's own state
+    /// machine - it only pulls in what a queue-control web request could actually have changed. A
+    /// disk entry with no in-memory match (a freshly-scanned file the user, or the Monitor page, acted
+    /// on before the engine ever tracked it) is adopted as a new entry.</summary>
+    public static void MergeUserEdits(List<ResumeEntry> resumeState, IEnumerable<ResumeEntry> onDisk)
+    {
+        foreach (var diskEntry in onDisk)
+        {
+            var inMemory = resumeState.FirstOrDefault(e => e.LaneId == diskEntry.LaneId && e.FullName == diskEntry.FullName);
+            if (inMemory is not null)
+            {
+                inMemory.Order = diskEntry.Order;
+                inMemory.Skipped = diskEntry.Skipped;
+                inMemory.PresetOverride = diskEntry.PresetOverride;
+                inMemory.Removed = diskEntry.Removed;
+            }
+            else
+            {
+                resumeState.Add(diskEntry);
+            }
+        }
+    }
+
+    /// <summary>One-time migration: gives every pre-existing Pending entry that still lacks an Order
+    /// (i.e. it predates ResumeEntry.Order being stamped automatically at creation time) a permanent
+    /// one, computed by freezing today's own effective display order - the same Order-null -> lane's
+    /// position in config.Lanes -> natural per-lane scan order tie-break BuildUpNext computes - as
+    /// everyone's new permanent position. A cheap no-op once every Pending entry has one (returns
+    /// false). Returns true if it changed anything (the caller saves).
+    /// onScanFailure gets a ready-to-log message if one lane's scan throws: this runs once, before
+    /// the engine's own per-lane error handling begins, so a single unreachable lane must never take
+    /// down the whole pass over what's otherwise just a one-time migration - that lane's entries
+    /// still get a stable position, just not necessarily today's exact natural order.</summary>
+    public static bool BackfillMissingOrder(
+        CompressarrConfig config,
+        List<ResumeEntry> resumeState,
+        IPathExpander pathExpander,
+        IVideoFileScanner scanner,
+        Action<string> onScanFailure)
+    {
+        var pending = resumeState.Where(e => e.Status == ResumeStatus.Pending).ToList();
+        if (pending.All(e => e.Order.HasValue)) return false;
+
+        var ranked = new List<(ResumeEntry Entry, int LaneOrderIndex, int NaturalIndex)>();
+        var laneOrderIndex = 0;
+        foreach (var lane in config.Lanes)
+        {
+            var lanePending = pending.Where(e => e.LaneId == lane.Id && !e.Order.HasValue).ToList();
+            if (lanePending.Count > 0)
+            {
+                Dictionary<string, int> naturalIndex;
+                try
+                {
+                    var inputPath = pathExpander.Expand(lane.Input);
+                    naturalIndex = !string.IsNullOrWhiteSpace(inputPath) && Directory.Exists(inputPath)
+                        ? scanner.FindVideoFiles(inputPath, config.Processing.VidTypes, config.Processing.MinSizeBytes, config.Processing.Limit)
+                            .Select((f, idx) => (f.FullName, idx))
+                            .ToDictionary(x => x.FullName, x => x.idx, StringComparer.OrdinalIgnoreCase)
+                        : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                }
+                catch (Exception ex)
+                {
+                    onScanFailure($"  Order backfill: couldn't scan lane '{lane.DisplayName}' ({ex.Message}) - its own entries will still get a stable position, just not necessarily today's exact order.");
+                    naturalIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                foreach (var entry in lanePending)
+                {
+                    var natural = naturalIndex.TryGetValue(entry.FullName, out var idx) ? idx : int.MaxValue;
+                    ranked.Add((entry, laneOrderIndex, natural));
+                }
+            }
+            laneOrderIndex++;
+        }
+
+        var nextOrder = ResumeQueueOrder.NextOrder(resumeState);
+        foreach (var (entry, _, _) in ranked.OrderBy(r => r.LaneOrderIndex).ThenBy(r => r.NaturalIndex))
+        {
+            entry.Order = nextOrder++;
+        }
+
+        // Catch-all for anything the per-lane loop above couldn't place (a LaneId that no longer
+        // matches any currently-configured lane, e.g. one that's since been deleted) - appended at
+        // the very end rather than left permanently null, so it still eventually gets a real,
+        // stable position instead of falling back to sorting last forever.
+        foreach (var entry in pending.Where(e => !e.Order.HasValue))
+        {
+            entry.Order = nextOrder++;
+        }
+
+        return true;
+    }
 }
