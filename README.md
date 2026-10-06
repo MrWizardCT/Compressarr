@@ -49,9 +49,26 @@ best quality while using a fraction of the space.
   set on a file is no longer lost when FileBot renames it.
 - **Redirects are visible afterward** - the HTML report and the History page flag any run in which
   a file landed in a different lane than the one it was found in.
-- Under the hood (no change in behavior): the queue's ordering/tracking rules now live in one
-  place, and the encoder is behind an engine-neutral interface (HandBrake is still the only
-  encoder), both pinned by a much larger automated test suite.
+- **Encoder page and Profiles page** - two new pages under Monitor. **Encoder** is where the
+  tools live (HandBrakeCLI, and the new optional ffmpeg). **Profiles** lists every encoding
+  profile Compressarr has: its **own built-ins** (locked) plus **yours**. Compressarr now always
+  uses its own profiles - HandBrake's `presets.json` is no longer read while encoding, and the
+  *presets.json path / Install/Merge / Reload* controls are gone. You can **create, edit,
+  duplicate and delete** HandBrake profiles in a built-in editor and **import** presets from an
+  installed HandBrake or any presets file. Your profiles are backed up and exported with the rest
+  of your settings. See [Encoder page](#encoder-page) and [Profiles page](#profiles-page).
+- **ffmpeg as an optional second encoder (experimental)** - pick **ffmpeg** instead of HandBrake
+  *per lane*. ffmpeg profiles are structured recipes (no raw command lines): encoder, quality,
+  audio and subtitle track rules, auto-crop and auto-deinterlace. A profile editor shows
+  **Preview decisions** for a real file - which tracks are kept or dropped and why, and the exact
+  command. ffmpeg checks every finished file's **length against the source** before the original is
+  touched (new **ERROR 111**), and files with **Dolby Vision or HDR10+** are handed to HandBrake
+  (or refused) rather than silently losing that metadata. See [ffmpeg](#ffmpeg-experimental).
+- **Migrates itself** - on the first start of 2.2, the presets your lanes use are copied from your
+  HandBrake `presets.json` into Compressarr's own profiles; nothing changes behind your back.
+- Under the hood: the queue's ordering/tracking rules live in one place, the conversion engine
+  is split into small, separately-tested pieces, and the encoder is behind an engine-neutral
+  interface - all pinned by a much larger automated test suite.
 
 
 ```
@@ -99,7 +116,7 @@ moves along with it immediately, even if other not-yet-processed videos still sh
 source folder. Once every video in a folder has been converted (or otherwise cleared), the
 now-empty folder itself is removed too.
 
-Processing is **sequential** - one file at a time, no parallel HandBrakeCLI jobs. If a run is
+Processing is **sequential** - one file at a time, no parallel encodes. If a run is
 interrupted, relaunching resumes from the unprocessed files.
 
 ### FileBot pre-processing (optional)
@@ -211,10 +228,30 @@ right on the row so you can verify it without waiting for the schedule.
 4. Launch Compressarr from the Start Menu - it runs as a tray icon only, with no window of its
    own. Right-click the tray icon for **Open Web UI**, or just browse to
    `http://localhost:1212` (or whatever port you've configured).
-5. On the Settings page, use **Check/Install** next to HandBrakeCLI path to detect an existing
-   install or download one automatically, and **Install/Merge Presets** to add Compressarr's own
-   HandBrake presets to your `presets.json` (merging into an existing file if you already have
-   one, installing fresh if you don't).
+5. On the **Encoder** page, use **Check/Install** next to HandBrakeCLI path to detect an existing
+   install or download one automatically. Compressarr's own profiles (**Compressarr SD-HD** and
+   **Compressarr UHD AV1**) are built in - there is nothing to install or merge. The Monitor page
+   shows a *Finish setting up* notice until the tools your lanes need are found.
+O
+
+# ---------------------------------------------------------------- Settings table
+rep(<<'O', "", 'settings rows');
+| HandBrakeCLI path | Path to `HandBrakeCLI.exe` - Check/Install finds or downloads it |
+| presets.json path | Path to HandBrake's presets.json - Install/Merge Presets adds Compressarr's own, Reload picks up changes made to the file without restarting Compressarr |
+| Extra CLI options | Additional flags passed straight through to every HandBrakeCLI conversion |
+O
+
+# ---------------------------------------------------------------- Backups
+rep(<<'O', <<'N', 'backup bullet');
+- **HandBrake presets are not included** in the backup (it's HandBrake's own file, stored outside
+  Compressarr's data folder). If HandBrake is also freshly installed, use the **Install/Merge
+  Presets** button on Settings (in the HandBrake card) to re-add Compressarr's presets to it.
+O
+- **Your own encoding profiles are included** (HandBrake and ffmpeg), so a restore brings back the
+  profiles your lanes use. HandBrake's own `presets.json` is not - Compressarr no longer uses it;
+  the generated file HandBrake is handed is rebuilt automatically. The HandBrake and ffmpeg
+  *programs* themselves are not in the backup - on a fresh machine use **Check/Install** on the
+  Encoder page.
 
 ---
 
@@ -297,7 +334,8 @@ from a backup `.zip` created by the Backups feature above.
    (name, size, date).
 6. Click **Restore** on that row and confirm the warning dialog.
 
-Your settings, lanes, resume state, run counter, and history are restored from the backup.
+Your settings, lanes, your own profiles, resume state, run counter, and history are restored from
+the backup.
 
 Two things to know:
 - **HandBrake presets are not included** in the backup (it's HandBrake's own file, stored outside
@@ -500,6 +538,84 @@ A few things worth knowing:
 - The Monitor's **queue completion estimate counts the time the queue spends held**, and the toolbar
   shows a tag ("Daytime - low priority", "Off-hours - full speed", "Paused until 10:00 PM").
 
+### Encoder page
+
+Where Compressarr's encoding tools are set up. (Until 2.2 the HandBrake fields lived on Settings.)
+
+- **At a glance** - whether HandBrake and ffmpeg are found, their versions, how many profiles each
+  has, and which lanes use each.
+- **HandBrake** - the `HandBrakeCLI.exe` path (**Check/Install** finds an existing copy or
+  downloads one into Compressarr's own folder) and **Extra CLI options** added to every HandBrake
+  encode. There is no presets.json path any more: HandBrake is handed Compressarr's own profiles.
+- **ffmpeg (experimental)** - see [ffmpeg](#ffmpeg-experimental) below.
+
+### Profiles page
+
+Every encoding profile Compressarr has, for both encoders: the **built-ins** that ship inside the
+app (locked - a lock icon, and they can't be edited or deleted) and **your own**. Each row shows the
+encoder, container, video and audio summary, and which lanes use it.
+
+- **View / Edit** opens the profile's editor; **Duplicate** copies any profile (a built-in becomes
+  your own); **Delete** removes one of yours (refused while a lane or a queued file still uses it);
+  renaming a profile updates every lane and queued file that uses it.
+- **New HandBrake profile / New ffmpeg profile** start from a copy of any existing profile.
+- **Import...** (HandBrake profiles) copies presets into Compressarr from **an installed HandBrake**
+  (it reads its `presets.json` - only read, never written) or **any HandBrake presets file** (the
+  `.json` from HandBrake's *Presets -> Export*, a shared preset, ...). You pick which ones; a name
+  that's already used can be kept alongside (" (imported)"), replace yours, or be skipped.
+  Built-ins are never replaced.
+- **Duplicate as ffmpeg...** turns a HandBrake profile into the closest ffmpeg profile and lists
+  what ffmpeg couldn't carry over (denoise/sharpen filters, resizing, burn-in, ...).
+
+The **HandBrake editor** shows the settings that matter - container, encoder, quality (RF or
+bitrate), speed, profile/level/tune, frame rate, deinterlace, crop, audio language/track rules and
+pass-through list, bitrate and mixdown, subtitles and chapters - with the exact command shown
+beside it. Everything the editor doesn't show (extra picture filters, per-track audio settings, ...)
+is **kept exactly as stored**; a save with no changes leaves the profile byte-for-byte as it was.
+
+Where they live: built-ins inside the app; yours in `%AppData%\Compressarr\Profiles\`
+(`handbrake-profiles.json`, `ffmpeg-profiles.json`) - included in backups and in Export config.
+For every HandBrake encode Compressarr hands HandBrake one generated file
+(`Profiles\handbrake-active.json`: built-ins plus yours), rewritten only when it is missing or
+different. HandBrake's own presets file is never touched.
+
+### ffmpeg (experimental)
+
+ffmpeg is an **optional second encoder**: nothing changes until you pick **ffmpeg** as a lane's
+**Encoder** on the Lanes page. It is labelled experimental because it will not produce
+byte-identical output to HandBrake (similar codec settings give similar, not identical, size and
+quality), and it has had far less real-world use.
+
+- **Setup** - on the Encoder page, **Check/Install** first looks for an ffmpeg already on this
+  computer; if there isn't one it offers a managed download (BtbN's GPL build from GitHub, a few
+  hundred MB) after telling you the name, size and source. The download is verified against the
+  SHA-256 GitHub publishes for it and unpacked into Compressarr's own folder - only `ffmpeg.exe`,
+  `ffprobe.exe` and the license are kept. The card also shows what your build can do (x265,
+  SVT-AV1, NVENC, ...), and the Profiles page flags any profile your build can't run.
+- **Profiles** - three built-ins mirror the HandBrake ones (**Compressarr SD-HD**, **Compressarr
+  UHD AV1**) plus **HEVC NVENC (fast)** for NVIDIA GPUs. A profile is structured data: encoder and
+  speed, quality (CRF or bitrate), pixel format, deinterlace (*auto* only when the file is flagged
+  interlaced), crop (*auto* samples the file for black bars), audio language order and
+  first/all tracks, *pass through when the format is ticked, otherwise encode*, subtitle rules,
+  chapters. Track selection works like HandBrake's: walk the language list in order; `und` matches
+  an untagged track and `any` matches everything; if nothing matches, the first audio track is
+  kept rather than none. MP4 can only hold text subtitles - picture subtitles (PGS, DVD) are
+  dropped and the preview says so.
+- **Preview decisions** (in the editor) reads a real file with ffprobe and shows, per track, what
+  would be copied, encoded or dropped and why - plus deinterlace, crop, HDR, and the exact command.
+- **Safety net** - after ffmpeg exits, the finished file is read back and its **length must match
+  the source**. A truncated result (a corrupt source, a full disk) is reported as **ERROR 111** and
+  the original is left alone.
+- **Dolby Vision / HDR10+** - stock ffmpeg would silently drop that dynamic metadata, so such a
+  file goes to **HandBrake** using the ffmpeg profile's *HandBrake profile for Dolby Vision /
+  HDR10+ files* (the built-ins point at their HandBrake namesakes). With no fallback profile, or
+  HandBrake missing, the file is **refused** (ERROR 112) and left untouched. Ordinary HDR10 is
+  handled by ffmpeg itself (colour information and mastering-display data are carried over).
+- **Report and Monitor** show which encoder encoded each file ("ffmpeg", or "HandBrake (Dolby
+  Vision fallback)"); a lane whose encoder isn't installed is skipped with **ERROR 113** without
+  stopping your other lanes.
+- Scheduler priority, pause/resume and abort work for ffmpeg exactly as for HandBrake.
+
 ### Lanes page
 
 <img src="Assets/Screenshots/lanes-page.png" alt="Compressarr Lanes page, showing two configured lanes" width="700">
@@ -511,7 +627,8 @@ Add, remove, rename, and enable/disable lanes freely - there's no fixed limit. E
 | Enabled | Turns this lane's processing on/off without clearing its configured paths |
 | Input | Where Compressarr looks for source video files for this lane |
 | Output | Where HandBrake writes the converted file initially |
-| TV preset / Movie preset | HandBrake preset used for each detected content type - autocompletes from your presets.json |
+| Encoder | Which tool encodes this lane's files: **HandBrake** (default) or **ffmpeg** (experimental) - see [ffmpeg](#ffmpeg-experimental) |
+| TV profile / Movie profile | Encoding profile used for each detected content type, picked from that encoder's own profiles on the [Profiles page](#profiles-page) |
 | TV base path / Movie base path | Final destination once a file's type has been detected, if Move converted files is on |
 
 Every path field has a **Browse...** button that opens a server-side folder picker, since a
@@ -583,10 +700,11 @@ file's own lane again clears it.
   a distinct violet colour - deliberately not red or yellow, since a redirect is your choice, not a
   problem.
 
-### Custom presets
+### Built-in profiles
 
-Compressarr ships with two of its own HandBrake presets, installed via **Install/Merge Presets**
-on the Settings page - they're what the sample lanes above use for TV preset / Movie preset.
+Compressarr ships with two of its own HandBrake profiles, built into the app (see the
+[Profiles page](#profiles-page)) - they're what the sample lanes above use for TV profile / Movie
+profile. ffmpeg has counterparts of the same names, plus an NVENC one.
 
 **Compressarr SD-HD** - for standard and HD sources. Encodes to H.265 (x265, 10-bit, Main10
 profile) at a constant quality slider of 24, using the "veryfast" encoder preset with two-pass
@@ -640,6 +758,11 @@ from the Lanes page.
   "HandBrake": {
     "CliPath": "%ProgramFiles%\\HandBrake\\HandBrakeCLI.exe",
     "PresetsPath": "%appdata%\\HandBrake\\presets.json",
+    "Options": ""
+  },
+  "FFmpeg": {
+    "Path": "%CompressarrAppData%\\tools\\ffmpeg\\ffmpeg.exe",
+    "ProbePath": "%CompressarrAppData%\\tools\\ffmpeg\\ffprobe.exe",
     "Options": ""
   },
   "FileBot": {
@@ -712,7 +835,13 @@ equals its end means no daytime window; priorities are `Low`, `BelowNormal`, `No
 `DigestDailyTime`/`DigestWeeklyTime`/`DigestWeeklyDay`, same shape as the toast fields above,
 alongside its `Type`/`Trigger`/`Settings` - added from the Notifications page, not hand-edited here.
 
-The output file extension is derived from whichever preset was selected, rather than being
+`HandBrake.PresetsPath` is no longer shown or used while encoding (Compressarr uses its own
+profiles); it stays in the file for 2.1.x compatibility and is used only to find your old
+`presets.json` for the one-time migration and as Import's default location. Each lane may carry
+`"Engine": "HandBrake"` (the default) or `"FFmpeg"`; a 2.1.x install ignores the field. Your own
+profiles are not in this file - they are in `%AppData%\Compressarr\Profiles\`.
+
+The output file extension is derived from whichever profile was selected, rather than being
 hardcoded.
 
 ## Project layout

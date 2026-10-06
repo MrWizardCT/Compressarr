@@ -665,3 +665,22 @@ async function poll() {
 
 poll();
 setInterval(poll, 1500);
+
+// "Finish setting up": a tool a configured lane needs isn't where Compressarr looks for it (HandBrakeCLI
+// always; ffmpeg only once a lane uses it). Links to the Encoder page, where Check/Install lives.
+async function checkSetup() {
+  try {
+    const dto = await (await fetch('/api/encoder')).json();
+    const missing = [];
+    for (const i of dto.validationIssues || []) {
+      if (i.field === 'handBrakeCliPath') missing.push('HandBrake');
+      else if (i.field === 'ffmpegPath' || i.field === 'ffmpegProbePath') { if (!missing.includes('ffmpeg')) missing.push('ffmpeg'); }
+    }
+    const banner = document.getElementById('setupBanner');
+    if (missing.length === 0) { banner.classList.add('hidden'); return; }
+    banner.innerHTML = `Finish setting up: ${missing.join(' and ')} ${missing.length === 1 ? "isn't" : "aren't"} installed where Compressarr looks for ${missing.length === 1 ? 'it' : 'them'}. <a href="/encoder.html">Open the Encoder page</a> to check or install ${missing.length === 1 ? 'it' : 'them'}.`;
+    banner.classList.remove('hidden');
+  } catch { /* best-effort - the banner is a convenience */ }
+}
+checkSetup();
+setInterval(checkSetup, 60000);

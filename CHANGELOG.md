@@ -9,6 +9,64 @@ for that full history.
 > and renaming all run on plain, inspectable regex pattern matching - the same deterministic
 > logic every time, nothing generative involved.
 
+## [2.2.0-beta.2] - Unreleased
+
+> [!WARNING]
+> **Pre-release (beta).** The stable release is still [2.1.8](https://github.com/MrWizardCT/Compressarr/releases/tag/v2.1.8).
+> This build changes where encoding profiles live and adds an optional second encoder - a
+> [test plan](docs/test-plan-2.2.html) is included.
+
+> [!TIP]
+> **What's new in 2.2.0-beta.2:** **Compressarr's own encoding profiles** (built-ins plus yours,
+> with an editor and Import - HandBrake's `presets.json` is no longer used while encoding), new
+> **Encoder** and **Profiles** pages, and **ffmpeg as an optional per-lane encoder** (experimental).
+
+### Added
+- **Encoder page** (under Monitor). The HandBrake settings moved here from Settings (HandBrakeCLI path
+  with Check/Install, Extra CLI options), plus an "At a glance" strip and the new ffmpeg card. The
+  Monitor page shows a *Finish setting up* notice when a tool a lane needs isn't found.
+- **Profiles page.** One list of every profile for both encoders: the built-ins (locked) and your
+  own. Create, edit, duplicate, delete; renaming updates the lanes and queued files that use a
+  profile, and delete is refused while one is in use. **Import** HandBrake presets from an
+  installed HandBrake or any presets file, with keep-both / replace / skip for name clashes.
+- **HandBrake profile editor.** Container, encoder, quality (RF or bitrate), speed, profile/level/
+  tune, frame rate, deinterlace, crop, audio rules and pass-through list, bitrate/mixdown,
+  subtitles, chapters - with the exact HandBrake command beside it. Anything the editor doesn't
+  show is preserved exactly as stored.
+- **ffmpeg (experimental), per lane.** A lane's **Encoder** can be HandBrake (default) or ffmpeg.
+  Structured ffmpeg profiles (three built-ins: Compressarr SD-HD, Compressarr UHD AV1, HEVC NVENC
+  (fast)), a profile editor with **Preview decisions** for a real file, **Duplicate as ffmpeg...**
+  from a HandBrake profile (listing what couldn't be carried over), auto-crop and auto-deinterlace,
+  HandBrake-style track selection, and capability detection (including whether an NVIDIA GPU
+  session opens). **Check/Install** uses an ffmpeg already on the computer or downloads BtbN's GPL
+  build after asking, verified against GitHub's published SHA-256.
+- **Length verification (ERROR 111).** After an ffmpeg encode the finished file's length must match
+  the source's; a truncated result is rejected and the original is left alone.
+- **Dolby Vision / HDR10+ safety (ERROR 112).** Such a file on an ffmpeg lane is encoded by HandBrake
+  using the ffmpeg profile's fallback profile, or refused - never encoded in a way that silently
+  drops the metadata.
+- **ERROR 113.** A lane whose encoder isn't installed is skipped with a clear report entry without
+  stopping the other lanes.
+- The report tags files with the encoder that really encoded them (only when it isn't plain HandBrake);
+  the Monitor queue shows an encoder chip and offers each row its own lane's encoder's profiles.
+
+### Changed
+- **Compressarr always uses its own profiles.** HandBrake is handed one generated file (built-ins
+  plus yours), rewritten only when it is missing or different. The **presets.json path, Install/
+  Merge Presets and Reload** controls are gone; `HandBrake.PresetsPath` stays in the settings file
+  (hidden) for compatibility and as Import's default location.
+- **First-start migration.** The presets your lanes and queued files use are copied from your old
+  `presets.json` into your own profiles; a preset that has your built-in's name but a different
+  recipe is kept as "<name> (yours)" and the lanes are repointed.
+- Backups and Export config now include your own profiles; restoring a backup restores them.
+- Settings no longer has the HandBrake card; "Keep logs of successful HandBrake encodes" is now
+  "...successful encodes".
+
+### Compatibility
+- Settings stay compatible with 2.1.8: new fields are additive (`FFmpeg`, a lane's `Engine`). A 2.1.8
+  install reading a lane set to ffmpeg finds no HandBrake preset of that name and skips the lane
+  with its usual "preset not found" message - it never encodes with the wrong tool.
+
 ## [2.2.0-beta.1] - 2026-10-06
 
 > [!WARNING]

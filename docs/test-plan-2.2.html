@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Compressarr 2.2 - test plan</title>
+<style>
+  :root { --bg:#f2f4f8; --card:#fff; --text:#1d2130; --dim:#6b7280; --border:#e4e7ee; --accent:#3b6df0; --ok:#1f9c50; --okbg:#e7f7ed; --err:#d63c3c; --errbg:#fdeaea; --warn:#c97a12; --warnbg:#fdf1e0; --code:#eef1f7; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1c1f2b; --card:#262b3c; --text:#e6e9f4; --dim:#a8adc2; --border:#363c52; --accent:#7ea0ff; --ok:#4bcf85; --okbg:#163b28; --err:#ff8a8a; --errbg:#452222; --warn:#f0aa4d; --warnbg:#3f3016; --code:#1f2331; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { position:sticky; top:0; z-index:5; background:var(--card); border-bottom:1px solid var(--border); padding:10px 20px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; }
+  .bar { flex:1; min-width:180px; height:10px; background:var(--border); border-radius:99px; overflow:hidden; display:flex; }
+  .bar span { display:block; height:100%; }
+  .b-pass { background:var(--ok); } .b-fail { background:var(--err); } .b-block { background:var(--warn); } .b-na { background:var(--dim); }
+  .counts { font-size:12px; color:var(--dim); }
+  button { font:inherit; padding:5px 12px; border:1px solid var(--border); background:var(--card); color:var(--text); border-radius:7px; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  main { max-width:1100px; margin:0 auto; padding:18px 20px 80px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 18px; margin-bottom:14px; }
+  h2 { font-size:15px; margin:0; }
+  h3 { font-size:13px; margin:14px 0 6px; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px; }
+  label.f { display:block; font-size:12px; color:var(--dim); }
+  input[type=text], textarea, select { width:100%; font:inherit; padding:5px 8px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); }
+  textarea { min-height:44px; resize:vertical; }
+  details.sec { background:var(--card); border:1px solid var(--border); border-radius:10px; margin-bottom:12px; }
+  details.sec > summary { cursor:pointer; padding:12px 18px; display:flex; gap:12px; align-items:center; list-style:none; }
+  details.sec > summary::-webkit-details-marker { display:none; }
+  details.sec > summary h2 { flex:1; }
+  .secdesc { padding:0 18px 6px; color:var(--dim); font-size:13px; }
+  .test { border-top:1px solid var(--border); padding:12px 18px; }
+  .test.pass { border-left:4px solid var(--ok); } .test.fail { border-left:4px solid var(--err); background:var(--errbg); } .test.block { border-left:4px solid var(--warn); } .test.na { border-left:4px solid var(--dim); opacity:.75; }
+  .thead { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+  .tid { font:600 12px ui-monospace,Consolas,monospace; color:var(--dim); }
+  .ttitle { font-weight:600; flex:1; min-width:200px; }
+  .pri { font-size:11px; font-weight:700; padding:1px 7px; border-radius:99px; background:var(--code); color:var(--dim); }
+  .pri.p1 { background:var(--errbg); color:var(--err); } .pri.p2 { background:var(--warnbg); color:var(--warn); }
+  .steps, .expect { font-size:13px; margin:6px 0 0; }
+  .expect { color:var(--dim); } .expect b, .steps b { color:var(--text); }
+  .res { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; align-items:flex-start; }
+  .res label { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border:1px solid var(--border); border-radius:99px; font-size:12px; cursor:pointer; }
+  .res input { margin:0; }
+  .note { flex:1; min-width:240px; }
+  code { background:var(--code); padding:1px 5px; border-radius:4px; font:12px ui-monospace,Consolas,monospace; }
+  ul { margin:4px 0 4px 20px; padding:0; }
+  .filters { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:0 0 12px; }
+  .hidden { display:none !important; }
+  .warnbox { background:var(--warnbg); color:var(--warn); border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:13px; }
+  table.t { border-collapse:collapse; width:100%; font-size:13px; } table.t td, table.t th { border-bottom:1px solid var(--border); padding:6px 8px; text-align:left; vertical-align:top; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Compressarr 2.2 test plan</h1>
+  <div class="bar" id="bar"></div>
+  <div class="counts" id="counts"></div>
+  <button id="copyBtn" class="primary">Copy results (Markdown)</button>
+  <button id="saveBtn">Save results file</button>
+  <button id="loadBtn">Load results file</button>
+  <input type="file" id="loadFile" accept=".json" class="hidden" />
+  <button id="resetBtn">Reset</button>
+</header>
+<main>
+  <div class="card">
+    <h2>How to use this</h2>
+    <p>Work through the sections on the new test machine. For each test mark <b>Pass</b>, <b>Fail</b>, <b>Blocked</b> (couldn't run it) or <b>N/A</b>, and write a note for anything that isn't a clean pass - what you saw, and any file name involved. Your answers are saved in this browser automatically. When you're done (or want to stop for the day) press <b>Copy results (Markdown)</b> and paste it back to me, or <b>Save results file</b> and send that; we'll then go through the failures together. <b>P1</b> tests are the must-run ones, <b>P2</b> should-run, <b>P3</b> nice to have.</p>
+    <div class="warnbox"><b>Highest-risk area:</b> ffmpeg has only been exercised against stand-in programs in the automated tests - the first encodes with a <i>real</i> ffmpeg happen on your test machine. Sections E, H and B (ffmpeg parts) are where surprises are most likely. HandBrake behaviour is covered by the existing test suite, but sections A, C, D and G check that the new profile system didn't change it.</div>
+    <h3>Machine and builds</h3>
+    <div class="grid" id="env"></div>
+    <h3>Test media worth collecting first</h3>
+    <ul>
+      <li><b>M1</b> - ordinary 1080p H.264 MKV with an English AC3 5.1 track, a French AC3 track, English <i>and</i> French text subtitles, and chapters.</li>
+      <li><b>M2</b> - 4K HDR10 HEVC rip (mastering-display data) with TrueHD/Atmos 7.1 + an AC3 compatibility track, English PGS subtitles.</li>
+      <li><b>M3</b> - interlaced source (DVD rip / broadcast .ts, 480i or 1080i), MPEG-2 or H.264.</li>
+      <li><b>M4</b> - letterboxed film (visible black bars top/bottom).</li>
+      <li><b>M5</b> - Dolby Vision file (profile 5 or 8) - and, if you can find one, <b>M6</b> an HDR10+ file.</li>
+      <li><b>M7</b> - MP4 with <code>mov_text</code> subtitles. <b>M8</b> - file with no audio. <b>M9</b> - MKV with cover art attached. <b>M10</b> - audio track with no language tag.</li>
+      <li><b>M11</b> - anime-style MKV with ASS subtitles and embedded fonts. <b>M12</b> - file with a very long name and unicode characters.</li>
+      <li><b>M13</b> - a <b>truncated</b> copy of M1 (cut a MKV to about half its bytes, e.g. <code>fsutil file createnew</code> isn't right - use a hex editor, or copy the first half with PowerShell <code>[IO.File]::ReadAllBytes</code>/<code>WriteAllBytes</code>). Used to provoke ERROR 111.</li>
+      <li>Also handy: <b>MediaInfo</b> (or <code>ffprobe</code>) to inspect results, and VLC/Plex/Jellyfin to confirm playback.</li>
+    </ul>
+    <h3>If something fails, collect</h3>
+    <ul>
+      <li>The relevant lines from the <b>Recent log</b> on the Monitor page, and the run's log file in <code>%AppData%\Compressarr\Logs</code>.</li>
+      <li>For an encode problem: the file's detail log (<code>*_HBdetails.txt</code> for HandBrake, <code>*_FFdetails.txt</code> for ffmpeg - it starts with the profile, every track decision, and the exact command) and the HTML report from <code>%AppData%\Compressarr\Reports</code>.</li>
+      <li>A screenshot, and your <code>%AppData%\Compressarr\compressarr.settings.json</code> (remove API keys/webhooks first) and <code>Profiles\</code> folder when profiles are involved.</li>
+    </ul>
+  </div>
+
+  <div class="filters">
+    <label>Show <select id="fStatus"><option value="all">all tests</option><option value="open">not run yet</option><option value="fail">failed</option><option value="block">blocked</option></select></label>
+    <label>Priority <select id="fPri"><option value="all">all</option><option value="p1">P1 only</option><option value="p12">P1 + P2</option></select></label>
+    <button id="expandBtn">Expand all</button><button id="collapseBtn">Collapse all</button>
+  </div>
+  <div id="sections"></div>
+</main>
+
+<script>
+const SECTIONS = [
+{ id:'A', title:'Install, upgrade and roll back', desc:'The installer, first launch, and moving an existing 2.1.x install to 2.2. Back up %AppData%\\Compressarr first when testing over a real install.', tests:[
+ { id:'A1', pri:1, title:'Clean install on the new machine', steps:'Run the installer on a machine that has never had Compressarr (accept SmartScreen if shown). Launch from the Start Menu.', expect:'Installs without admin surprises (UAC prompt only if you chose all-users). A tray icon appears; <code>http://localhost:1212</code> opens the Monitor page. The sidebar reads Monitor, Encoder, Profiles, Lanes, Scheduler, Notifications, History, Settings, About.' },
+ { id:'A2', pri:1, title:'First-run state with no tools installed', steps:'Open Monitor, Encoder and Profiles on the fresh install (no HandBrake, no ffmpeg).', expect:'Monitor shows a red "Finish setting up: HandBrake isn\'t installed..." notice linking to Encoder. Encoder shows HandBrake not found, ffmpeg "Not installed" (neutral, not an error). Profiles lists the 2 HandBrake and 3 ffmpeg built-ins. Nothing throws errors in the browser console.' },
+ { id:'A3', pri:1, title:'Install over 2.1.8 with real settings', steps:'On a machine running 2.1.8 with lanes using Compressarr SD-HD / UHD AV1 from presets.json, install 2.2 over it. Open the app.', expect:'Lanes keep their presets and show no warnings. <code>%AppData%\\Compressarr\\Profiles\\migration-2.2.json</code> exists listing nothing imported/renamed. <code>handbrake-active.json</code> exists. Queue and history intact.' },
+ { id:'A4', pri:1, title:'Migration: a lane uses a custom preset from presets.json', steps:'Before upgrading, create a custom preset in the HandBrake app ("My Test") and set a lane to use it. Upgrade; open Profiles and Lanes.', expect:'"My Test" now appears on Profiles as one of yours (unlocked), the lane still uses it, and an encode with it works. The migration marker lists it under imported. A Recent-log line says it was copied.' },
+ { id:'A5', pri:1, title:'Migration: an edited built-in', steps:'Edit "Compressarr SD-HD" in HandBrake\'s presets.json (change the quality), set a lane to use it, upgrade.', expect:'A profile "Compressarr SD-HD (yours)" exists with your edit; the lane now points to it; the built-in "Compressarr SD-HD" is unchanged (RF 24). The marker lists the rename.' },
+ { id:'A6', pri:2, title:'Migration: a lane names a preset that exists nowhere', steps:'Point a lane at a preset name that is not in presets.json or the built-ins, upgrade.', expect:'Lanes page flags the preset field ("not found in Compressarr\'s profiles"); a run skips that content type and reports it (ERROR 108/109); nothing crashes. The marker lists it under missing.' },
+ { id:'A7', pri:2, title:'Migration: queued per-file overrides', steps:'Queue a file with a per-file preset override to a custom preset (and another to an edited built-in), then upgrade.', expect:'Both overrides still resolve (the second shows the "(yours)" name) and encode with the right recipe.' },
+ { id:'A8', pri:1, title:'Roll back to 2.1.8', steps:'With 2.2 settings and at least one lane set to ffmpeg, uninstall 2.2 and install 2.1.8. Start it.', expect:'2.1.8 starts and reads the settings without errors (extra fields ignored). HandBrake lanes work using presets.json. The ffmpeg lane is skipped with the usual "preset not found" message - it never encodes. (Note what happens to custom presets that only existed in Compressarr\'s own profiles - they won\'t exist in presets.json.)' },
+ { id:'A9', pri:2, title:'Upgrade from 2.2.0-beta.1', steps:'Install this build over beta.1.', expect:'Settings kept; the migration runs once (marker created) with nothing to do; new pages appear.' },
+ { id:'A10', pri:3, title:'Uninstall', steps:'Uninstall Compressarr.', expect:'Application removed; your %AppData%\\Compressarr settings and Profiles are left (same as 2.1). Reinstalling finds them.' }
+]},
+{ id:'B', title:'Encoder page', desc:'The tools: HandBrakeCLI and the optional ffmpeg.', tests:[
+ { id:'B1', pri:1, title:'At a glance with HandBrake installed', steps:'Install HandBrake normally (or use Check/Install) and open Encoder.', expect:'HandBrake dot green, "HandBrakeCLI x.y.z · 2 profiles", "Used by:" lists enabled HandBrake lanes. ffmpeg block says Not installed / Not used by any enabled lane.' },
+ { id:'B2', pri:1, title:'HandBrake Check/Install - already installed', steps:'Press Check/Install with a valid path.', expect:'Message "HandBrakeCLI already found at the configured path."' },
+ { id:'B3', pri:1, title:'HandBrake Check/Install - download', steps:'On a machine without HandBrake, press Check/Install and accept the prompt (note the size/file shown).', expect:'Prompt shows version, file, size. After install the path field fills with a path under <code>%AppData%\\Compressarr\\HandBrakeCLI</code>, the glance card turns green with a version, and the Monitor notice disappears.' },
+ { id:'B4', pri:1, title:'HandBrake path invalid', steps:'Type a wrong path and Save.', expect:'Field turns red with a clear message; glance dot red; Monitor shows the Finish-setting-up notice. A run aborts with "HandBrakeCLI.exe not found" (when no lane uses ffmpeg).' },
+ { id:'B5', pri:2, title:'Extra CLI options', steps:'Set <code>--two-pass</code> (or another harmless flag), save, run an encode, open the HBdetails log.', expect:'The flag reaches HandBrake. An unbalanced quote (<code>--x "abc</code>) is flagged with a message.' },
+ { id:'B6', pri:2, title:'Unsaved changes protection', steps:'Edit a field then click another sidebar page; also try Clear Changes.', expect:'Browser asks before leaving with unsaved edits; Clear Changes reloads the saved values.' },
+ { id:'B7', pri:1, title:'ffmpeg card with no ffmpeg', steps:'Look at the ffmpeg card.', expect:'Optional: "ffmpeg was not found at the path above. It is optional..." - not shown as an error while no lane uses ffmpeg.' },
+ { id:'B8', pri:1, title:'ffmpeg Check/Install - use one already on the computer', steps:'Put an ffmpeg+ffprobe folder on PATH, press ffmpeg Check/Install.', expect:'Offers "ffmpeg is already on this computer: ... Use it?"; accepting fills both path fields and says to press Save; after Save the card shows its version and capability chips.' },
+ { id:'B9', pri:1, title:'ffmpeg Check/Install - managed download', steps:'On a machine without ffmpeg, press Check/Install, decline "use existing" if offered, read the confirmation, accept.', expect:'The prompt names the build, file, approximate size, the GitHub source, says it is checksum-verified and GPL, and asks first. Afterwards <code>%AppData%\\Compressarr\\tools\\ffmpeg</code> holds <b>only</b> ffmpeg.exe, ffprobe.exe and LICENSE.txt, the paths are saved, and the version and chips appear. Note how long it took.' },
+ { id:'B10', pri:2, title:'Download interrupted or offline', steps:'Start the ffmpeg download then disconnect the network (or run it offline).', expect:'A clear failure message; nothing half-installed (no stray .tmp files, paths unchanged).' },
+ { id:'B11', pri:2, title:'Capabilities and the NVENC session check', steps:'Look at the chips on a machine with an NVIDIA GPU, then (if possible) on one without.', expect:'libx265, libx264, libsvtav1, eac3, aac, ac3, libopus tick. hevc_nvenc ticks with "NVIDIA GPU session OK" only when a GPU session truly opens; with no GPU it shows "no NVIDIA GPU session" (not ticked).' },
+ { id:'B12', pri:2, title:'Wrong file in the ffmpeg path', steps:'Set the ffmpeg path to some other .exe (e.g. notepad.exe) and reopen the page.', expect:'Handled gracefully ("not found"/"could not check") - no crash, no endless spinner.' },
+ { id:'B13', pri:2, title:'ffprobe missing', steps:'Set a lane to ffmpeg, then move ffprobe.exe away.', expect:'Encoder validation flags the ffprobe path; the lane is flagged on Lanes; a run skips the lane with ERROR 113.' },
+ { id:'B14', pri:3, title:'Extra ffmpeg options', steps:'Set <code>-threads 2</code>, run an ffmpeg encode, read the FFdetails command line.', expect:'The option appears just before the output file. Unbalanced quote flagged.' },
+ { id:'B15', pri:3, title:'Profiles flagged for a build that lacks an encoder', steps:'If you have an ffmpeg build without libsvtav1 (or without NVENC), point the path at it.', expect:'Profiles shows "Needs libsvtav1" (or the NVENC reason) under the affected built-ins.' }
+]},
+{ id:'C', title:'Profiles - HandBrake', desc:'Compressarr\'s own HandBrake profiles and the editor.', tests:[
+ { id:'C1', pri:1, title:'List and summaries', steps:'Open Profiles.', expect:'Compressarr SD-HD (x265 10-bit, RF 24, veryfast; E-AC3 512k) and Compressarr UHD AV1 (SVT-AV1 10-bit, RF 30, preset 4; pass-through) are shown with a lock icon and built-in marker, with correct "Used by" lanes. Tabs show counts.' },
+ { id:'C2', pri:1, title:'Built-ins are locked', steps:'Click View on a built-in.', expect:'Every field is disabled, there is no Save button, a banner explains it is locked, and Duplicate works. A built-in has no Delete button.' },
+ { id:'C3', pri:1, title:'Duplicate', steps:'Duplicate a built-in twice.', expect:'"X copy" then "X copy 2", both unlocked and editable.' },
+ { id:'C4', pri:1, title:'New profile', steps:'New HandBrake profile, leave the name empty and Save; then name it and Save.', expect:'The empty name is rejected with a message on the field. Saved, it appears on Profiles as one of yours and can be chosen on a lane.' },
+ { id:'C5', pri:1, title:'Editor controls change the stored preset', steps:'Edit a copy: container, encoder (try x264, x265, SVT-AV1, NVENC), preset speed, RF vs bitrate, tune/profile/level, frame rate (constant 24), deinterlace, crop, audio mode (pass-through list / always encode), codec/bitrate/mixdown, languages, subtitle rule, chapters. Save, reopen, then use "See the stored preset".', expect:'Changing the encoder refreshes the speed/profile/level/tune lists and the quality range sensibly. Everything you set round-trips and appears in the stored JSON (e.g. VideoEncoder, VideoQualitySlider, PictureCropMode 0/2, AudioCopyMask "copy:..." entries).' },
+ { id:'C6', pri:1, title:'An edited profile really encodes that way', steps:'Make a profile (e.g. x264, RF 28, MP4, AAC 128 stereo) and run a file through a lane using it. Inspect the output with MediaInfo.', expect:'Output matches the profile: container, video codec, rough RF/size, audio codec/bitrate/channels, subtitle/chapter handling.' },
+ { id:'C7', pri:1, title:'"Kept as-is": settings the editor doesn\'t show are preserved', steps:'Import (or craft) a preset with denoise/sharpen filters and per-track audio gain, edit only the RF in the editor, save.', expect:'The stored preset still has the filters and gain; the encode still applies them. Saving a profile without changing anything leaves its JSON identical.' },
+ { id:'C8', pri:1, title:'Validation messages', steps:'Try: empty name; a name containing / \\ or ";" a name equal to an existing one in different case; RF out of range; bitrate 0 in bitrate mode; pass-through mode with nothing ticked; no audio languages; subtitles "all" with no languages.', expect:'Each is refused with a specific message on the right field. Nothing is saved.' },
+ { id:'C9', pri:1, title:'Rename updates users', steps:'Use a profile on a lane (TV and Movie) and as a queued per-file override, then rename it.', expect:'The lane fields and the queue override now show the new name; nothing is orphaned.' },
+ { id:'C10', pri:1, title:'Delete rules', steps:'Delete an unused profile; then try deleting one a lane uses; then one only a queued file overrides to.', expect:'Unused: gone. In use by a lane: refused naming the lane. In use by a queued file: refused naming the count. (A finished file\'s old override doesn\'t block.)' },
+ { id:'C11', pri:2, title:'Edit while encoding', steps:'Start a long encode with profile P, edit P (change RF) mid-encode, let the next file start.', expect:'The running encode is unaffected; the next file uses the new settings.' },
+ { id:'C12', pri:2, title:'The generated file HandBrake receives', steps:'Look in <code>%AppData%\\Compressarr\\Profiles</code>. Note the handbrake-active.json timestamp, restart the app, run an encode; then edit a profile; then delete the file and run an encode.', expect:'Not rewritten when nothing changed (same timestamp); rewritten after a profile change; rebuilt if deleted. The encode command in the detail log uses <code>--preset-import-file ...handbrake-active.json</code>. (Optional: <code>HandBrakeCLI --preset-import-file &lt;that file&gt; --preset-list</code> shows folders "Compressarr (built-in)" and "Yours".)' },
+ { id:'C13', pri:2, title:'Hand-corrupting your profile file', steps:'Close the app, put junk in <code>handbrake-profiles.json</code>, start it, open Profiles; then fix the file.', expect:'A red banner says the file could not be read and only built-ins are shown; the broken file is not overwritten; adding profiles is refused with the reason; after fixing it everything returns.' },
+ { id:'C14', pri:2, title:'Awkward names', steps:'Create profiles named with spaces, parentheses, an ampersand, unicode ("Café x265 (HD) & more").', expect:'They save, appear, open in the editor, can be picked on lanes and encode correctly.' }
+]},
+{ id:'D', title:'Import (HandBrake profiles)', desc:'Bringing presets in from an installed HandBrake or a presets file.', tests:[
+ { id:'D1', pri:1, title:'From installed HandBrake', steps:'Profiles → Import... with HandBrake installed.', expect:'Finds <code>%AppData%\\HandBrake\\presets.json</code>, lists presets with their groups and a video summary; search and "Select all shown" work; Compressarr\'s own two (identical) are marked "already built in" and can\'t be ticked.' },
+ { id:'D2', pri:1, title:'Importing copies', steps:'Import three presets, then change/delete one of them inside the HandBrake app.', expect:'They appear as yours (unlocked, "saved in Compressarr\'s own file"). Later changes in the HandBrake app do not affect them.' },
+ { id:'D3', pri:1, title:'Name clash options', steps:'Import a preset whose name you already have, once with each option: keep both, replace mine, skip.', expect:'Keep both → "Name (imported)" (and "(imported) 2" next time); replace → yours is overwritten in place; skip → nothing. The result toast says what happened.' },
+ { id:'D4', pri:1, title:'A clash with a built-in', steps:'Import a preset named like a built-in but with a different recipe, with "replace mine" chosen.', expect:'The built-in is never replaced; the import is added as "... (imported)".' },
+ { id:'D5', pri:1, title:'From a presets file', steps:'Use "From a presets file": a valid HandBrake Presets→Export file; a random .json; a non-JSON file; a path that doesn\'t exist.', expect:'Valid file → the same pick list. Bad ones are rejected with a clear reason; nothing changes until you press Import.' },
+ { id:'D6', pri:1, title:'Imported stock presets encode', steps:'Import e.g. "Fast 1080p30" and "HQ 1080p30 Surround", use them on a lane, encode.', expect:'They encode correctly and behave like they do in the HandBrake app.' },
+ { id:'D7', pri:3, title:'Names with a slash', steps:'Import a preset whose name contains "/" (HandBrake treats it as a folder separator).', expect:'It is imported with "-" instead (e.g. "Web-Gmail Large") and works.' },
+ { id:'D8', pri:2, title:'The source file is only read', steps:'Note the size/timestamp of the HandBrake presets file before and after an import.', expect:'Unchanged.' },
+ { id:'D9', pri:3, title:'Importing everything', steps:'Select all ~100+ presets and import.', expect:'Completes in a reasonable time; Profiles stays usable; the active file regenerates once.' }
+]},
+{ id:'E', title:'Profiles - ffmpeg', desc:'The ffmpeg profile editor and its Preview decisions. Needs ffmpeg + ffprobe installed (section B).', tests:[
+ { id:'E1', pri:1, title:'List and built-ins', steps:'Open Profiles, ffmpeg tab.', expect:'Compressarr SD-HD (x265 10-bit, CRF 24, veryfast), Compressarr UHD AV1 (SVT-AV1 10-bit, CRF 30, preset 4, tune psnr), HEVC NVENC (fast) (NVENC H.265 10-bit, CQ 28, p5), all locked, each with a fallback HandBrake profile.' },
+ { id:'E2', pri:1, title:'Editor behaviour', steps:'New ffmpeg profile; switch encoders (x265, x264, SVT-AV1, each NVENC); switch Quality between CRF and bitrate; switch audio handling; choose MP4.', expect:'Preset/profile/pixel-format/tune lists and the quality range follow the encoder; sensible default quality on change; the pass-through tickboxes only show in pass-through mode; "Optimize for web" only shows for MP4; the page never throws console errors.' },
+ { id:'E3', pri:1, title:'Validation', steps:'Try an empty name, a name with a slash, quality out of range, bitrate mode with 0, constant frame rate with no rate, no audio languages, pass-through with nothing ticked, subtitles kept with no languages.', expect:'Each refused with a message on the right field.' },
+ { id:'E4', pri:1, title:'Preview decisions - ordinary MKV (M1)', steps:'Open the editor for Compressarr SD-HD (View) and Preview M1\'s full path.', expect:'Audio: the first English track is kept (and the reason says it is encoded as eac3 because the profile always encodes); the French track dropped with the "only the first matching" reason (the profile\'s list includes "any"). English subtitle copied; French dropped or kept per profile; chapters kept; the command line is shown and looks right.' },
+ { id:'E5', pri:1, title:'Preview decisions - HDR10 (M2)', steps:'Preview M2 with UHD AV1.', expect:'Shown as HDR10; notes that colour info and mastering-display data are carried; both English audio tracks copied (TrueHD allowed through in MKV); PGS subtitle copied; the command contains <code>-svtav1-params</code> with <code>mastering-display=...</code> and <code>content-light=...</code>.' },
+ { id:'E6', pri:1, title:'Preview decisions - MP4 target', steps:'Duplicate SD-HD, set the container to MP4 and Preview M2 and M1.', expect:'PGS subtitles dropped with "picture subtitle ... MP4 can\'t hold it"; text subtitles converted to mov_text; fonts dropped; TrueHD can\'t be copied into MP4 so it is encoded.' },
+ { id:'E7', pri:1, title:'Preview decisions - interlaced (M3) and letterboxed (M4)', steps:'Preview each with Auto deinterlace and Auto crop.', expect:'M3: deinterlace yes ("source is interlaced"), command has <code>bwdif</code>. M4: crop found with a sensible rectangle (e.g. 1920x800) and it appears in the command; a progressive source says "no deinterlace".' },
+ { id:'E8', pri:1, title:'Preview decisions - Dolby Vision (M5) / HDR10+ (M6)', steps:'Preview them with a fallback set, then with the fallback blank.', expect:'A red notice names Dolby Vision (or HDR10+); with a fallback it says the file will go to HandBrake, without one it says such files are refused.' },
+ { id:'E9', pri:2, title:'Preview decisions - odd files', steps:'Preview M7 (mov_text), M8 (no audio), M9 (cover art), M10 (untagged audio, with languages "eng"), a path that doesn\'t exist, a non-video file, and with ffprobe removed.', expect:'M10 falls back to keeping the first audio track with a note; M9\'s cover art is listed as dropped; M8 notes "no audio"; problems are reported plainly and nothing crashes.' },
+ { id:'E10', pri:1, title:'Duplicate as ffmpeg', steps:'On a HandBrake profile with extras (denoise, resize, burn-in, a bitrate target, DPL2 mixdown, extra x264 options) use "Duplicate as ffmpeg...".', expect:'A new ffmpeg profile is created (name made unique), a panel lists what was carried over and each thing ffmpeg can\'t carry; "Open the ffmpeg profile" works; the profile validates and Previews fine.' },
+ { id:'E11', pri:2, title:'Same name in both encoders', steps:'Make a HandBrake and an ffmpeg profile both named "Shared"; use each on a different-engine lane; rename/delete one.', expect:'Rename only repoints lanes of that engine; delete is refused only for lanes of that engine; "Used by" is per engine.' },
+ { id:'E12', pri:2, title:'Locking and refusal', steps:'Edit/delete an ffmpeg built-in; delete an ffmpeg profile a lane uses.', expect:'Refused with the reasons (built-in / used by lane X).' }
+]},
+{ id:'F', title:'Lanes page', desc:'Choosing the encoder per lane.', tests:[
+ { id:'F1', pri:1, title:'Existing lanes', steps:'Open Lanes after upgrading.', expect:'Each lane has an Encoder select set to HandBrake; Profile dropdowns list the 2 HandBrake profiles (plus your own).' },
+ { id:'F2', pri:1, title:'Switch a lane to ffmpeg', steps:'Change a lane\'s Encoder to ffmpeg (before saving), then Save.', expect:'The profile lists swap to ffmpeg\'s (3 built-ins + yours); a note explains it is experimental and how DV is handled; a name not found in the new list stays selectable and is flagged on save. After saving, reload - it persists.' },
+ { id:'F3', pri:1, title:'ffmpeg lane with no ffmpeg', steps:'Set a lane to ffmpeg with ffmpeg missing, with another lane on HandBrake; run once.', expect:'The ffmpeg lane shows an inline message; the pass skips it (ERROR 113 on the report) while the HandBrake lane still encodes; the whole run is not aborted.' },
+ { id:'F4', pri:2, title:'Switching back', steps:'Switch the lane back to HandBrake.', expect:'Lists swap back; saved presets still valid.' },
+ { id:'F5', pri:1, title:'Per-file override on the queue', steps:'With one lane per engine and files queued in both, use each row\'s preset dropdown.', expect:'Each row offers only its own lane\'s encoder\'s profiles; the choice sticks and is used; the lane-name area shows an encoder chip (ffmpeg rows always; HandBrake rows once any ffmpeg lane exists).' },
+ { id:'F6', pri:2, title:'"Lands in" across engines', steps:'Assign a HandBrake lane\'s file to land in an ffmpeg lane.', expect:'Works as before - only the library routing changes; the encoder is the file\'s own lane\'s.' }
+]},
+{ id:'G', title:'Encoding with HandBrake (regression)', desc:'The new profile system sits under every HandBrake encode - confirm nothing the app did before has changed.', tests:[
+ { id:'G1', pri:1, title:'Movie end to end', steps:'Drop a movie in a lane\'s Input; run it (Run Now).', expect:'Encoded with the lane\'s profile, filed into the Movie library, source recycled/kept per setting, Sonarr/Radarr unmonitor if configured, an HTML report, a toast. No encoder tag on the report row.' },
+ { id:'G2', pri:1, title:'TV episode routing', steps:'Drop S01E01-style files.', expect:'Detected as TV, routed under Show\\Season NN, TV profile used.' },
+ { id:'G3', pri:1, title:'Live progress', steps:'Watch the Monitor during an encode.', expect:'Percent, fps and ETA update; the file line reads "using preset NAME"; the queue completion estimate appears.' },
+ { id:'G4', pri:1, title:'Pause and Resume', steps:'Pause mid-encode, wait a minute, Resume.', expect:'CPU use drops while paused; resumes and finishes correctly.' },
+ { id:'G5', pri:1, title:'Abort', steps:'Abort mid-encode.', expect:'HandBrake stops, the temp output is removed, the source is untouched, the entry is marked so it can be retried.' },
+ { id:'G6', pri:2, title:'Stop Monitoring', steps:'Press Stop Monitoring while a file is encoding.', expect:'The current file finishes, then it stops.' },
+ { id:'G7', pri:2, title:'Queue operations', steps:'Drag to reorder, skip, remove, override a profile, set Lands in; if FileBot is used, let it rename a file.', expect:'All behave as in 2.1.8; a FileBot rename keeps the file\'s place and your edits.' },
+ { id:'G8', pri:2, title:'Scheduler', steps:'Enable the schedule with a daytime window around now; watch the encode priority in Task Manager; try the hold and Run anyway.', expect:'Priority follows the window live; the hold stops new files; Run anyway releases it.' },
+ { id:'G9', pri:2, title:'Restart mid-encode', steps:'Kill the app during an encode, restart it.', expect:'The file is picked up again as resumed; no orphan temp file lingers.' },
+ { id:'G10', pri:2, title:'Failure handling', steps:'Make an encode fail (e.g. a bad Extra CLI option or an unreadable file).', expect:'ERROR 101 on the report with a working "Full Details" link; the source is kept.' },
+ { id:'G11', pri:2, title:'Move retry and disk-full behaviour', steps:'Point a library path at an unreachable location, run, then fix it.', expect:'ERROR 102-104 as before; the file waits in Output and is filed on the next pass.' },
+ { id:'G12', pri:2, title:'Two lanes interleave', steps:'Queue files in two lanes with explicit order.', expect:'One global queue order is respected across lanes.' },
+ { id:'G13', pri:3, title:'Detail logs', steps:'Check the HBdetails log after a success with "Keep logs of successful encodes" off and on.', expect:'Deleted when off; kept when on; always kept for failures.' },
+ { id:'G14', pri:3, title:'Notifications', steps:'Enable one notification channel; run a pass.', expect:'The message arrives; content correct.' }
+]},
+{ id:'H', title:'Encoding with ffmpeg', desc:'The big one: real ffmpeg runs. For each, note the output size vs source and anything visually or audibly wrong. Use MediaInfo on the results.', tests:[
+ { id:'H1', pri:1, title:'Compressarr SD-HD on an ordinary file (M1)', steps:'Put a lane on ffmpeg with SD-HD; encode M1.', expect:'Succeeds; output is HEVC 10-bit Main10, E-AC3 512k from the first English track, English subtitles kept, chapters kept, plays everywhere; report row tagged "ffmpeg" with no error; FFdetails log starts with the decisions and command and ends with "Length verified". Note the size reduction and speed.' },
+ { id:'H2', pri:1, title:'Compressarr UHD AV1 on HDR10 (M2)', steps:'Encode M2 with UHD AV1.', expect:'AV1 10-bit; HDR10 colour info <b>and mastering-display/MaxCLL</b> still present in MediaInfo; TrueHD and AC3 copied untouched; PGS subtitles kept; chapters kept. Play it on an HDR display if you can.' },
+ { id:'H3', pri:1, title:'HEVC NVENC (fast) (GPU machine)', steps:'Encode M1 or M2 with the NVENC built-in.', expect:'Succeeds quickly on the GPU; output plays; note speed vs the software profile. On a machine with no GPU the profile is flagged and a run fails clearly rather than hanging.' },
+ { id:'H4', pri:1, title:'MP4 output', steps:'Encode M1 and M7 with an MP4 variant (Optimize on).', expect:'Valid MP4; subtitles are mov_text; plays in a browser/TV; starts streaming immediately (faststart).' },
+ { id:'H5', pri:1, title:'Interlaced source (M3)', steps:'Encode M3 with Auto deinterlace.', expect:'Output is progressive with no combing; the log says the source was interlaced. Compare with the same file through HandBrake (decomb).' },
+ { id:'H6', pri:1, title:'Letterboxed source (M4)', steps:'Encode M4 with Auto crop.', expect:'Black bars removed; no picture cut off (compare edges with the source); resolution matches the logged crop.' },
+ { id:'H7', pri:1, title:'Language handling', steps:'Encode M1 with languages "fra, eng"; then M10 (untagged) with "eng, und"; then a file with only a language not in the list.', expect:'French first when listed first; the untagged track kept via "und"; with no match the first audio track is kept (a note says so) rather than none.' },
+ { id:'H8', pri:2, title:'Odd sources', steps:'Encode M8 (no audio), M9 (cover art), a file with a timecode/data stream, an MKV with two video streams.', expect:'All succeed; extras listed as dropped in the log; output has exactly one video stream and no cover art.' },
+ { id:'H9', pri:1, title:'Progress on the Monitor', steps:'Watch the Monitor during an ffmpeg encode.', expect:'"Compressing File in Lane X using ffmpeg profile Y"; percent, fps and ETA move sensibly (ETA derived from speed); queue estimate works; chip shows ffmpeg.' },
+ { id:'H10', pri:1, title:'Pause and Resume', steps:'Pause an ffmpeg encode, wait, resume.', expect:'Suspends and resumes; the finished file is valid and the right length (no gap or A/V desync).' },
+ { id:'H11', pri:1, title:'Abort', steps:'Abort an ffmpeg encode.', expect:'ffmpeg and its children are killed; temp file removed; source untouched.' },
+ { id:'H12', pri:2, title:'Scheduler priority', steps:'Enable the schedule and watch ffmpeg.exe\'s priority in Task Manager across the boundary.', expect:'The ffmpeg process priority changes live exactly as HandBrake\'s does.' },
+ { id:'H13', pri:1, title:'Truncated source -> ERROR 111', steps:'Encode M13 (truncated copy) with an ffmpeg profile.', expect:'If ffmpeg exits cleanly with a short file the result is <b>ERROR 111</b> ("The encoded file is x long but the source is y"); the original is left alone, the short output is removed, the detail log is linked from the report. (If ffmpeg itself errors instead, that\'s ERROR 101 - note which you got.)' },
+ { id:'H14', pri:2, title:'Unreadable source', steps:'Rename a text file to .mkv in an ffmpeg lane.', expect:'Fails clearly ("ffprobe could not read...") without starting an encode; the file is left alone and reported.' },
+ { id:'H15', pri:2, title:'ffmpeg non-zero exit', steps:'Add a bad Extra ffmpeg option (e.g. <code>-nosuchflag</code>) and encode.', expect:'ERROR 101 with the detail log showing ffmpeg\'s complaint; source kept.' },
+ { id:'H16', pri:3, title:'Output drive fills up', steps:'Encode to a nearly-full drive.', expect:'Failure noted as "Output drive full, monitoring stopped"; no partial file left behind.' },
+ { id:'H17', pri:1, title:'Dolby Vision with a fallback (M5)', steps:'Lane on ffmpeg with SD-HD (fallback = HandBrake "Compressarr SD-HD"); encode M5.', expect:'The log says Dolby Vision was detected and the file is encoded by HandBrake with the fallback profile; report tag "HandBrake (Dolby Vision fallback)"; MediaInfo of the output still shows Dolby Vision where HandBrake preserves it; the Monitor shows the fallback preset.' },
+ { id:'H18', pri:1, title:'Dolby Vision with no fallback', steps:'Clear the fallback on a duplicate profile and encode M5.', expect:'<b>ERROR 112</b>; the file is untouched and nothing is encoded; the message says the profile has no HandBrake fallback.' },
+ { id:'H19', pri:1, title:'Dolby Vision with HandBrake missing', steps:'Rename HandBrakeCLI.exe temporarily and encode M5 on the ffmpeg lane (other lanes use ffmpeg too).', expect:'ERROR 112 naming the missing HandBrake; ffmpeg files in the same pass still encode.' },
+ { id:'H20', pri:2, title:'HDR10+ (M6)', steps:'Encode an HDR10+ file.', expect:'Detected like Dolby Vision ("HDR10+ detected").' },
+ { id:'H21', pri:1, title:'Mixed lanes in one pass', steps:'One HandBrake lane and one ffmpeg lane each with files; Run Now.', expect:'Both encode in the global queue order; both reports rows are right; throughput/ETA per profile stay sensible.' },
+ { id:'H22', pri:2, title:'Compare with HandBrake', steps:'Encode the same source with HandBrake SD-HD and ffmpeg SD-HD.', expect:'Record both sizes and speeds; both look fine. (Similar - not identical - results are expected.)' },
+ { id:'H23', pri:2, title:'Long film and stability', steps:'Encode a 2-3 hour film with ffmpeg; leave the Monitor open.', expect:'Completes; length verified; the app stays responsive and memory steady.' },
+ { id:'H24', pri:2, title:'Awkward file names', steps:'Encode M12 (long unicode name) and files with spaces, brackets and ampersands.', expect:'Works for encode, routing and the report.' },
+ { id:'H25', pri:2, title:'ASS subtitles and fonts (M11)', steps:'Encode M11 to MKV with English subtitles kept.', expect:'Subtitles keep their styling; embedded fonts are carried over (attachments present in the output).' },
+ { id:'H26', pri:2, title:'Media server check', steps:'Add outputs to Plex/Jellyfin/Emby and direct-play a few (HDR, 10-bit, E-AC3, subs).', expect:'Scans correctly; direct plays where the source would; note any client that refuses a file.' },
+ { id:'H27', pri:3, title:'Extra arguments on a profile', steps:'Set <code>-metadata comment=test</code> in a profile\'s Extra arguments.', expect:'It appears before the output in the command and in the output\'s tags.' }
+]},
+{ id:'I', title:'Monitor, report and History', desc:'Where the new information shows up.', tests:[
+ { id:'I1', pri:1, title:'Encoder chips', steps:'With only HandBrake lanes, then with an ffmpeg lane too.', expect:'HandBrake-only: the queue looks exactly as in 2.1.8. With an ffmpeg lane: ffmpeg rows have an amber chip, HandBrake rows a grey one.' },
+ { id:'I2', pri:1, title:'Report rows and codes', steps:'Open the HTML reports from sections F, G and H.', expect:'ffmpeg rows carry an "ffmpeg" tag next to the profile name; fallback rows say "HandBrake (Dolby Vision fallback)"; ERROR 111/112/113 badges have a readable tooltip; 111 links the encode details, 112/113 link the Compressarr log.' },
+ { id:'I3', pri:2, title:'History page', steps:'Open History after the runs.', expect:'Runs listed; error counts and the sidebar badges match; reports open.' },
+ { id:'I4', pri:2, title:'Finish-setting-up notice', steps:'Remove then restore a tool (HandBrake path wrong, ffmpeg lane without ffmpeg).', expect:'The Monitor notice names the missing tool(s) and links to Encoder; it disappears within about a minute of fixing it.' }
+]},
+{ id:'J', title:'Backup, export and restore', desc:'Your own profiles travel with your settings.', tests:[
+ { id:'J1', pri:1, title:'Backup contents', steps:'Create your own profiles in both encoders, press Backup Now, open the zip.', expect:'The zip contains handbrake-profiles.json and ffmpeg-profiles.json along with settings/resume/history; it does <b>not</b> contain handbrake-active.json.' },
+ { id:'J2', pri:1, title:'Restore on a clean profile folder', steps:'Delete <code>%AppData%\\Compressarr\\Profiles</code> (with the app closed), start it, restore the backup from Settings.', expect:'Your profiles are back, lanes valid, an encode works (the active file regenerates).' },
+ { id:'J3', pri:2, title:'Restore an old 2.1.x backup', steps:'Restore a backup taken by 2.1.x onto 2.2.', expect:'Settings restore; your existing profiles are untouched. Known limitation: custom presets the old lanes used are not migrated again - the lanes show "not found" until you import them. Confirm and record how clear that is.' },
+ { id:'J4', pri:1, title:'Export and import on another machine', steps:'Export config on machine A (with your profiles), import it on machine B.', expect:'Lanes and your profiles (HandBrake and ffmpeg) arrive; same-named profiles that already exist are left alone; the lanes\' engine choice comes with them.' },
+ { id:'J5', pri:2, title:'Import a 2.1.8 export', steps:'Import an export file created by 2.1.8.', expect:'Works; lanes default to HandBrake.' },
+ { id:'J6', pri:3, title:'Import a damaged file', steps:'Import a truncated export.', expect:'A clear error; nothing changed.' }
+]},
+{ id:'K', title:'Settings and general', desc:'Everything around the edges.', tests:[
+ { id:'K1', pri:1, title:'Settings page', steps:'Open Settings, change something, Save; then open Encoder.', expect:'No HandBrake card on Settings; saving Settings leaves your Encoder values alone; the log-retention checkbox now reads "Keep logs of successful encodes".' },
+ { id:'K2', pri:2, title:'Cached pages after upgrade', steps:'Upgrade from beta.1 in a browser that already had the app open.', expect:'New pages load without a manual cache clear (the service worker updates).' },
+ { id:'K3', pri:2, title:'Themes and narrow screens', steps:'Toggle dark/light on the new pages; view them on a phone-width window.', expect:'Readable in both themes; tables scroll rather than breaking the layout.' },
+ { id:'K4', pri:2, title:'From another device', steps:'Open the Encoder, Profiles and editor pages from another PC/phone on the LAN.', expect:'Works. (Path fields such as "Preview a file" and Import refer to the machine running Compressarr.)' },
+ { id:'K5', pri:3, title:'Run at login, port change, tray', steps:'Toggle run at login, change the port, use the tray menu.', expect:'Unaffected by 2.2.' },
+ { id:'K6', pri:3, title:'Responsiveness during encodes', steps:'Use the web UI heavily while an ffmpeg and a HandBrake encode run.', expect:'The UI stays responsive; the polling doesn\'t noticeably load the machine.' }
+]},
+{ id:'L', title:'Edge cases and abuse', desc:'Things users do that a happy path misses.', tests:[
+ { id:'L1', pri:3, title:'Two tabs editing one profile', steps:'Open the same profile in two tabs, save different changes in each.', expect:'Last save wins without corrupting the file; a rename in one tab makes the other tab\'s save fail clearly.' },
+ { id:'L2', pri:3, title:'Cancel mid-import', steps:'Start an import then close the dialog / reload.', expect:'Nothing half-imported.' },
+ { id:'L3', pri:3, title:'Non-ASCII paths', steps:'Import from, and Preview, files under a path with accents or CJK characters.', expect:'Works.' },
+ { id:'L4', pri:3, title:'Antivirus', steps:'Note whether your antivirus complains about the downloaded ffmpeg/HandBrake or the installer.', expect:'Record any quarantine or SmartScreen behaviour.' },
+ { id:'L5', pri:3, title:'Very large queue', steps:'Queue 200+ files across lanes of both engines.', expect:'Monitor stays usable; each row\'s profile list is right.' }
+]},
+{ id:'M', title:'Known limitations - confirm, don\'t file as bugs', desc:'Expected behaviour in this build. Mark Pass if it behaves as described; Fail if it behaves differently or is more confusing than it should be.', tests:[
+ { id:'M1', pri:2, title:'ffmpeg output differs from HandBrake', steps:'Compare an ffmpeg and a HandBrake encode of the same file.', expect:'Similar but not identical size/quality; acceptable for an experimental encoder.' },
+ { id:'M2', pri:2, title:'"Decomb" has no ffmpeg equivalent', steps:'Duplicate a decomb HandBrake profile as ffmpeg.', expect:'It becomes Auto deinterlace (only when the file is flagged interlaced) and the conversion panel says so.' },
+ { id:'M3', pri:2, title:'Picture subtitles in MP4', steps:'Encode a PGS-subtitle file to an MP4 profile.', expect:'The subtitles are dropped (the preview and log say why).' },
+ { id:'M4', pri:3, title:'Offline machines', steps:'Try ffmpeg Check/Install with no internet.', expect:'The download fails with a clear message; you can still set the paths by hand.' },
+ { id:'M5', pri:3, title:'The installer has no download checkboxes yet', steps:'Look at the installer pages.', expect:'No "download HandBrake/ffmpeg" options yet (planned); the Encoder page\'s Check/Install is the way.' }
+]}
+];
+
+const STATUSES = [['', 'Not run'], ['pass', 'Pass'], ['fail', 'Fail'], ['block', 'Blocked'], ['na', 'N/A']];
+const ENV_FIELDS = ['Tester', 'Date', 'Machine / OS', 'CPU / GPU', 'Compressarr version', 'HandBrakeCLI version', 'ffmpeg version', 'Installed over 2.1.8? (y/n)'];
+const KEY = 'compressarr-2.2-testplan-v1';
+
+let state = { env: {}, tests: {} };
+try { state = JSON.parse(localStorage.getItem(KEY)) || state; } catch {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// environment fields
+document.getElementById('env').innerHTML = ENV_FIELDS.map((f, i) => `<div><label class="f">${esc(f)}</label><input type="text" data-env="${i}" value="${esc(state.env[f] || '')}" /></div>`).join('');
+document.getElementById('env').addEventListener('input', e => { const i = e.target.dataset.env; if (i === undefined) return; state.env[ENV_FIELDS[i]] = e.target.value; save(); });
+
+function render() {
+  const host = document.getElementById('sections');
+  const open = new Set([...host.querySelectorAll('details[open]')].map(d => d.dataset.id));
+  host.innerHTML = SECTIONS.map(sec => {
+    const tests = sec.tests.map(t => {
+      const r = state.tests[t.id] || {};
+      const st = r.s || '';
+      return `<div class="test ${st}" data-t="${t.id}" data-pri="${t.pri}">
+        <div class="thead"><span class="tid">${t.id}</span><span class="ttitle">${esc(t.title)}</span><span class="pri p${t.pri}">P${t.pri}</span></div>
+        <div class="steps"><b>Do:</b> ${t.steps}</div>
+        <div class="expect"><b>Expect:</b> ${t.expect}</div>
+        <div class="res">${STATUSES.map(([v, l]) => `<label><input type="radio" name="r-${t.id}" value="${v}" ${st === v ? 'checked' : ''} />${l}</label>`).join('')}
+          <textarea class="note" placeholder="Notes - what you saw, file used, anything odd" data-n="${t.id}">${esc(r.n || '')}</textarea></div>
+      </div>`;
+    }).join('');
+    return `<details class="sec" data-id="${sec.id}" ${open.has(sec.id) ? 'open' : ''}><summary><h2>${sec.id}. ${esc(sec.title)}</h2><span class="counts" data-c="${sec.id}"></span></summary><div class="secdesc">${esc(sec.desc)}</div>${tests}</details>`;
+  }).join('');
+  applyFilters();
+  updateCounts();
+}
+
+function updateCounts() {
+  const all = SECTIONS.flatMap(s => s.tests);
+  const c = { pass: 0, fail: 0, block: 0, na: 0, open: 0 };
+  for (const t of all) c[(state.tests[t.id] || {}).s || 'open']++;
+  const total = all.length;
+  document.getElementById('bar').innerHTML = ['pass', 'fail', 'block', 'na'].map(k => `<span class="b-${k}" style="width:${c[k] / total * 100}%"></span>`).join('');
+  document.getElementById('counts').textContent = `${c.pass} pass · ${c.fail} fail · ${c.block} blocked · ${c.na} n/a · ${c.open} to do (of ${total})`;
+  for (const sec of SECTIONS) {
+    const done = sec.tests.filter(t => (state.tests[t.id] || {}).s).length;
+    const fails = sec.tests.filter(t => (state.tests[t.id] || {}).s === 'fail').length;
+    const el = document.querySelector(`[data-c="${sec.id}"]`);
+    if (el) el.textContent = `${done}/${sec.tests.length}${fails ? ` · ${fails} failed` : ''}`;
+  }
+}
+
+function applyFilters() {
+  const fs = document.getElementById('fStatus').value, fp = document.getElementById('fPri').value;
+  for (const el of document.querySelectorAll('.test')) {
+    const st = (state.tests[el.dataset.t] || {}).s || '';
+    const pri = Number(el.dataset.pri);
+    const showStatus = fs === 'all' || (fs === 'open' && !st) || fs === st;
+    const showPri = fp === 'all' || (fp === 'p1' && pri === 1) || (fp === 'p12' && pri <= 2);
+    el.classList.toggle('hidden', !(showStatus && showPri));
+  }
+}
+
+document.getElementById('sections').addEventListener('change', e => {
+  if (e.target.type === 'radio') {
+    const id = e.target.name.slice(2);
+    (state.tests[id] ||= {}).s = e.target.value;
+    e.target.closest('.test').className = `test ${e.target.value}`;
+    save(); updateCounts(); applyFilters();
+  }
+});
+document.getElementById('sections').addEventListener('input', e => {
+  if (e.target.dataset.n) { (state.tests[e.target.dataset.n] ||= {}).n = e.target.value; save(); }
+});
+document.getElementById('fStatus').addEventListener('change', applyFilters);
+document.getElementById('fPri').addEventListener('change', applyFilters);
+document.getElementById('expandBtn').addEventListener('click', () => document.querySelectorAll('details.sec').forEach(d => d.open = true));
+document.getElementById('collapseBtn').addEventListener('click', () => document.querySelectorAll('details.sec').forEach(d => d.open = false));
+
+function toMarkdown() {
+  const L = [];
+  L.push('# Compressarr 2.2 test results', '');
+  for (const f of ENV_FIELDS) if (state.env[f]) L.push(`- **${f}:** ${state.env[f]}`);
+  const all = SECTIONS.flatMap(s => s.tests);
+  const n = k => all.filter(t => ((state.tests[t.id] || {}).s || 'open') === k).length;
+  L.push('', `**Summary:** ${n('pass')} pass, ${n('fail')} fail, ${n('block')} blocked, ${n('na')} n/a, ${n('open')} not run (of ${all.length})`, '');
+  const label = { pass: 'PASS', fail: 'FAIL', block: 'BLOCKED', na: 'N/A', open: 'not run' };
+  for (const sec of SECTIONS) {
+    L.push(`## ${sec.id}. ${sec.title}`, '');
+    for (const t of sec.tests) {
+      const r = state.tests[t.id] || {};
+      const s = r.s || 'open';
+      L.push(`- **${t.id}** [P${t.pri}] ${t.title} - **${label[s]}**${r.n ? `\n  - Notes: ${r.n.replace(/\n/g, '\n    ')}` : ''}`);
+    }
+    L.push('');
+  }
+  return L.join('\n');
+}
+
+document.getElementById('copyBtn').addEventListener('click', async () => {
+  const text = toMarkdown();
+  try { await navigator.clipboard.writeText(text); alert('Results copied - paste them back into the chat.'); }
+  catch { const w = window.open('', '_blank'); w.document.write('<pre>' + esc(text) + '</pre>'); }
+});
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `compressarr-2.2-test-results-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+});
+document.getElementById('loadBtn').addEventListener('click', () => document.getElementById('loadFile').click());
+document.getElementById('loadFile').addEventListener('change', async e => {
+  const file = e.target.files[0]; if (!file) return;
+  try { state = JSON.parse(await file.text()); save(); location.reload(); } catch { alert('That file is not a saved results file.'); }
+});
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (confirm('Clear every result and note?')) { state = { env: {}, tests: {} }; save(); location.reload(); }
+});
+
+render();
+</script>
+</body>
+</html>
