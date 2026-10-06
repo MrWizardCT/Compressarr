@@ -178,6 +178,33 @@ async function loadQueuePresetNames() {
   } catch { /* best-effort - the preset-override dropdown just stays empty if this fails */ }
 }
 
+// The lanes a queued file can be told to land in. Loaded once and refreshed now and then rather than on every
+// poll - it only changes when someone edits the Lanes page.
+let queueLanes = [];
+
+async function loadQueueLanes() {
+  try {
+    const res = await fetch('/api/lanes');
+    queueLanes = (await res.json()).map(l => ({ id: l.id, displayName: l.displayName, enabled: l.enabled }));
+  } catch { /* best-effort - the "lands in" dropdown just offers nothing if this fails */ }
+}
+setInterval(loadQueueLanes, 30000);
+
+// The "lands in" dropdown on a queue row: which lane's library the FINISHED file is filed into. The file
+// itself never moves and everything else about it (preset, order, Output folder) stays with its own lane,
+// so Sonarr/Radarr never see it go missing. The first option is the file's own lane (the default).
+function fillQueueDestinationSelect(select, item) {
+  const others = queueLanes.filter(l => l.id !== item.laneId);
+  const missing = item.destinationMissing
+    ? `<option value="${escapeHtml(item.destinationLaneId)}">Deleted lane - held in Output</option>`
+    : '';
+  select.innerHTML =
+    `<option value="">Lands in: ${escapeHtml(item.laneDisplayName)}</option>` +
+    missing +
+    others.map(l => `<option value="${escapeHtml(l.id)}">Land in: ${escapeHtml(l.displayName)}${l.enabled ? '' : ' (disabled)'}</option>`).join('');
+  select.value = item.destinationLaneId || '';
+}
+
 // Same pattern lanes.js's fillPresetSelect uses for the lane card's own TV/Movie preset
 // dropdowns - a plain native <select>, not a custom popover list, so a long presets.json reads
 // the same familiar, scrollable way everywhere in the app.
@@ -201,7 +228,17 @@ function fillQueuePresetSelect(select, item) {
 // different lane subfolders (code-review finding), so only the full path is actually unique.
 function queueKey(item) { return `${item.laneId}::${item.fullName}`; }
 
+// "-> Kids" beside the lane name when a file is set to land somewhere other than its own lane's library.
+function queueDestinationMarker(item) {
+  if (!item.destinationLaneId) return '';
+  if (item.destinationMissing) {
+    return ' <span class="queue-dest missing" title="The lane this file was assigned to has been deleted. The finished file will wait in Output until you choose where it lands.">&#8618; deleted lane</span>';
+  }
+  return ` <span class="queue-dest" title="The finished file will land in ${escapeHtml(item.destinationLaneName)}'s library. The source file is not moved.">&#8618; ${escapeHtml(item.destinationLaneName)}</span>`;
+}
+
 function queueBadgeClass(item) {
+
   if (item.isError) return 'error';
   return item.isResumed ? 'resumed' : 'new';
 }
@@ -271,12 +308,14 @@ function renderQueueList() {
       ${item.isError ? '' : `<span class="queue-handle">${QUEUE_ICON_GRIP}</span>`}
       <span class="queue-badge ${queueBadgeClass(item)}">${item.isSkipped ? 'Skipped' : queueBadgeLabel(item)}</span>
       ${item.isFileBotUnmatched ? '<span class="queue-badge unmatched">Unmatched</span>' : ''}
-      <div class="queue-lane">${escapeHtml(item.laneDisplayName)}</div>
+      <div class="queue-lane">${escapeHtml(item.laneDisplayName)}${queueDestinationMarker(item)}</div>
+
       <div class="queue-file">${escapeHtml(item.fileName)}</div>
       <div class="queue-meta">${item.sizeGb.toFixed(2)} GB</div>
       ${item.isError
         ? `<span class="queue-preset-static">${escapeHtml(item.preset || '-')}</span>`
         : `<select class="queue-preset-select${item.isCustomPreset ? ' custom' : ''}"></select>`}
+      ${item.isError ? '' : `<select class="queue-dest-select${item.destinationLaneId ? ' redirected' : ''}" title="Which lane's library the finished file lands in. The file itself is not moved."></select>`}
       ${item.isError ? '' : `<div class="queue-menu-wrap"><button type="button" class="queue-dots-btn" aria-label="Row actions">${QUEUE_ICON_DOTS}</button></div>`}
     `;
     list.appendChild(row);
@@ -306,6 +345,21 @@ function renderQueueList() {
       // closest thing the DOM exposes to "the dropdown is actually showing."
       select.addEventListener('focus', () => { selectOpenKey = key; });
       select.addEventListener('blur', () => { if (selectOpenKey === key) selectOpenKey = null; });
+      const destSelect = row.querySelector('.queue-dest-select');
+      fillQueueDestinationSelect(destSelect, item);
+      destSelect.addEventListener('click', e => e.stopPropagation());
+      destSelect.addEventListener('focus', () => { selectOpenKey = key; });
+      destSelect.addEventListener('blur', () => { if (selectOpenKey === key) selectOpenKey = null; });
+      destSelect.addEventListener('change', async e => {
+        selectOpenKey = null;
+        await fetch('/api/run/queue/destination', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ laneId: item.laneId, fullName: item.fullName, destinationLaneId: e.target.value || null })
+        });
+        poll();
+      });
+
       select.addEventListener('change', async e => {
         selectOpenKey = null;
         const chosen = e.target.value === PRESET_DEFAULT_VALUE ? null : e.target.value;
@@ -495,6 +549,7 @@ document.addEventListener('click', () => {
 });
 
 loadQueuePresetNames();
+loadQueueLanes();
 
 function escapeHtml(text) {
   const div = document.createElement('div');

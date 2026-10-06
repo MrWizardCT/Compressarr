@@ -1249,6 +1249,21 @@ td { font-variant-numeric: tabular-nums; }
   color: var(--text-dim);
 }
 .queue-preset-select.custom { color: var(--accent); }
+
+/* "Lands in" lane dropdown on a queue row, and the "-> Kids" marker next to the lane name. Same violet notice
+   colour the report and History use for a redirect - deliberate, not a problem. */
+.queue-dest-select {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 170px;
+  padding: 4px 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.queue-dest-select.redirected { color: var(--notice-text); background: var(--notice-bg); border-color: var(--notice-border); }
+.queue-dest { margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; background: var(--notice-bg); color: var(--notice-text); border: 1px solid var(--notice-border); white-space: nowrap; }
+.queue-dest.missing { background: var(--err-bg); color: var(--err); border-color: transparent; }
+.queue-item.skipped .queue-dest-select { opacity: 0.5; }
 .queue-preset-static { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); padding: 3px 6px; flex-shrink: 0; }
 
 .queue-dots-btn {
@@ -1332,6 +1347,8 @@ td { font-variant-numeric: tabular-nums; }
     margin-left: auto;
     max-width: 130px;
   }
+
+  .queue-dest-select { order: 8; max-width: 130px; }
 }
 
 .banner {

@@ -1,4 +1,10 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Compressarr.Core.Config;
+using Compressarr.Core.Conversion;
+using Compressarr.Core.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Compressarr.Web.Tests;
 
@@ -150,5 +156,57 @@ public class LaneAssignmentEndpointTests
         Assert.Null(row.DestinationLaneName);
         Assert.Equal("kids", row.DestinationLaneId); // the assignment isn't silently cleared
         Assert.Equal("kids", host.ResumeEntries().Single().DestinationLaneId);
+    }
+    [Fact]
+    public async Task DeletingALane_CanFirstAskHowManyQueuedFilesAreSetToLandInIt()
+    {
+        await using var host = await QueueHost.StartAsync(Home, Kids);
+        var a = host.Drop("hdsd", "a.mkv");
+        var b = host.Drop("hdsd", "b.mkv");
+        var c = host.Drop("hdsd", "c.mkv");
+        await host.SetDestinationAsync("hdsd", a, "kids");
+        await host.SetDestinationAsync("hdsd", b, "kids");
+        await host.RemoveAsync("hdsd", b); // removed from the queue: no longer waiting to land anywhere
+
+        using var doc = JsonDocument.Parse(await host.Client.GetStringAsync("/api/lanes/kids/redirected-files"));
+        Assert.Equal(1, doc.RootElement.GetProperty("waitingFiles").GetInt32());
+
+        using var none = JsonDocument.Parse(await host.Client.GetStringAsync("/api/lanes/hdsd/redirected-files"));
+        Assert.Equal(0, none.RootElement.GetProperty("waitingFiles").GetInt32()); // a lane's own files aren't "redirected to" it
+    }
+
+    [Fact]
+    public async Task AFinishedFileHeldOnAFailedMove_StillCountsAsWaitingForItsDestinationLane()
+    {
+        await using var host = await QueueHost.StartAsync(Home, Kids);
+        var file = host.Drop("hdsd", "a.mkv");
+        host.SeedResume(new ResumeEntry { LaneId = "hdsd", FullName = file, Status = ResumeStatus.MoveFailed, DestinationLaneId = "kids", EncodedFilePath = file });
+
+        using var doc = JsonDocument.Parse(await host.Client.GetStringAsync("/api/lanes/kids/redirected-files"));
+
+        Assert.Equal(1, doc.RootElement.GetProperty("waitingFiles").GetInt32());
+    }
+
+    [Fact]
+    public async Task TheHistoryReportsList_CarriesEachRunsRedirectCount_ForTheHighlight()
+    {
+        await using var host = await QueueHost.StartAsync(Home, Kids);
+        var config = host.Services.GetRequiredService<IConfigStore>().Load(AppPaths.GetConfigFilePath());
+        var expander = host.Services.GetRequiredService<IPathExpander>();
+        var logPath = expander.Expand(config.Logging.LogFilePath);
+        var reportPath = expander.Expand(config.Report.ReportPath);
+        Directory.CreateDirectory(reportPath);
+        File.WriteAllText(Path.Combine(reportPath, "run1.html"), "<html></html>");
+        File.WriteAllText(Path.Combine(reportPath, "run2.html"), "<html></html>");
+        var today = DateTime.Now;
+        var history = host.Services.GetRequiredService<IRunHistoryStore>();
+        history.AppendRun(logPath, new RunHistoryRecord(today.Year, today.Month, today.Day, 10, 4, 2, 0, 1, 0, RunNumber: 1, ReportFileName: "run1.html"));
+        history.AppendRun(logPath, new RunHistoryRecord(today.Year, today.Month, today.Day, 10, 4, 2, 0, 1, 0, RunNumber: 2, ReportFileName: "run2.html", RedirectCount: 3));
+
+        using var doc = JsonDocument.Parse(await host.Client.GetStringAsync("/api/history/reports"));
+
+        var byRun = doc.RootElement.EnumerateArray().ToDictionary(e => e.GetProperty("runNumber").GetInt32(), e => e.GetProperty("redirectCount").GetInt32());
+        Assert.Equal(3, byRun[2]);
+        Assert.Equal(0, byRun[1]);
     }
 }

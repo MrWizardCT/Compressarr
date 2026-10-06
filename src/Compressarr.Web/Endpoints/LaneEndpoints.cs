@@ -55,7 +55,21 @@ public static class LaneEndpoints
             return result is null ? Results.NotFound() : Results.Json(result);
         });
 
-        app.MapDelete("/api/lanes/{id}", (string id, IConfigStore configStore) =>
+        // How many queued files in OTHER lanes are set to land in this lane's library (see
+        // ResumeEntry.DestinationLaneId) - asked before a lane is deleted so the warning can say what would
+        // happen to them: each waits in Output until the user picks another destination.
+        app.MapGet("/api/lanes/{id}/redirected-files", (string id, IResumeStateStore resumeStore) =>
+        {
+            var waiting = resumeStore.Load(AppPaths.GetResumeFilePath()).Count(e =>
+                e.DestinationLaneId == id &&
+                e.LaneId != id &&
+                !e.Removed &&
+                e.Status is ResumeStatus.Pending or ResumeStatus.MoveFailed);
+            return Results.Json(new { waitingFiles = waiting });
+        });
+
+        app.MapDelete("/api/lanes/{id}"
+, (string id, IConfigStore configStore) =>
         {
             var removed = configStore.Update(AppPaths.GetConfigFilePath(), config => config.Lanes.RemoveAll(l => l.Id == id));
             return removed == 0 ? Results.NotFound() : Results.NoContent();

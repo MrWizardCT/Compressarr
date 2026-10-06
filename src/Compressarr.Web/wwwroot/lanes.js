@@ -141,7 +141,18 @@ async function saveAllLanes() {
 
 async function removeLane(node) {
   const dto = readLaneCard(node);
-  const confirmed = confirm(`Remove lane "${dto.displayName}"?\n\nThis only removes it from Compressarr's configuration - no files are touched.`);
+  // Files in other lanes may have been told to land in this lane's library. Say so before it goes: they are
+  // not misfiled anywhere else - each finished file waits safely in Output until a new destination is chosen.
+  let redirectedNote = '';
+  try {
+    const res = await fetch(`/api/lanes/${encodeURIComponent(dto.id)}/redirected-files`);
+    const { waitingFiles } = await res.json();
+    if (waitingFiles > 0) {
+      redirectedNote = `\n\n${waitingFiles} queued file${waitingFiles === 1 ? ' is' : 's are'} set to land in this lane. ${waitingFiles === 1 ? 'It' : 'They'} will be held in Output (never filed in another library) until you choose a new destination on the Monitor page.`;
+    }
+  } catch { /* best-effort - the plain confirmation below still works */ }
+
+  const confirmed = confirm(`Remove lane "${dto.displayName}"?\n\nThis only removes it from Compressarr's configuration - no files are touched.${redirectedNote}`);
   if (!confirmed) return;
 
   const res = await fetch(`/api/lanes/${dto.id}`, { method: 'DELETE' });
