@@ -9,6 +9,243 @@ for that full history.
 > and renaming all run on plain, inspectable regex pattern matching - the same deterministic
 > logic every time, nothing generative involved.
 
+## [2.2.0-beta.1] - 2026-10-06
+
+> [!WARNING]
+> **Pre-release (beta).** Please try it on a real install and tell us what you find - the stable
+> release is still [2.1.8](https://github.com/MrWizardCT/Compressarr/releases/tag/v2.1.8).
+
+> [!TIP]
+> **What's new in 2.2.0-beta.1:** an optional **day/night Scheduler** (encode priority by time of
+> day, with an optional off-hours-only hold), **lane assignment** (land a file in a different
+> lane's library without moving it, with the redirect flagged on the report and History), and
+> FileBot-renamed files **keeping their place in the queue**. Everything else below carries forward
+> from 2.1.8 for context - new changes are in **bold**.
+
+### Added
+- **Scheduler page - an optional day/night schedule (off by default).** A new sidebar page (after
+  Lanes) with a live "Right now" card. Choose when "daytime" is - the same every day, one window for
+  weekdays and one for weekends, or a window for each day of the week (a window may cross midnight,
+  and any day can be "Run Off-hours Priority All Day") - then set the encoder's priority for the
+  daytime and for off-hours (Low through Realtime; a running encode switches priority live at the
+  boundary, no restart). Optionally **only encode during off-hours**: no new file starts in the
+  daytime window, with a choice of finishing the current file first or suspending it until
+  off-hours. A **Run anyway** button (Scheduler and Monitor) releases the hold for the rest of the
+  window, the queue completion estimate counts held time, and the toolbar shows the current mode.
+  Until you switch it on, nothing changes: encodes run at normal priority at all hours, exactly as
+  before. Every setting is described on the page itself.
+- **Lane assignment - land a file in a different lane's library.** Each queued file has a "Lands
+  in" dropdown on the Monitor page. Choose another lane and the finished file (and its
+  subtitles/artwork) is filed into *that* lane's TV/Movie library - the file itself is never moved,
+  so Sonarr/Radarr never see it go missing, and its preset, Output folder, queue position and
+  source-folder cleanup all stay with its own lane. If the destination is offline, or its lane is
+  deleted, the finished file waits safely in Output and is retried every pass - it is never filed in
+  the library you were avoiding. The Lanes page warns before you delete a lane that queued files
+  are set to land in.
+- **Redirects are flagged afterward.** The HTML report tags each redirected file and shows a banner
+  listing them, and the History page highlights a run containing redirects (a violet notice colour,
+  deliberately not red or yellow) with a "N redirected" tag. The run history CSV gains one column at
+  the end, so 2.1.x still reads it.
+- The About page shows pre-release versions in full (e.g. "2.2.0-beta.1").
+- A persistent "Install as app" card in Settings > Web UI: installs the mobile-friendly PWA
+  on demand (Chrome/Edge/Android), shows "Add to Home Screen" instructions on iOS (no installable
+  prompt exists there), or - if already running as the installed app - explains how to uninstall
+  it from the browser's own app list, since no web page can trigger that directly.
+- A new opt-in `{file_list}` notification token: this run's filenames, one per line. Deliberately
+  left out of every built-in Minimal/Standard/Detailed template - it only ever reaches a message
+  if you type it into a Custom template yourself, since it's the one token that can put a media
+  filename in front of wherever that channel sends its message.
+- A close button on every HTML report - most useful in PWA/standalone mode, which has no browser
+  chrome at all to close a tab with, but available on desktop too.
+- A "Launch Monitor at Startup" option (Settings > Monitoring): opens the Monitor page in your
+  default browser as soon as Compressarr launches, independent of whether monitoring itself
+  auto-starts.
+- Configuration validation: required fields on Settings and Lanes (HandBrake/FileBot paths,
+  video extensions, a lane's preset or Output folder) are checked on load and on save, with
+  invalid fields outlined in red and a toolbar error message pointing you to them. Notifications
+  validates its own required fields (e.g. a channel's webhook URL) the same way before you save.
+  Saving still succeeds either way - this is a warning, not a gate - matching how Test Connection
+  and other checks already behave in this app.
+- Numbered error-code badges (101-110) on the HTML run report, with a hover tooltip explaining
+  each one - covers missing HandBrake/presets, a misconfigured lane, and FileBot path problems, so
+  a problem is identifiable from the report itself, not just the log.
+- A "Keep Logs of successful HandBrake Encodes" setting (Settings > Maintenance, off by default),
+  so successful-encode detail logs don't accumulate forever - failed-encode logs are always kept
+  since the report links to them.
+- A "Purge Logs & Reports" button (Settings > Maintenance) - same as Clear Logs + Clear History
+  combined, but a permanent delete instead of Recycle Bin, for a faster cleanup on a large
+  accumulated backlog.
+
+### Changed
+- **A file that FileBot renames now keeps its place in the queue** - along with any skip or preset
+  override - instead of being treated as a brand-new arrival at the end, which silently undid a
+  manual reorder. The rename is read from FileBot's own output.
+- **Sidebar order is now Monitor, Lanes, Scheduler, Notifications, History, Settings, About** -
+  Settings moves below History.
+- **Under the hood, with no change in behavior:** every rule about which files are tracked, in what
+  order, and what the Monitor page shows now lives in one place instead of being re-implemented in
+  the Monitor page, the lane preparation and the next-file picker; and the encode step now talks to
+  an engine-neutral interface (HandBrake is still the only encoder, with its exact command line
+  pinned by tests). The automated test suite roughly doubled alongside this.
+- The first-launch "Install as app" toolbar banner is retired, superseded by the persistent
+  Settings > Web UI card above - the underlying install capability is unchanged, just no longer
+  a one-time, dismiss-and-it's-gone prompt.
+- The "Original v1.1 (PowerShell)" credit and link are removed from the About page - v1.1 is no
+  longer referenced anywhere in the app.
+- Monitor is now the default page when Compressarr starts (opening the web UI or the tray
+  icon's "Open Web UI"), instead of Settings - a one-time setup page isn't where you check in
+  day-to-day.
+- A configuration change saved while monitoring is already running now actually takes effect on
+  the next pass, instead of silently having no effect until monitoring is stopped and restarted or
+  Compressarr itself is restarted - this covers Notifications, Report, PostExec, and Logging
+  settings, and the Lanes list itself (add/remove/reorder/enable/disable).
+- The whole app is usable on a phone or tablet: the sidebar becomes a slide-out drawer below
+  about 760px width, the toolbar's action buttons and status cluster wrap onto their own rows
+  instead of overlapping, and Monitor's queue rows reflow into a two-line card layout. Requires no
+  extra setup - just open Compressarr's normal address in a mobile browser.
+- The HTML report's recovery banner and the activity it's based on now cover every kind of
+  automatic retry - a failed move, a failed companion-file move, or a deferred Sonarr/Radarr
+  rescan/cleanup - not just the first two.
+- Every page's status/save messages now show in the toolbar, replacing each page's own scattered
+  status element(s) - the same consistent place across Settings, Lanes, and Notifications.
+- The toolbar shows elapsed time for the run currently in progress ("Monitoring is ON: Running
+  (Time Elapsed: 2 hrs, 5 min 10 sec)"), ticking up live instead of only updating once per poll.
+- Checking for updates now happens immediately when Compressarr starts, instead of only relying
+  on a browser cache that could keep showing "update available" for up to a day after you'd
+  already upgraded.
+- Donate page crypto address cards are more compact and show a truncated address (full address on
+  hover, copy, and in the QR modal) so all six currencies fit in a single row.
+
+### Fixed
+- New files could still land above files already waiting in the queue, even after 2.1.7's
+  queue-order locking. A file only got its permanent position once Compressarr tracked it, and
+  that only happened when a Lane had nothing else waiting - so during any backlog or long encode,
+  files that arrived were left untracked and ordered on the Monitor page by live folder-scan
+  position (not arrival order), and were later locked into that same wrong order once the backlog
+  drained. Every file is now tracked, at the end of the queue, the first time anything sees it - the
+  Monitor page's own refresh or a monitoring pass, whichever comes first. A file re-added at a
+  path that already had a completed or failed entry is also treated as a new arrival and goes to
+  the end instead of reusing its old position at the top. A monitoring pass also merges in
+  anything the Monitor page tracked before saving, instead of silently overwriting it.
+- A file's position in the Monitor page's queue is now permanently locked the moment it first
+  appears - only an explicit reorder (drag, or move to top/bottom, which is just a reorder under
+  the hood) can ever change it again. Previously, a file with no explicit position sorted by live
+  filesystem scan order, which is raw OS enumeration - not alphabetical, and not guaranteed to
+  place a newly-added file last - so a brand-new file could land anywhere relative to already-known
+  ones, and a single-file action (skip, preset override, remove) touching one untouched file could
+  let it jump ahead of still-untouched files sitting alongside it.
+- A resume-tracking entry belonging to a Lane that's since been deleted or renamed no longer sits
+  permanently stuck - it's now cleaned up automatically, instead of forever inflating the "Resuming
+  previous incomplete run" count and blocking the automatic cleanup that clears finished history
+  once nothing is genuinely outstanding.
+- An in-progress file could, in rare cases, still show up in the Monitor page's queue as if it
+  were waiting to be processed, instead of being recognized as the one currently encoding - a name
+  collision between two different files in different Lane subfolders was enough to trigger it.
+- A file could show a "Resumed" badge it didn't deserve - a single queue-editing action (skip,
+  preset override, remove) elsewhere in the same Lane was enough to make every file in that Lane
+  look like leftover work from an interrupted run, even when nothing had actually been
+  interrupted.
+- Daily/Weekly digest notifications always showed "Duration: 0s" regardless of how long the
+  underlying runs actually took - the digest summary never tracked a duration at all until now.
+- A queue-control edit (reorder, skip, preset override, or remove) made anywhere in the queue
+  while a different file was still finishing its own routing, companion-file move, or Sonarr/Radarr
+  rescan-confirmation wait (which can take up to about two minutes) could be silently lost the
+  instant that other file's own result was saved - found by an external pre-release code review.
+  Queue edits are now merged onto the freshest state on disk instead of being overwritten by a
+  stale in-memory snapshot.
+- Queue-control actions (reorder, skip, preset override, remove) identified a file by its
+  filename alone, which could target the wrong file if two different files in different lane
+  subfolders happened to share the same name - also found by the same review. These now match on
+  the file's full path instead.
+- A hung or runaway post-execution command now times out (5 minutes) and is killed instead of
+  blocking that pass's report and notifications indefinitely, with nothing - not even Abort - able
+  to interrupt it before.
+- resume.json is now written atomically (write-to-temp-then-rename) instead of in place,
+  preventing a corrupted or truncated resume file if Compressarr is killed or crashes mid-write -
+  this file is rewritten after every single file and every queue-control edit, so it's frequent
+  enough to matter.
+- HandBrakeCLI's stderr stream is now fully drained before being read, closing a rare timing gap
+  where its own "Finished work at" completion line - read to determine success - might not have
+  fully arrived yet, a plausible source of an occasional false "encode failed" result.
+- FileBot is now launched with its arguments passed individually instead of built into one
+  manually-quoted command-line string, removing a class of quoting problems from paths or
+  arguments containing spaces or special characters.
+- Sonarr/Radarr URLs are now validated and composed through .NET's own URL handling instead of
+  bare string concatenation, rejecting a malformed URL up front with a clear error instead of
+  failing unpredictably later - a custom URL Base (for a reverse-proxy setup) is still respected.
+- Aborting a run or stopping monitoring now actually cancels an in-flight Sonarr/Radarr API call
+  immediately, instead of waiting for it to finish on its own (up to 15 seconds) before the
+  abort/stop took effect for that file.
+- Sonarr/Radarr's post-move library rescan is now actually confirmed complete (real polling of
+  its own command status, replacing a blind fixed wait) before the now-empty source folder is
+  removed - and if that confirmation times out, fails, or is cancelled, the folder is safely left
+  in place and the confirmation is automatically retried on the lane's next pass, instead of
+  risking Sonarr/Radarr losing track of the episode/movie because the folder was already gone when
+  it rescanned.
+- A source-folder cleanup that fails outright (a locked file, a permissions error, antivirus
+  interference, a flaky network share, etc.) after a confirmed rescan is now retried the same way,
+  instead of being silently abandoned - the file's report entry also shows a warning so it's
+  visible that cleanup is still pending, rather than reading as a plain, finished "OK".
+- A companion file (subtitle, .nfo, artwork) that fails to move alongside its video now gets its
+  own retry state and is automatically retried on the lane's next pass, without re-encoding -
+  previously it was left stranded in the source folder with only a log warning and no way to
+  recover on its own.
+- A monitoring pass whose only activity was successfully recovering a previously-stranded file
+  (a failed move, a failed companion move, or a deferred Sonarr/Radarr confirmation/cleanup) no
+  longer looks like an empty, idle poll - its log and an HTML report are kept, the same as a pass
+  that processed brand-new files.
+- The destination-collision setting (Rename/Skip) is now honored for a file resting directly in
+  Output (MoveFiles off) or left in place after a routing failure - this path previously always
+  overwrote regardless of what was configured, independent of the similar Rename/Skip fix already
+  shipped in 2.1.4 for the normal routed-move path.
+- Report generation for a persistent, unchanged lane configuration problem is now deduplicated
+  the same way the matching log message already was, instead of writing a fresh report on every
+  single poll for as long as the problem stays unresolved.
+- Extra CLI Options with an unmatched quote (") are now flagged in Settings validation -
+  everything after an unclosed quote would otherwise silently fold into a single argument instead
+  of being split as intended.
+- The sidebar's red History error/warning badges had no way to clear - they now go away once
+  you've opened the History page and its Reports list has loaded, and stay cleared until a new run
+  has an error or warning.
+- A failed file move (offline network drive, permissions, etc.) no longer deletes the source file
+  before the move is retried - the source is preserved until the move actually succeeds, and a
+  failed move is retried automatically on the lane's next pass without re-encoding. A related bug
+  this fix exposed - a rescan could mistake that pending retry for a fresh file and force a full
+  re-encode instead of just retrying the move - is fixed alongside it.
+- Sonarr/Radarr are no longer unmonitored for a file whose move to its destination failed - only
+  once the move actually succeeds.
+- The destination-collision setting (Rename/Skip) now actually applies - previously the staged
+  output file was always given a fresh temporary name before the collision check ran, so Rename
+  and Skip both behaved like Overwrite in practice.
+- Companion files (subtitles, .nfo, artwork) now follow the same "On destination collision"
+  setting as their video, and always take the video's own resulting filename (including any
+  Rename-mode suffix), so a renamed video and its companions stay matched.
+- The library scanner now skips reparse points (junctions/symlinks) and tracks visited folders,
+  preventing runaway or duplicate scanning through a symlink loop.
+- HandBrakeCLI's own arguments are passed individually instead of built into one manually-quoted
+  string, removing a class of quoting problems from paths or preset names with spaces or special
+  characters.
+- Several cleanup steps (removing temp files, HandBrake detail logs, and trash-fallback warnings)
+  that used to fail silently are now logged instead of swallowed.
+- A source folder could be left behind, empty, after all its files successfully moved out.
+- A monitor pass that keeps failing the same way (e.g. a lane with no usable preset) no longer
+  writes a fresh log entry and report on every single pass.
+- Installing or merging a new HandBrake preset didn't refresh the cached preset list, so it
+  didn't show up in the Lanes page's preset dropdowns until a separate manual reload.
+- The Lanes page's own save confirmation never turned green like it does on Settings and
+  Notifications.
+- Several other save/action confirmations across the app were missing their green success
+  styling.
+- A converted file's original source is no longer stripped of its title metadata before
+  encoding - only the actual converted output ever gets its title tag cleared.
+- Sonarr/Radarr's own library rescan (triggered right after unmonitoring) now waits for the
+  scan to actually finish before moving on to the next file, instead of firing it and
+  continuing immediately.
+- The now-empty source folder is no longer removed until after Sonarr/Radarr's unmonitor and
+  rescan have completed - removing it any earlier could make the rescan see a disconnected
+  folder instead of a genuinely empty one, which could leave the episode/movie incorrectly
+  still showing as present.
+
 ## [2.1.8] - 2026-10-04
 
 > [!TIP]

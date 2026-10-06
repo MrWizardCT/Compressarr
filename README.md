@@ -8,6 +8,13 @@
 
 <br clear="left">
 
+> [!IMPORTANT]
+> **This is the 2.2 beta (2.2.0-beta.1).** It adds an optional **day/night Scheduler**, **lane
+> assignment** ("land this file in a different lane's library"), and keeps a file's place in the
+> queue when FileBot renames it - see [What's new in 2.2](#whats-new-in-22-beta) below. It is a
+> pre-release: the stable release is [v2.1.8](https://github.com/MrWizardCT/Compressarr/releases/tag/v2.1.8).
+> Your settings and queue carry over in both directions (everything new is optional and additive).
+
 A complete, end-to-end batch video conversion workflow - from the moment a file lands in a
 watched folder to the moment you're notified it's done, with nothing manual in between.
 Compressarr watches your folders, transcodes new video through
@@ -28,7 +35,24 @@ moves the finished result into your library's destination folder. That way only 
 already-processed files ever reach your media server, keeping your library organized and at its
 best quality while using a fraction of the space.
 
-## The complete workflow
+## What's new in 2.2 (beta)
+
+- **Scheduler page** - an optional, off-by-default day/night schedule. Pick when "daytime" is (the
+  same every day, one window for weekdays and another for weekends, or each day of the week) and
+  Compressarr runs encodes at a lower priority then and a higher one outside it, changing a
+  running encode's priority live at the boundary. Optionally **hold the queue** during the daytime
+  entirely. See [Scheduler page](#scheduler-page).
+- **Lane assignment** - a file dropped in the wrong lane's folder can be told to **land in a
+  different lane's library**, without moving the file. See [Landing a file in a different
+  lane](#landing-a-file-in-a-different-lane).
+- **FileBot-renamed files keep their place in the queue** - a reorder, skip or preset override you
+  set on a file is no longer lost when FileBot renames it.
+- **Redirects are visible afterward** - the HTML report and the History page flag any run in which
+  a file landed in a different lane than the one it was found in.
+- Under the hood (no change in behavior): the queue's ordering/tracking rules now live in one
+  place, and the encoder is behind an engine-neutral interface (HandBrake is still the only
+  encoder), both pinned by a much larger automated test suite.
+
 
 ```
 Watch folder → Detect TV/Movie → Convert (HandBrake) → File into library
@@ -87,7 +111,9 @@ against TheTVDB/TheMovieDB - right before Compressarr scans a lane's Input folde
 each get their own enable toggle and Arguments, so one content type's naming rules never affect
 the other; a TV episode-numbering picker (`S01E01` vs `1x01`) fills in FileBot's format string for
 you. A file FileBot couldn't confidently rename shows an amber "Unmatched" badge in the Monitor
-queue instead of failing silently.
+queue instead of failing silently. A file that FileBot *does* rename keeps its place in the queue,
+along with any skip or preset override you had set on it - the rename is read from FileBot's own
+output and the queue entry follows the file to its new name.
 
 ### Monitoring
 
@@ -103,8 +129,10 @@ file to finish. A file's place in the queue is locked in the moment Compressarr 
 new arrivals always join at the end, and only you can move one afterward (nothing else, including
 presets, skips, or later arrivals, ever reshuffles it). Drag a queued file to reorder it within
 its lane, or use its menu to skip it, remove it from the queue, or override its preset for just
-that one file. The recent-log panel and
-CPU usage update live while a pass runs.
+that one file, or choose which lane's library it **lands in** (see [Landing a file in a different
+lane](#landing-a-file-in-a-different-lane)). If the [Scheduler](#scheduler-page) is holding the
+queue for the daytime, the State shows **Held** and a **Run anyway** button starts encoding
+immediately. The recent-log panel and CPU usage update live while a pass runs.
 
 <img src="Assets/Screenshots/monitor-page.png" alt="Compressarr Monitor page, showing a real conversion in progress with live percent/fps/ETA and the In Queue list" width="700">
 
@@ -444,6 +472,34 @@ Event Name field here). Find your Webhooks Key at
 after `/use/` in your personal URL. Compressarr sends title/body/report path as IFTTT's
 `value1`/`value2`/`value3` ingredients for use in your applet's action.
 
+### Scheduler page
+
+The Scheduler (sidebar, after Lanes) is an **optional** day/night schedule - **off by default**, so
+until you switch it on Compressarr behaves exactly as it always has. A "Right now" card at the top
+shows the current mode, when it next changes, and whether the queue is held; the rest of the page is
+the schedule itself, with a description of every setting at the bottom. All times use this PC's
+local clock, so daylight saving is followed automatically.
+
+| Setting | What it does |
+|---|---|
+| Enable the day/night schedule | Master switch. Off = no effect at all. |
+| Only encode during off-hours | Hold the queue during the daytime window: no *new* file starts until off-hours begin. New files are still found and queued in arrival order while they wait. |
+| If the daytime starts mid-encode | With the hold on: **finish the current file, then hold** (never interrupts an encode), or **suspend it until off-hours** (freezes it, resumes when off-hours return). |
+| Daytime window | **Same every day**, **Weekdays and weekends**, or **Each day of the week**. A window may cross midnight (22:00-06:00). **Run Off-hours Priority All Day** on a window gives that day no daytime window. |
+| Daytime / Off-hours priority | Low, Below Normal, Normal, Above Normal, High or Realtime. An encode already running when the window changes switches priority at once. By default: Below Normal by day, Normal at night - Normal is what encodes always used before this feature. |
+
+A few things worth knowing:
+
+- **Priority doesn't change how much CPU an encode wants** - HandBrake uses nearly every core
+  regardless. Priority decides who wins when other programs want CPU time too. High and Realtime
+  can make the PC sluggish or unresponsive while an encode runs, and Realtime needs administrator
+  rights (without them Windows treats it as High).
+- **Run anyway** (on the Scheduler page and the Monitor) releases a hold for the rest of the current
+  daytime window; it is never saved. Stop Monitoring, or pressing Resume on a suspended encode, also
+  releases it so neither waits on a frozen encode.
+- The Monitor's **queue completion estimate counts the time the queue spends held**, and the toolbar
+  shows a tag ("Daytime - low priority", "Off-hours - full speed", "Paused until 10:00 PM").
+
 ### Lanes page
 
 <img src="Assets/Screenshots/lanes-page.png" alt="Compressarr Lanes page, showing two configured lanes" width="700">
@@ -504,6 +560,28 @@ D:\Media\Input\                              (after - now empty, ready
 Originals are deleted, recycled, or kept per **Original file after convert**; if a source
 subfolder ends up with nothing left to convert, it's removed too - including a TV show's own
 folder once its last episode has been converted.
+
+### Landing a file in a different lane
+
+Say Sesame Street was dropped in your SD-HD lane's folder but belongs in your Kids library. On the
+Monitor page, use the **Lands in** dropdown on that file's row and choose Kids. When the file
+finishes it is filed into **Kids' TV or Movie library** instead - and nothing else changes: the file
+is **never moved** (so Sonarr/Radarr never see it go missing and can't re-grab it), it still uses
+its own lane's preset (use the per-file preset override to change that), it is staged in its own
+lane's Output folder, keeps its place in the queue, and its source folder is cleaned up against its
+own lane's Input folder. A "↪ Kids" marker beside the lane name shows it is redirected; choosing the
+file's own lane again clears it.
+
+- **If the destination can't be reached** (offline share, full disk) the finished file waits safely
+  in Output and is retried every pass, like any failed move - it is **never** filed in the library you
+  were avoiding.
+- **If you delete the destination lane**, the Lanes page tells you how many queued files point at it.
+  Those files wait in Output (the row shows "Deleted lane - held in Output") until you pick a new
+  destination. A disabled destination lane works fine.
+- **Reports show it**: the HTML report tags each redirected file ("Landed in Kids - redirected from
+  SD-HD") and lists them in a banner, and the History page highlights a run containing redirects in
+  a distinct violet colour - deliberately not red or yellow, since a redirect is your choice, not a
+  problem.
 
 ### Custom presets
 
@@ -594,6 +672,19 @@ from the Lanes page.
     "Sonarr": { "Enabled": false, "Url": "", "ApiKey": "" },
     "Radarr": { "Enabled": false, "Url": "", "ApiKey": "" }
   },
+  "Schedule": {
+    "Enabled": false,
+    "Mode": "Everyday",
+    "DayStart": "08:00",
+    "DayEnd": "22:00",
+    "WeekendDayStart": "10:00",
+    "WeekendDayEnd": "20:00",
+    "Days": [],
+    "DayPriority": "BelowNormal",
+    "NightPriority": "Normal",
+    "OnlyEncodeOffHours": false,
+    "WhenDayStarts": "FinishCurrentFile"
+  },
   "Web": { "Port": 1212 },
   "Backup": {
     "FolderPath": "%CompressarrAppData%\\Backups",
@@ -612,7 +703,11 @@ from the Lanes page.
 }
 ```
 
-`QueueEtaFormat` is `"DateTime"` or `"Duration"` - see the Settings table above. Each entry in
+`Schedule` is written by the Scheduler page (`Mode` is `Everyday`, `WeekdaysAndWeekends` or `EachDay`;
+`Days` holds seven `{Start, End}` windows, Sunday first, used in `EachDay` mode; a window whose start
+equals its end means no daytime window; priorities are `Low`, `BelowNormal`, `Normal`, `AboveNormal`,
+`High` or `Realtime`; `WhenDayStarts` is `FinishCurrentFile` or `SuspendEncode`). `QueueEtaFormat` is `"DateTime"` or `"Duration"` - see the Settings table above.
+ Each entry in
 `Notifications.Channels` also carries its own `DigestDailyEnabled`/`DigestWeeklyEnabled`/
 `DigestDailyTime`/`DigestWeeklyTime`/`DigestWeeklyDay`, same shape as the toast fields above,
 alongside its `Type`/`Trigger`/`Settings` - added from the Notifications page, not hand-edited here.
