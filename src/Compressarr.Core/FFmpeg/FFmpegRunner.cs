@@ -71,7 +71,7 @@ public sealed class FFmpegRunner : IEncoderRunner
 
         if (profile.Crop == "auto" && plan.Video.Width > 0 && plan.Video.Height > 0)
         {
-            var crop = await DetectCropAsync(request.ToolPath, request.SourcePath, probe.DurationSeconds, plan.Video, cancellationToken);
+            var crop = await FFmpegCropDetector.DetectAsync(request.ToolPath, request.SourcePath, probe.DurationSeconds, plan.Video, cancellationToken);
             if (cancellationToken.IsCancellationRequested) return Finish(false, cancelled: true);
             plan.Crop = crop;
             plan.CropReason = crop is null ? "no black bars were found" : $"black bars found - cropping to {crop.Width}x{crop.Height}";
@@ -187,65 +187,6 @@ public sealed class FFmpegRunner : IEncoderRunner
         }
 
         return Finish(true);
-    }
-
-    private async Task<CropRect?> DetectCropAsync(string ffmpegPath, string source, double? duration, MediaStream video, CancellationToken ct)
-    {
-        // A few short samples spread through the file; a dark scene or a credits roll in one of them
-        // can't narrow the crop, because the result is the box that contains every sample.
-        var positions = duration is > 60
-            ? new[] { duration.Value * 0.15, duration.Value * 0.45, duration.Value * 0.75 }
-            : new[] { Math.Max(0, (duration ?? 10) * 0.3) };
-
-        var samples = new List<CropRect>();
-        foreach (var position in positions)
-        {
-            var output = await RunCaptureAsync(ffmpegPath, new[]
-            {
-                "-hide_banner", "-nostdin",
-                "-ss", position.ToString("0.###", CultureInfo.InvariantCulture),
-                "-i", source, "-t", "3", "-an", "-sn", "-dn",
-                "-vf", "cropdetect=limit=24:round=2:reset=0",
-                "-f", "null", "-"
-            }, ct);
-            if (output is null) continue;
-            if (CropDetection.ParseLast(output) is { } rect) samples.Add(rect);
-        }
-
-        return CropDetection.Combine(samples, video.Width, video.Height);
-    }
-
-    /// <summary>Runs a short ffmpeg command and returns its log (stderr), or null when it can't run.</summary>
-    private static async Task<string?> RunCaptureAsync(string path, IEnumerable<string> args, CancellationToken ct)
-    {
-        try
-        {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = path,
-                RedirectStandardError = true,
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            foreach (var a in args) startInfo.ArgumentList.Add(a);
-
-            using var process = Process.Start(startInfo);
-            if (process is null) return null;
-            var stdout = process.StandardOutput.ReadToEndAsync(ct);
-            var stderr = process.StandardError.ReadToEndAsync(ct);
-            await process.WaitForExitAsync(ct);
-            await stdout;
-            return await stderr;
-        }
-        catch (OperationCanceledException)
-        {
-            return null;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
     }
 
     private static void WriteHeader(StringBuilder log, EncodeRequest request, FFmpegProfile profile, FFmpegPlan plan, IReadOnlyList<string> args)

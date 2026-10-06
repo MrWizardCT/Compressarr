@@ -91,7 +91,7 @@ internal static class ConfigMapping
 
     public static LaneDto ToLaneDto(LaneConfig lane, List<ValidationIssueDto> validationIssues) => new(
         lane.Id, lane.DisplayName, lane.Enabled, lane.Input, lane.Output,
-        lane.TvPreset, lane.MoviePreset, lane.TvShowBasePath, lane.MovieBasePath, validationIssues);
+        lane.TvPreset, lane.MoviePreset, lane.TvShowBasePath, lane.MovieBasePath, validationIssues, lane.Engine.ToString());
 
     public static void ApplyLaneDto(LaneConfig lane, LaneDto dto)
     {
@@ -103,6 +103,8 @@ internal static class ConfigMapping
         lane.MoviePreset = dto.MoviePreset;
         lane.TvShowBasePath = dto.TvShowBasePath;
         lane.MovieBasePath = dto.MovieBasePath;
+        // A client that doesn't send the field (an older cached page) leaves the lane's encoder alone.
+        if (Enum.TryParse<EncoderEngine>(dto.Engine, ignoreCase: true, out var engine)) lane.Engine = engine;
     }
 
     public static NotificationChannelDto ToChannelDto(NotificationChannel channel) => new(

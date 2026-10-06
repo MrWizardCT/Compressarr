@@ -39,6 +39,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMediaProbe, FFprobeMediaProbe>();
         services.AddSingleton<FFmpegRunner>();
         services.AddSingleton<IEncoderResolver, EncoderResolver>();
+        services.AddSingleton<IFFmpegCapabilityProbe, FFmpegCapabilityProbe>();
+        services.AddSingleton<IFFmpegInstaller, FFmpegInstaller>();
         services.AddSingleton<IHandBrakeProfileMigration, HandBrakeProfileMigration>();
         services.AddSingleton<IHandBrakeProfileImporter, HandBrakeProfileImporter>();
         services.AddSingleton<IHandBrakeInstaller, HandBrakeInstaller>();

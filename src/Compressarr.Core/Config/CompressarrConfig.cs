@@ -138,6 +138,7 @@ public sealed class LaneConfig
 }
 
 /// <summary>The encoders a lane can use.</summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
 public enum EncoderEngine
 {
     HandBrake,

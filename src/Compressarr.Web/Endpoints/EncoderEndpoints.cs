@@ -1,4 +1,5 @@
 using Compressarr.Core.Config;
+using Compressarr.Core.FFmpeg;
 using Compressarr.Core.Presets;
 using Compressarr.Web.Dtos;
 using Microsoft.AspNetCore.Builder;
@@ -7,12 +8,12 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Compressarr.Web.Endpoints;
 
-/// <summary>The Encoder page: where HandBrakeCLI is and what extra options every encode gets
-/// (these moved here from Settings in 2.2), plus the Profiles page's read-only list. The
-/// install/version helpers the Check/Install button uses are still HandBrakeEndpoints.</summary>
+/// <summary>The Encoder page: where HandBrakeCLI and ffmpeg are and what extra options every encode gets,
+/// plus the Profiles page's list (both encoders' profiles). The install/version helpers the Check/Install
+/// buttons use are HandBrakeEndpoints and FFmpegEndpoints.</summary>
 public static class EncoderEndpoints
 {
-    private static EncoderSettingsDto ToDto(CompressarrConfig config, IHandBrakeProfileStore profiles, IPathExpander pathExpander)
+    private static EncoderSettingsDto ToDto(CompressarrConfig config, IHandBrakeProfileStore profiles, IFFmpegProfileStore ffmpegProfiles, IPathExpander pathExpander)
     {
         var all = profiles.GetAll();
         var issues = EncoderValidator.Validate(config, pathExpander).Select(i => new ValidationIssueDto(i.Field, i.Message)).ToList();
@@ -22,37 +23,45 @@ public static class EncoderEndpoints
             HandBrakeOptions: config.HandBrake.Options,
             BuiltInProfileCount: all.Count(p => p.IsBuiltIn),
             UserProfileCount: all.Count(p => !p.IsBuiltIn),
-            // Until the ffmpeg encoder exists, every enabled lane is a HandBrake lane.
-            HandBrakeLanes: config.Lanes.Where(l => l.Enabled).Select(l => l.DisplayName).ToList(),
-            ValidationIssues: issues);
+            HandBrakeLanes: config.Lanes.Where(l => l.Enabled && l.Engine == EncoderEngine.HandBrake).Select(l => l.DisplayName).ToList(),
+            ValidationIssues: issues,
+            FFmpegPath: config.FFmpeg.Path,
+            FFmpegProbePath: config.FFmpeg.ProbePath,
+            FFmpegOptions: config.FFmpeg.Options,
+            FFmpegProfileCount: ffmpegProfiles.GetAll().Count,
+            FFmpegLanes: config.Lanes.Where(l => l.Enabled && l.Engine == EncoderEngine.FFmpeg).Select(l => l.DisplayName).ToList());
     }
 
     public static void MapEncoderEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/encoder", (IConfigStore configStore, IHandBrakeProfileStore profiles, IPathExpander pathExpander) =>
+        app.MapGet("/api/encoder", (IConfigStore configStore, IHandBrakeProfileStore profiles, IFFmpegProfileStore ffmpegProfiles, IPathExpander pathExpander) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
-            return Results.Json(ToDto(config, profiles, pathExpander));
+            return Results.Json(ToDto(config, profiles, ffmpegProfiles, pathExpander));
         });
 
-        app.MapPut("/api/encoder", (EncoderSettingsDto dto, IConfigStore configStore, IHandBrakeProfileStore profiles, IPathExpander pathExpander) =>
+        app.MapPut("/api/encoder", (EncoderSettingsDto dto, IConfigStore configStore, IHandBrakeProfileStore profiles, IFFmpegProfileStore ffmpegProfiles, IPathExpander pathExpander) =>
         {
             var result = configStore.Update(AppPaths.GetConfigFilePath(), config =>
             {
                 config.HandBrake.CliPath = dto.HandBrakeCliPath;
                 config.HandBrake.Options = dto.HandBrakeOptions;
-                return ToDto(config, profiles, pathExpander);
+                if (dto.FFmpegPath is not null) config.FFmpeg.Path = dto.FFmpegPath;
+                if (dto.FFmpegProbePath is not null) config.FFmpeg.ProbePath = dto.FFmpegProbePath;
+                if (dto.FFmpegOptions is not null) config.FFmpeg.Options = dto.FFmpegOptions;
+                return ToDto(config, profiles, ffmpegProfiles, pathExpander);
             });
             return Results.Json(result);
         });
 
-        app.MapGet("/api/profiles", (IConfigStore configStore, IHandBrakeProfileStore profiles) =>
+        app.MapGet("/api/profiles", (IConfigStore configStore, IHandBrakeProfileStore profiles, IFFmpegProfileStore ffmpegProfiles) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
 
-            List<string> UsedBy(string name) => config.Lanes
-                .Where(l => string.Equals(l.TvPreset, name, StringComparison.OrdinalIgnoreCase)
-                         || string.Equals(l.MoviePreset, name, StringComparison.OrdinalIgnoreCase))
+            List<string> UsedBy(string name, EncoderEngine engine) => config.Lanes
+                .Where(l => l.Engine == engine
+                         && (string.Equals(l.TvPreset, name, StringComparison.OrdinalIgnoreCase)
+                          || string.Equals(l.MoviePreset, name, StringComparison.OrdinalIgnoreCase)))
                 .Select(l => l.DisplayName)
                 .ToList();
 
@@ -64,9 +73,25 @@ public static class EncoderEndpoints
                 Video: HandBrakeProfileSummary.Video(p.Definition),
                 Audio: HandBrakeProfileSummary.Audio(p.Definition),
                 Description: p.Definition["PresetDescription"]?.GetValue<string>() ?? "",
-                UsedBy: UsedBy(p.Name))).ToList();
+                UsedBy: UsedBy(p.Name, EncoderEngine.HandBrake))).ToList();
 
-            return Results.Json(new ProfileListDto(rows, AppPaths.GetHandBrakeProfilesFilePath(), AppPaths.GetHandBrakeActivePresetsFilePath(), profiles.UserFileError));
+            rows.AddRange(ffmpegProfiles.GetAll().Select(p => new ProfileDto(
+                Engine: "ffmpeg",
+                Name: p.Name,
+                BuiltIn: p.IsBuiltIn,
+                Container: p.Extension.TrimStart('.').ToUpperInvariant(),
+                Video: FFmpegProfileSummary.Video(p),
+                Audio: FFmpegProfileSummary.Audio(p),
+                Description: p.Description,
+                UsedBy: UsedBy(p.Name, EncoderEngine.FFmpeg))));
+
+            return Results.Json(new ProfileListDto(
+                rows,
+                AppPaths.GetHandBrakeProfilesFilePath(),
+                AppPaths.GetHandBrakeActivePresetsFilePath(),
+                profiles.UserFileError,
+                AppPaths.GetFFmpegProfilesFilePath(),
+                ffmpegProfiles.UserFileError));
         });
     }
 }

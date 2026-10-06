@@ -16,6 +16,8 @@ public static class WebMonitorStartup
         app.MapPresetEndpoints();
         app.MapEncoderEndpoints();
         app.MapHandBrakeProfileEndpoints();
+        app.MapFFmpegEndpoints();
+        app.MapFFmpegProfileEndpoints();
         app.MapHandBrakeEndpoints();
         app.MapRunEndpoints();
         app.MapHistoryEndpoints();

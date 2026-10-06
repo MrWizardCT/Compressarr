@@ -11,7 +11,7 @@ namespace Compressarr.Core.Queue;
 /// name in different subfolders (e.g. two different shows' own "episode.mkv"). Code-review finding:
 /// matching on FileName alone let a skip/remove/preset-override/reorder request silently target the
 /// wrong one of two same-named files, or fail ambiguously.</summary>
-public sealed record UpNextItem(string LaneId, string LaneDisplayName, string FileName, string FullName, double SizeGb, string? Preset, bool IsResumed, bool IsError, bool IsSkipped, bool IsCustomPreset, bool IsFileBotUnmatched, string? DestinationLaneId = null, string? DestinationLaneName = null, bool DestinationMissing = false);
+public sealed record UpNextItem(string LaneId, string LaneDisplayName, string FileName, string FullName, double SizeGb, string? Preset, bool IsResumed, bool IsError, bool IsSkipped, bool IsCustomPreset, bool IsFileBotUnmatched, string? DestinationLaneId = null, string? DestinationLaneName = null, bool DestinationMissing = false, EncoderEngine Engine = EncoderEngine.HandBrake);
 
 /// <summary>What the queue display needs to know about the run currently in progress: the full path
 /// of the file being encoded (excluded from the waiting list) and, per lane, whether that lane
@@ -254,7 +254,7 @@ public static class QueueRules
                 // lane that has since been deleted is flagged rather than hidden - the file will wait in
                 // Output until the user picks somewhere to land it.
                 var (destinationId, destinationName, destinationMissing) = DescribeDestination(config, lane, entry);
-                var item = new UpNextItem(lane.Id, lane.DisplayName, file.Name, file.FullName, sizeGb, preset, isResumed, IsError: false, isSkipped, hasOverride, isFileBotUnmatched, destinationId, destinationName, destinationMissing);
+                var item = new UpNextItem(lane.Id, lane.DisplayName, file.Name, file.FullName, sizeGb, preset, isResumed, IsError: false, isSkipped, hasOverride, isFileBotUnmatched, destinationId, destinationName, destinationMissing, lane.Engine);
                 candidates.Add((item, laneOrderIndex, entry?.Order, naturalIndex[file.FullName]));
             }
 
@@ -270,7 +270,7 @@ public static class QueueRules
 
                 var preset = ContentClassifier.IsTvFile(fileInfo.Name) ? lane.TvPreset : lane.MoviePreset;
                 var sizeGb = Math.Round(fileInfo.Length / (double)BytesPerGb, 3);
-                errorItems.Add(new UpNextItem(lane.Id, lane.DisplayName, fileInfo.Name, fileInfo.FullName, sizeGb, preset, IsResumed: false, IsError: true, IsSkipped: false, IsCustomPreset: false, IsFileBotUnmatched: false));
+                errorItems.Add(new UpNextItem(lane.Id, lane.DisplayName, fileInfo.Name, fileInfo.FullName, sizeGb, preset, IsResumed: false, IsError: true, IsSkipped: false, IsCustomPreset: false, IsFileBotUnmatched: false, Engine: lane.Engine));
             }
 
             laneOrderIndex++;
@@ -286,9 +286,9 @@ public static class QueueRules
         return items;
     }
 
-    /// <summary>The row marker for a file assigned to land in a different lane: that lane'"'"'s id and display
+    /// <summary>The row marker for a file assigned to land in a different lane: that lane's id and display
     /// name, or (id, null, true) if the lane no longer exists. All null/false for an ordinary file, and
-    /// for an assignment to the file'"'"'s own lane (which means nothing).</summary>
+    /// for an assignment to the file's own lane (which means nothing).</summary>
     private static (string? Id, string? Name, bool Missing) DescribeDestination(CompressarrConfig config, LaneConfig homeLane, ResumeEntry? entry)
     {
         var id = entry?.DestinationLaneId;

@@ -150,7 +150,8 @@ public static class FFmpegPlanner
 
         foreach (var stream in all.Where(s => !chosen.Contains(s)))
         {
-            plan.Dropped.Add(new StreamDecision(stream, "drop", profile.AudioTracks == "first" && chosen.Count > 0
+            var matchesALanguage = profile.AudioLanguages.Any(l => Matches(stream, l));
+            plan.Dropped.Add(new StreamDecision(stream, "drop", matchesALanguage && profile.AudioTracks == "first" && !fellBack
                 ? "only the first matching audio track is kept"
                 : "its language isn't in the profile's audio language list"));
         }
@@ -191,7 +192,8 @@ public static class FFmpegPlanner
 
         foreach (var s in all.Where(s => !chosen.Contains(s)))
         {
-            plan.Dropped.Add(new StreamDecision(s, "drop", profile.SubtitleTracks == "first" && chosen.Count > 0
+            var matchesALanguage = profile.SubtitleLanguages.Any(l => Matches(s, l));
+            plan.Dropped.Add(new StreamDecision(s, "drop", matchesALanguage && profile.SubtitleTracks == "first" && chosen.Count > 0
                 ? "only the first matching subtitle track is kept"
                 : "its language isn't in the profile's subtitle language list"));
         }

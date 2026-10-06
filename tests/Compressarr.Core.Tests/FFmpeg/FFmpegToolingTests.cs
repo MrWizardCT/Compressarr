@@ -1,0 +1,327 @@
+using System.IO.Compression;
+using System.Runtime.InteropServices;
+using System.Text.Json.Nodes;
+using Compressarr.Core.FFmpeg;
+
+namespace Compressarr.Core.Tests.FFmpeg;
+
+public class FFmpegToolingTests : IDisposable
+{
+    private readonly string _dir = Directory.CreateTempSubdirectory("compressarr-fftool-tests-").FullName;
+    public void Dispose() => Directory.Delete(_dir, recursive: true);
+
+    // ---- capabilities ---------------------------------------------------------------------------
+
+    private const string VersionOutput = """
+        ffmpeg version N-118000-gabcdef-20260101 Copyright (c) 2000-2026 the FFmpeg developers
+        built with gcc 14.2.0 (crosstool-NG)
+        configuration: --prefix=/ffbuild/prefix --enable-gpl --enable-version3 --enable-libx264 --enable-libx265 --enable-libsvtav1 --enable-nvenc
+        libavutil      60.  8.100 / 60.  8.100
+        """;
+
+    private const string EncodersOutput = """
+        Encoders:
+         V..... = Video
+         A..... = Audio
+         S..... = Subtitle
+         .F.... = Frame-level multithreading
+         ------
+         V....D libx264              libx264 H.264 / AVC / MPEG-4 AVC (codec h264)
+         V....D libx265              libx265 H.265 / HEVC (codec hevc)
+         V....D libsvtav1            SVT-AV1(Scalable Video Technology for AV1) encoder (codec av1)
+         V....D hevc_nvenc           NVIDIA NVENC hevc encoder (codec hevc)
+         A....D aac                  AAC (Advanced Audio Coding)
+         A....D eac3                 ATSC A/52 E-AC-3
+         A....D ac3                  ATSC A/52A (AC-3)
+         A....D libopus              libopus Opus (codec opus)
+         S..... srt                  SubRip subtitle (codec subrip)
+        """;
+
+    [Fact]
+    public void ParseVersion_AndBuildNote()
+    {
+        Assert.Equal("N-118000-gabcdef-20260101", FFmpegCapabilityParser.ParseVersion(VersionOutput));
+        Assert.Equal("GPL build", FFmpegCapabilityParser.ParseBuildNote(VersionOutput));
+        Assert.Null(FFmpegCapabilityParser.ParseBuildNote("ffmpeg version 7.0 --enable-libx264"));
+        Assert.Null(FFmpegCapabilityParser.ParseVersion("not ffmpeg"));
+    }
+
+    [Fact]
+    public void ParseEncoders_ReadsNamesAfterTheLegend_NotTheLegendItself()
+    {
+        var encoders = FFmpegCapabilityParser.ParseEncoders(EncodersOutput);
+
+        Assert.Contains("libx265", encoders);
+        Assert.Contains("libsvtav1", encoders);
+        Assert.Contains("hevc_nvenc", encoders);
+        Assert.Contains("libopus", encoders);
+        Assert.Contains("srt", encoders);
+        Assert.DoesNotContain("Video", encoders);
+        Assert.DoesNotContain("=", encoders);
+        Assert.Equal(9, encoders.Count);
+    }
+
+    private static FFmpegCapabilities Caps(bool? nvenc, params string[] encoders) =>
+        new("7.1", new HashSet<string>(encoders, StringComparer.OrdinalIgnoreCase), nvenc, "GPL build");
+
+    [Fact]
+    public void NvencNeedsARealGpuSession_NotJustTheEncoderInTheBuild()
+    {
+        Assert.True(Caps(true, "hevc_nvenc").CanUse("hevc_nvenc"));
+        Assert.False(Caps(false, "hevc_nvenc").CanUse("hevc_nvenc"));   // listed, but no GPU
+        Assert.False(Caps(null, "hevc_nvenc").CanUse("hevc_nvenc"));
+        Assert.True(Caps(false, "libx265").CanUse("libx265"));          // software never needs a GPU
+        Assert.False(Caps(true).CanUse("libx265"));
+    }
+
+    [Fact]
+    public void MissingEncoders_AreReportedForTheProfile()
+    {
+        var store = new FFmpegProfileStore();
+        var sdhd = store.Find("Compressarr SD-HD")!;
+        var nvenc = store.Find("HEVC NVENC (fast)")!;
+
+        Assert.Empty(FFmpegProfileRequirements.Missing(sdhd, Caps(false, "libx265", "eac3")));
+        Assert.Equal(new[] { "libx265", "eac3" }, FFmpegProfileRequirements.Missing(sdhd, Caps(false)).ToArray());
+        Assert.Contains(FFmpegProfileRequirements.Missing(nvenc, Caps(false, "hevc_nvenc", "eac3")), m => m.Contains("no NVIDIA GPU session"));
+        Assert.Empty(FFmpegProfileRequirements.Missing(nvenc, Caps(true, "hevc_nvenc", "eac3")));
+    }
+
+    // ---- installer ------------------------------------------------------------------------------
+
+    private const string ReleaseJson = """
+        {
+          "name": "Latest Auto-Build (2026-10-06 13:07)", "tag_name": "latest", "html_url": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/latest",
+          "assets": [
+            { "name": "ffmpeg-master-latest-linux64-gpl.tar.xz", "size": 1, "browser_download_url": "https://x/linux", "digest": "sha256:aa" },
+            { "name": "ffmpeg-master-latest-win64-gpl.zip", "size": 192500000, "browser_download_url": "https://x/win64", "digest": "sha256:ABCDEF01" },
+            { "name": "ffmpeg-master-latest-winarm64-gpl.zip", "size": 180000000, "browser_download_url": "https://x/arm64" }
+          ]
+        }
+        """;
+
+    [Fact]
+    public void SelectAsset_PicksTheGplBuildForTheArchitecture_WithItsChecksum()
+    {
+        var release = JsonNode.Parse(ReleaseJson)!.AsObject();
+
+        var x64 = FFmpegInstaller.SelectAsset(release, Architecture.X64)!;
+        var arm = FFmpegInstaller.SelectAsset(release, Architecture.Arm64)!;
+
+        Assert.Equal("ffmpeg-master-latest-win64-gpl.zip", x64.AssetName);
+        Assert.Equal("https://x/win64", x64.DownloadUrl);
+        Assert.Equal(192500000, x64.SizeBytes);
+        Assert.Equal("ABCDEF01", x64.Sha256);
+        Assert.Equal("Latest Auto-Build (2026-10-06 13:07)", x64.Name);
+        Assert.Equal("ffmpeg-master-latest-winarm64-gpl.zip", arm.AssetName);
+        Assert.Null(arm.Sha256); // no checksum published for this one
+    }
+
+    [Fact]
+    public void SelectAsset_NothingSuitable_IsNull()
+    {
+        Assert.Null(FFmpegInstaller.SelectAsset(JsonNode.Parse("""{ "assets": [ { "name": "other.zip" } ] }""")!.AsObject(), Architecture.X64));
+        Assert.Null(FFmpegInstaller.SelectAsset(JsonNode.Parse("""{ }""")!.AsObject(), Architecture.X64));
+    }
+
+    private string MakeZip(bool withProbe = true, bool withLicense = true)
+    {
+        var path = Path.Combine(_dir, "build.zip");
+        using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
+        {
+            void Add(string name, string content)
+            {
+                using var w = new StreamWriter(zip.CreateEntry(name).Open());
+                w.Write(content);
+            }
+            Add("ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe", "ffmpeg bytes");
+            if (withProbe) Add("ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe", "ffprobe bytes");
+            Add("ffmpeg-master-latest-win64-gpl/bin/ffplay.exe", "not wanted");
+            Add("ffmpeg-master-latest-win64-gpl/doc/ffmpeg.html", "docs");
+            if (withLicense) Add("ffmpeg-master-latest-win64-gpl/LICENSE.txt", "GPL text");
+        }
+        return path;
+    }
+
+    [Fact]
+    public void VerifyAndExtract_KeepsOnlyFfmpegFfprobeAndTheLicense()
+    {
+        var install = Path.Combine(_dir, "install");
+
+        var path = FFmpegInstaller.VerifyAndExtract(MakeZip(), "aBc", "ABC", install);
+
+        Assert.Equal(Path.Combine(install, "ffmpeg.exe"), path);
+        Assert.Equal(new[] { "ffmpeg.exe", "ffprobe.exe", "LICENSE.txt" }, Directory.GetFiles(install).Select(Path.GetFileName).OrderBy(n => n, StringComparer.Ordinal).Select(n => n!).OrderBy(n => n == "LICENSE.txt" ? 2 : n == "ffprobe.exe" ? 1 : 0).ToArray());
+        Assert.Equal("ffmpeg bytes", File.ReadAllText(path));
+        Assert.Empty(Directory.GetFiles(install, "*.tmp"));
+    }
+
+    [Fact]
+    public void VerifyAndExtract_AWrongChecksum_InstallsNothing()
+    {
+        var install = Path.Combine(_dir, "install");
+
+        Assert.Throws<InvalidDataException>(() => FFmpegInstaller.VerifyAndExtract(MakeZip(), "AAAA", "BBBB", install));
+
+        Assert.False(Directory.Exists(install) && Directory.GetFiles(install).Length > 0);
+    }
+
+    [Fact]
+    public void VerifyAndExtract_AnArchiveMissingFfprobe_InstallsNothing_AndLeavesNoTempFiles()
+    {
+        var install = Path.Combine(_dir, "install");
+
+        var ex = Assert.Throws<InvalidDataException>(() => FFmpegInstaller.VerifyAndExtract(MakeZip(withProbe: false), "X", "X", install));
+
+        Assert.Contains("ffprobe.exe", ex.Message);
+        Assert.Empty(Directory.GetFiles(install));
+    }
+
+    [Fact]
+    public void VerifyAndExtract_ALicenseFileIsOptional()
+    {
+        var install = Path.Combine(_dir, "install");
+
+        FFmpegInstaller.VerifyAndExtract(MakeZip(withLicense: false), "X", "X", install);
+
+        Assert.True(File.Exists(Path.Combine(install, "ffprobe.exe")));
+    }
+
+    [Fact]
+    public void VerifyAndExtract_ReplacesAnOlderInstall()
+    {
+        var install = Path.Combine(_dir, "install");
+        Directory.CreateDirectory(install);
+        File.WriteAllText(Path.Combine(install, "ffmpeg.exe"), "old");
+
+        FFmpegInstaller.VerifyAndExtract(MakeZip(), "X", "X", install);
+
+        Assert.Equal("ffmpeg bytes", File.ReadAllText(Path.Combine(install, "ffmpeg.exe")));
+    }
+
+    [Fact]
+    public async Task InstallAsync_WithNoPublishedChecksum_RefusesBeforeDownloadingAnything()
+    {
+        var installer = new FFmpegInstaller(new NoHttpFactory());
+        var release = new FFmpegReleaseInfo("x", "a.zip", "https://x/a.zip", 1, "https://x", Sha256: null);
+
+        var ex = await Assert.ThrowsAsync<InvalidDataException>(() => installer.InstallAsync(release, Path.Combine(_dir, "i")));
+
+        Assert.Contains("checksum", ex.Message);
+    }
+
+    private sealed class NoHttpFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => throw new InvalidOperationException("must not be called");
+    }
+
+    // ---- Duplicate as ffmpeg --------------------------------------------------------------------
+
+    private static JsonObject BuiltInHandBrake(string name) =>
+        (JsonObject)new Compressarr.Core.Presets.HandBrakeProfileStore().GetBuiltIns().Single(p => p.Name == name).Definition.DeepClone();
+
+    [Fact]
+    public void Convert_SdHd_CarriesTheRecipe_AndPointsTheFallbackAtTheOriginal()
+    {
+        var conversion = HandBrakeToFFmpeg.Convert("Compressarr SD-HD", BuiltInHandBrake("Compressarr SD-HD"));
+        var p = conversion.Profile;
+
+        Assert.Equal(("libx265", "yuv420p10le", "main10", "veryfast", 24.0), (p.VideoCodec, p.PixFmt, p.VideoProfile, p.Preset, p.Quality));
+        Assert.Equal("mkv", p.Container);
+        Assert.Equal(("encode", "eac3", 512, "7.1"), (p.AudioMode, p.AudioCodec, p.AudioBitrateKbps, p.AudioMixdown));
+        Assert.Equal(new[] { "eng", "und", "any" }, p.AudioLanguages);
+        Assert.Equal(("first", "all"), (p.AudioTracks, p.SubtitleTracks));
+        Assert.Equal("auto", p.Crop);
+        Assert.Equal("auto", p.Deinterlace);             // HandBrake's decomb
+        Assert.Equal("Compressarr SD-HD", p.FallbackHandBrakePreset);
+        Assert.Contains(conversion.NotCarried, n => n.Contains("Decomb"));
+        Assert.NotEmpty(conversion.Carried);
+    }
+
+    [Fact]
+    public void Convert_UhdAv1_KeepsPassThroughAndTheAv1Settings()
+    {
+        var p = HandBrakeToFFmpeg.Convert("Compressarr UHD AV1", BuiltInHandBrake("Compressarr UHD AV1")).Profile;
+
+        Assert.Equal(("libsvtav1", "4", "psnr", 30.0), (p.VideoCodec, p.Preset, p.Tune, p.Quality));
+        Assert.Equal(("passthru", "all"), (p.AudioMode, p.AudioTracks));
+        Assert.Contains("truehd", p.PassthroughCodecs);
+        Assert.DoesNotContain(p.PassthroughCodecs, c => c.StartsWith("copy:"));
+    }
+
+    [Fact]
+    public void Convert_ListsWhatFfmpegCannotExpress()
+    {
+        var preset = BuiltInHandBrake("Compressarr SD-HD");
+        preset["PictureDenoiseFilter"] = "nlmeans";
+        preset["PictureForceWidth"] = 1280;
+        preset["SubtitleBurnBehavior"] = "foreign";
+        preset["VideoOptionExtra"] = "aq-mode=3";
+        preset["VideoFramerateMode"] = "pfr";
+        preset["AudioList"]!.AsArray().Add(new JsonObject { ["AudioEncoder"] = "ac3" });
+        preset["PictureDeinterlaceFilter"] = "bwdif";
+        preset["VideoEncoder"] = "VP9";
+
+        var lost = HandBrakeToFFmpeg.Convert("X", preset).NotCarried;
+
+        Assert.Contains(lost, n => n.Contains("Denoise"));
+        Assert.Contains(lost, n => n.Contains("Resizing"));
+        Assert.Contains(lost, n => n.Contains("burn-in"));
+        Assert.Contains(lost, n => n.Contains("aq-mode=3"));
+        Assert.Contains(lost, n => n.Contains("Peak frame rate"));
+        Assert.Contains(lost, n => n.Contains("first audio output"));
+        Assert.Contains(lost, n => n.Contains("'VP9'"));
+    }
+
+    [Fact]
+    public void Convert_MapsNvencPresetsAndTenBitFormats()
+    {
+        var preset = BuiltInHandBrake("Compressarr SD-HD");
+        preset["VideoEncoder"] = "nvenc_h265_10bit";
+        preset["VideoPreset"] = "slow";
+
+        var p = HandBrakeToFFmpeg.Convert("N", preset).Profile;
+
+        Assert.Equal(("hevc_nvenc", "p5", "p010le"), (p.VideoCodec, p.Preset, p.PixFmt));
+    }
+
+    [Fact]
+    public void Convert_TheResultPassesTheFfmpegValidator_AndMakesACommand()
+    {
+        foreach (var name in new[] { "Compressarr SD-HD", "Compressarr UHD AV1" })
+        {
+            var p = HandBrakeToFFmpeg.Convert(name, BuiltInHandBrake(name)).Profile;
+
+            Assert.Empty(FFmpegProfileValidator.Validate(p));
+            Assert.NotNull(FFmpegPlanner.Plan(p, FFmpegFixtures.Uhd()));
+        }
+    }
+
+    // ---- ffmpeg profile validation --------------------------------------------------------------
+
+    [Fact]
+    public void Validator_AcceptsABuiltIn_AndFlagsBrokenFields()
+    {
+        var good = new FFmpegProfileStore().Find("Compressarr SD-HD")!;
+        Assert.Empty(FFmpegProfileValidator.Validate(good));
+
+        var bad = good.Clone();
+        bad.Name = "a/b";
+        bad.Container = "avi";
+        bad.VideoCodec = "libx266";
+        bad.Quality = 99;
+        bad.FramerateMode = "cfr"; bad.Framerate = 0;
+        bad.AudioLanguages = new();
+        bad.AudioMode = "passthru"; bad.PassthroughCodecs = new();
+        bad.AudioCodec = "wma";
+        bad.AudioBitrateKbps = 9999;
+        bad.SubtitleTracks = "all"; bad.SubtitleLanguages = new();
+
+        var fields = FFmpegProfileValidator.Validate(bad).Select(i => i.Field).ToList();
+
+        foreach (var field in new[] { "name", "container", "videoCodec", "quality", "framerate", "audioLanguages", "passthrough", "audioCodec", "audioBitrate", "subtitleLanguages" })
+        {
+            Assert.Contains(field, fields);
+        }
+    }
+}

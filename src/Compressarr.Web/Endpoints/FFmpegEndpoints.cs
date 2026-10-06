@@ -1,0 +1,110 @@
+using Compressarr.Core.Config;
+using Compressarr.Core.FFmpeg;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+
+namespace Compressarr.Web.Endpoints;
+
+/// <summary>The Encoder page's ffmpeg card: is it there, what can this build do, find one already on the
+/// machine, or download a managed copy (after the user has been asked - the page shows name, size and
+/// source first).</summary>
+public static class FFmpegEndpoints
+{
+    // The encoders worth showing as chips, in the order a reader looks for them.
+    private static readonly string[] ChipEncoders = { "libx265", "libx264", "libsvtav1", "eac3", "aac", "ac3", "libopus", "hevc_nvenc" };
+
+    public static void MapFFmpegEndpoints(this IEndpointRouteBuilder app)
+    {
+        app.MapGet("/api/ffmpeg/status", (IConfigStore configStore, IPathExpander pathExpander) =>
+        {
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+            return Results.Json(new
+            {
+                exists = pathExpander.PathExists(config.FFmpeg.Path),
+                probeExists = pathExpander.PathExists(config.FFmpeg.ProbePath)
+            });
+        });
+
+        // Asks ffmpeg what it can do (version, encoders, whether an NVENC session opens) and flags each
+        // profile that needs something this build lacks. Runs a few short processes, so the page asks for
+        // it separately from the (instant) settings call.
+        app.MapGet("/api/ffmpeg/capabilities", async (IConfigStore configStore, IPathExpander pathExpander, IFFmpegCapabilityProbe probe, IFFmpegProfileStore profiles, CancellationToken ct) =>
+        {
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+            var path = pathExpander.Expand(config.FFmpeg.Path);
+            var caps = await probe.DetectAsync(path, ct);
+            if (caps is null) return Results.Json(new { found = false });
+
+            var chips = ChipEncoders.Select(e => new { name = e, ok = e == "hevc_nvenc" ? caps.CanUse(e) : caps.Has(e), note = e == "hevc_nvenc" && caps.Has(e) ? (caps.NvencSessionOk == true ? "NVIDIA GPU session OK" : "no NVIDIA GPU session") : null }).ToList();
+            var warnings = profiles.GetAll()
+                .Select(p => (p.Name, Missing: FFmpegProfileRequirements.Missing(p, caps)))
+                .Where(x => x.Missing.Count > 0)
+                .ToDictionary(x => x.Name, x => x.Missing);
+
+            return Results.Json(new { found = true, version = caps.Version, buildNote = caps.BuildNote, chips, profileWarnings = warnings });
+        });
+
+        // An ffmpeg already on this machine (PATH or a usual folder) - offered before any download.
+        app.MapGet("/api/ffmpeg/find", () =>
+        {
+            var found = FFmpegLocator.Find();
+            return Results.Json(found is { } f ? new { found = true, path = f.FFmpeg, probePath = f.FFprobe } : new { found = false, path = (string?)null, probePath = (string?)null });
+        });
+
+        app.MapGet("/api/ffmpeg/latest-release", async (IFFmpegInstaller installer) =>
+        {
+            try
+            {
+                var release = await installer.GetLatestReleaseAsync();
+                if (release is null) return Results.Json(new { available = false });
+
+                return Results.Json(new
+                {
+                    available = true,
+                    release.Name,
+                    release.AssetName,
+                    release.ReleaseUrl,
+                    sizeMb = release.SizeBytes / 1024 / 1024,
+                    verified = !string.IsNullOrWhiteSpace(release.Sha256)
+                });
+            }
+            catch (HttpRequestException ex)
+            {
+                return Results.Json(new { available = false, error = $"Could not reach GitHub: {ex.Message}" });
+            }
+        });
+
+        app.MapPost("/api/ffmpeg/install", async (IFFmpegInstaller installer, IConfigStore configStore, CancellationToken ct) =>
+        {
+            try
+            {
+                var release = await installer.GetLatestReleaseAsync();
+                if (release is null)
+                {
+                    return Results.BadRequest(new { message = "No downloadable ffmpeg build was found for this platform. Install ffmpeg with your package manager and set its path here." });
+                }
+
+                var installDir = Path.Combine(AppPaths.GetToolsDirectory(), "ffmpeg");
+                var installedPath = await installer.InstallAsync(release, installDir, null, ct);
+
+                configStore.Update(AppPaths.GetConfigFilePath(), config =>
+                {
+                    config.FFmpeg.Path = installedPath;
+                    config.FFmpeg.ProbePath = Path.Combine(installDir, OperatingSystem.IsWindows() ? "ffprobe.exe" : "ffprobe");
+                    return true;
+                });
+
+                return Results.Json(new { installedPath, name = release.Name });
+            }
+            catch (InvalidDataException ex)
+            {
+                return Results.BadRequest(new { message = ex.Message });
+            }
+            catch (HttpRequestException ex)
+            {
+                return Results.BadRequest(new { message = $"The download failed: {ex.Message}" });
+            }
+        });
+    }
+}

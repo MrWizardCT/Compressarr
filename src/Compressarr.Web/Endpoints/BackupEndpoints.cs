@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 using Compressarr.Core.Backup;
 using Compressarr.Core.Config;
+using Compressarr.Core.FFmpeg;
 using Compressarr.Core.Presets;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
@@ -20,6 +21,9 @@ public static class BackupEndpoints
     };
 
     private const string ExportProfilesKey = "handBrakeUserProfiles";
+    private const string ExportFFmpegProfilesKey = "ffmpegUserProfiles";
+
+    private static readonly JsonSerializerOptions FFmpegProfileJson = new(JsonSerializerDefaults.Web);
 
     public static void MapBackupEndpoints(this IEndpointRouteBuilder app)
     {
@@ -30,17 +34,19 @@ public static class BackupEndpoints
         // Also carries the user's own HandBrake profiles (under "handBrakeUserProfiles") - the
         // lanes in this file name profiles, and an export that couldn't bring them along would
         // restore lanes pointing at nothing. A 2.1.x install importing it just ignores that key.
-        app.MapGet("/api/settings/export", (IConfigStore configStore, IHandBrakeProfileStore profiles) =>
+        app.MapGet("/api/settings/export", (IConfigStore configStore, IHandBrakeProfileStore profiles, IFFmpegProfileStore ffmpegProfiles) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             var node = JsonSerializer.SerializeToNode(config, ExportOptions)!.AsObject();
             node[ExportProfilesKey] = new JsonArray(profiles.GetAll().Where(p => !p.IsBuiltIn).Select(p => (JsonNode)p.Definition.DeepClone()).ToArray());
+            node[ExportFFmpegProfilesKey] = new JsonArray(ffmpegProfiles.GetAll().Where(p => !p.IsBuiltIn)
+                .Select(p => JsonSerializer.SerializeToNode(p, FFmpegProfileJson)!).ToArray());
             var json = node.ToJsonString(ExportOptions);
             var bytes = Encoding.UTF8.GetBytes(json);
             return Results.File(bytes, "application/json", $"compressarr-config-{DateTime.Now:yyyy-MM-dd}.json");
         });
 
-        app.MapPost("/api/settings/import", async (HttpRequest request, IConfigStore configStore, IHandBrakeProfileStore profiles) =>
+        app.MapPost("/api/settings/import", async (HttpRequest request, IConfigStore configStore, IHandBrakeProfileStore profiles, IFFmpegProfileStore ffmpegProfiles) =>
         {
             using var reader = new StreamReader(request.Body);
             var raw = await reader.ReadToEndAsync();
@@ -76,6 +82,17 @@ public static class BackupEndpoints
                         .DistinctBy(d => d["PresetName"]!.GetValue<string>(), StringComparer.OrdinalIgnoreCase)
                         .ToList();
                     if (missing.Count > 0) profiles.AddUserProfiles(missing);
+                }
+
+                if (JsonNode.Parse(raw) is JsonObject root2 && root2[ExportFFmpegProfilesKey] is JsonArray exportedFFmpeg)
+                {
+                    var missingFFmpeg = exportedFFmpeg
+                        .Select(n => { try { return n.Deserialize<Compressarr.Core.FFmpeg.FFmpegProfile>(FFmpegProfileJson); } catch (JsonException) { return null; } })
+                        .OfType<Compressarr.Core.FFmpeg.FFmpegProfile>()
+                        .Where(p => !string.IsNullOrWhiteSpace(p.Name) && ffmpegProfiles.Find(p.Name) is null)
+                        .DistinctBy(p => p.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    if (missingFFmpeg.Count > 0) ffmpegProfiles.AddUserProfiles(missingFFmpeg);
                 }
 
                 return Results.Ok();

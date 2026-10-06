@@ -10,4 +10,5 @@ public sealed record LaneDto(
     string MoviePreset,
     string TvShowBasePath,
     string MovieBasePath,
-    List<ValidationIssueDto> ValidationIssues);
+    List<ValidationIssueDto> ValidationIssues,
+    string? Engine = null);

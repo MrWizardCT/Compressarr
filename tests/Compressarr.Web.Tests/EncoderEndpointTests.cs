@@ -115,7 +115,7 @@ public class EncoderEndpointTests
         (await host.Client.PutAsJsonAsync("/api/lanes/lane1", lane)).EnsureSuccessStatusCode();
 
         var dto = (await host.Client.GetFromJsonAsync<JsonObject>("/api/profiles"))!;
-        var rows = dto["profiles"]!.AsArray().Select(r => r!.AsObject()).ToList();
+        var rows = dto["profiles"]!.AsArray().Select(r => r!.AsObject()).Where(r => r["engine"]!.GetValue<string>() == "handbrake").ToList();
 
         Assert.Equal(3, rows.Count);
         var builtIn = rows.Single(r => r["name"]!.GetValue<string>() == "Compressarr SD-HD");

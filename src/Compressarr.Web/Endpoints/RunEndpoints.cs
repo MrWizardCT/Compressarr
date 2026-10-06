@@ -162,6 +162,7 @@ public static class RunEndpoints
                 runStartedUtc = snapshot.RunStartedUtc,
                 isPaused = activeProcess.IsPaused,
                 laneDisplayName = snapshot.LaneDisplayName,
+                engine = (config.Lanes.FirstOrDefault(l => l.DisplayName == snapshot.LaneDisplayName)?.Engine ?? EncoderEngine.HandBrake).ToString(),
                 fileName = snapshot.FileName,
                 presetName = snapshot.PresetName,
                 fileIndex = snapshot.FileIndex,

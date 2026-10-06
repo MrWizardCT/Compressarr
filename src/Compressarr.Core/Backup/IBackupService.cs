@@ -64,7 +64,7 @@ public sealed class BackupService : IBackupService
 
             // Settings/lanes (one file - Lanes is a property inside compressarr.settings.json, not
             // a separate file), the run counter, resume/run state, the history CSV, and the user's own
-            // encoder profiles. Deliberately excludes the generated handbrake-active.json (derived from
+            // encoder profiles (HandBrake and ffmpeg). Deliberately excludes the generated handbrake-active.json (derived from
             // the profiles, rebuilt before every encode) and the Reports folder (regenerable HTML dumps,
             // already retention-pruned).
             var historyFile = Path.Combine(_pathExpander.Expand(config.Logging.LogFilePath), "Compressarr_History.csv");
@@ -74,6 +74,7 @@ public sealed class BackupService : IBackupService
                 AppPaths.GetRunCountFilePath(),
                 AppPaths.GetResumeFilePath(),
                 AppPaths.GetHandBrakeProfilesFilePath(),
+                AppPaths.GetFFmpegProfilesFilePath(),
                 historyFile
             };
 
@@ -147,6 +148,7 @@ public sealed class BackupService : IBackupService
                 RestoreEntry(tempDir, "compressarr.runcount.json", AppPaths.GetRunCountFilePath());
                 RestoreEntry(tempDir, "compressarr.resume.json", AppPaths.GetResumeFilePath());
                 RestoreEntry(tempDir, "handbrake-profiles.json", AppPaths.GetHandBrakeProfilesFilePath());
+                RestoreEntry(tempDir, "ffmpeg-profiles.json", AppPaths.GetFFmpegProfilesFilePath());
 
                 // Lands wherever the just-restored config's Log folder points - falls back to the
                 // pre-restore config if this particular backup didn't include settings at all.

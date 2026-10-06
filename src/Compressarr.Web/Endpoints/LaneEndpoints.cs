@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Compressarr.Core.Config;
 using Compressarr.Core.Conversion;
-using Compressarr.Core.Presets;
 using Compressarr.Web.Dtos;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
@@ -10,21 +9,22 @@ namespace Compressarr.Web.Endpoints;
 
 public static class LaneEndpoints
 {
-    private static List<ValidationIssueDto> Validate(LaneConfig lane, CompressarrConfig config, IPathExpander pathExpander, IEncoderPresetService presets)
+    // A lane's presets are checked against ITS OWN encoder's profile catalog.
+    private static List<ValidationIssueDto> Validate(LaneConfig lane, CompressarrConfig config, IPathExpander pathExpander, IEncoderResolver encoders)
     {
-        return LaneValidator.Validate(lane, config, pathExpander, presets)
+        return LaneValidator.Validate(lane, config, pathExpander, encoders.PresetsFor(lane.Engine))
             .Select(i => new ValidationIssueDto(i.Field, i.Message)).ToList();
     }
 
     public static void MapLaneEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/lanes", (IConfigStore configStore, IPathExpander pathExpander, IEncoderPresetService presets) =>
+        app.MapGet("/api/lanes", (IConfigStore configStore, IPathExpander pathExpander, IEncoderResolver encoders) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
-            return Results.Json(config.Lanes.Select(lane => ConfigMapping.ToLaneDto(lane, Validate(lane, config, pathExpander, presets))).ToList());
+            return Results.Json(config.Lanes.Select(lane => ConfigMapping.ToLaneDto(lane, Validate(lane, config, pathExpander, encoders))).ToList());
         });
 
-        app.MapPost("/api/lanes", (IConfigStore configStore, IPathExpander pathExpander, IEncoderPresetService presets) =>
+        app.MapPost("/api/lanes", (IConfigStore configStore, IPathExpander pathExpander, IEncoderResolver encoders) =>
         {
             var dto = configStore.Update(AppPaths.GetConfigFilePath(), config =>
             {
@@ -34,13 +34,13 @@ public static class LaneEndpoints
                     Enabled = true
                 };
                 config.Lanes.Add(lane);
-                return ConfigMapping.ToLaneDto(lane, Validate(lane, config, pathExpander, presets));
+                return ConfigMapping.ToLaneDto(lane, Validate(lane, config, pathExpander, encoders));
             });
 
             return Results.Json(dto);
         });
 
-        app.MapPut("/api/lanes/{id}", (string id, LaneDto dto, IConfigStore configStore, IPathExpander pathExpander, IEncoderPresetService presets) =>
+        app.MapPut("/api/lanes/{id}", (string id, LaneDto dto, IConfigStore configStore, IPathExpander pathExpander, IEncoderResolver encoders) =>
         {
             var result = configStore.Update(AppPaths.GetConfigFilePath(), config =>
             {
@@ -48,7 +48,7 @@ public static class LaneEndpoints
                 if (lane is null) return null;
 
                 ConfigMapping.ApplyLaneDto(lane, dto);
-                return ConfigMapping.ToLaneDto(lane, Validate(lane, config, pathExpander, presets));
+                return ConfigMapping.ToLaneDto(lane, Validate(lane, config, pathExpander, encoders));
             });
 
             return result is null ? Results.NotFound() : Results.Json(result);
@@ -67,8 +67,7 @@ public static class LaneEndpoints
             return Results.Json(new { waitingFiles = waiting });
         });
 
-        app.MapDelete("/api/lanes/{id}"
-, (string id, IConfigStore configStore) =>
+        app.MapDelete("/api/lanes/{id}", (string id, IConfigStore configStore) =>
         {
             var removed = configStore.Update(AppPaths.GetConfigFilePath(), config => config.Lanes.RemoveAll(l => l.Id == id));
             return removed == 0 ? Results.NotFound() : Results.NoContent();
