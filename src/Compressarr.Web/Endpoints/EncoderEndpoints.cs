@@ -25,11 +25,11 @@ public static class EncoderEndpoints
             UserProfileCount: all.Count(p => !p.IsBuiltIn),
             HandBrakeLanes: config.Lanes.Where(l => l.Enabled && l.Engine == EncoderEngine.HandBrake).Select(l => l.DisplayName).ToList(),
             ValidationIssues: issues,
-            FFmpegPath: config.FFmpeg.Path,
-            FFmpegProbePath: config.FFmpeg.ProbePath,
-            FFmpegOptions: config.FFmpeg.Options,
-            FFmpegProfileCount: ffmpegProfiles.GetAll().Count,
-            FFmpegLanes: config.Lanes.Where(l => l.Enabled && l.Engine == EncoderEngine.FFmpeg).Select(l => l.DisplayName).ToList());
+            FfmpegPath: config.FFmpeg.Path,
+            FfmpegProbePath: config.FFmpeg.ProbePath,
+            FfmpegOptions: config.FFmpeg.Options,
+            FfmpegProfileCount: ffmpegProfiles.GetAll().Count,
+            FfmpegLanes: config.Lanes.Where(l => l.Enabled && l.Engine == EncoderEngine.FFmpeg).Select(l => l.DisplayName).ToList());
     }
 
     public static void MapEncoderEndpoints(this IEndpointRouteBuilder app)
@@ -46,9 +46,9 @@ public static class EncoderEndpoints
             {
                 config.HandBrake.CliPath = dto.HandBrakeCliPath;
                 config.HandBrake.Options = dto.HandBrakeOptions;
-                if (dto.FFmpegPath is not null) config.FFmpeg.Path = dto.FFmpegPath;
-                if (dto.FFmpegProbePath is not null) config.FFmpeg.ProbePath = dto.FFmpegProbePath;
-                if (dto.FFmpegOptions is not null) config.FFmpeg.Options = dto.FFmpegOptions;
+                if (dto.FfmpegPath is not null) config.FFmpeg.Path = dto.FfmpegPath;
+                if (dto.FfmpegProbePath is not null) config.FFmpeg.ProbePath = dto.FfmpegProbePath;
+                if (dto.FfmpegOptions is not null) config.FFmpeg.Options = dto.FfmpegOptions;
                 return ToDto(config, profiles, ffmpegProfiles, pathExpander);
             });
             return Results.Json(result);

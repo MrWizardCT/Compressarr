@@ -9,44 +9,89 @@ function escapeHtml(s) {
 const LOCK_ICON = '<svg class="prof-lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>';
 
 let profiles = [];
+let engineFilter = 'all';
+let warnings = {}; // ffmpeg profile name -> encoders this build lacks
+
+function apiBase(p) { return p.engine === 'ffmpeg' ? '/api/profiles/ffmpeg/' : '/api/profiles/handbrake/'; }
+function editorUrl(p) { return `${p.engine === 'ffmpeg' ? '/ffmpeg-edit.html' : '/profile-edit.html'}?name=${encodeURIComponent(p.name)}`; }
 
 function profileRow(p, index) {
   const lock = p.builtIn ? `<span class="prof-lock" title="Built-in - ships with Compressarr and can't be changed or deleted">${LOCK_ICON}built-in</span>` : '';
   const engine = p.engine === 'ffmpeg' ? 'ffmpeg' : 'HandBrake';
   const sub = [p.container, p.builtIn ? '' : 'saved in Compressarr\'s own file'].filter(Boolean).join(' · ');
-  const actions = p.builtIn
-    ? `<button data-act="view" data-i="${index}">View</button><button data-act="dup" data-i="${index}">Duplicate</button>`
-    : `<button data-act="edit" data-i="${index}">Edit</button><button data-act="dup" data-i="${index}">Duplicate</button><button data-act="del" data-i="${index}">Delete</button>`;
-  return `<tr>
-    <td><div class="prof-name">${escapeHtml(p.name)} ${lock}</div>${sub ? `<div class="prof-sub">${escapeHtml(sub)}</div>` : ''}${p.description ? `<div class="prof-sub" title="${escapeHtml(p.description)}">${escapeHtml(p.description.length > 110 ? p.description.slice(0, 107) + '...' : p.description)}</div>` : ''}</td>
-    <td><span class="prof-chip">${engine}</span></td>
+  const missing = p.engine === 'ffmpeg' ? warnings[p.name] : null;
+  const warn = missing ? `<div class="prof-warn" title="This ffmpeg build can't run this profile">Needs ${escapeHtml(missing.join(', '))}</div>` : '';
+
+  const buttons = [];
+  buttons.push(p.builtIn ? `<button data-act="view" data-i="${index}">View</button>` : `<button data-act="edit" data-i="${index}">Edit</button>`);
+  buttons.push(`<button data-act="dup" data-i="${index}">Duplicate</button>`);
+  if (p.engine !== 'ffmpeg') buttons.push(`<button data-act="dupff" data-i="${index}" title="Make the closest ffmpeg profile from this one and list what ffmpeg can't carry over">Duplicate as ffmpeg&hellip;</button>`);
+  if (!p.builtIn) buttons.push(`<button data-act="del" data-i="${index}">Delete</button>`);
+
+  return `<tr data-e="${p.engine}">
+    <td><div class="prof-name">${escapeHtml(p.name)} ${lock}</div>${sub ? `<div class="prof-sub">${escapeHtml(sub)}</div>` : ''}${p.description ? `<div class="prof-sub" title="${escapeHtml(p.description)}">${escapeHtml(p.description.length > 110 ? p.description.slice(0, 107) + '...' : p.description)}</div>` : ''}${warn}</td>
+    <td><span class="prof-chip ${p.engine === 'ffmpeg' ? 'ff' : ''}">${engine}</span></td>
     <td>${escapeHtml(p.video)}</td>
     <td>${escapeHtml(p.audio)}</td>
     <td>${p.usedBy.length ? p.usedBy.map(escapeHtml).join(', ') : '-'}</td>
-    <td><div class="prof-actions">${actions}</div></td>
+    <td><div class="prof-actions">${buttons.join('')}</div></td>
   </tr>`;
+}
+
+function renderRows() {
+  const rows = profiles
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => engineFilter === 'all' || p.engine === engineFilter);
+  document.getElementById('profileRows').innerHTML = rows.length
+    ? rows.map(({ p, i }) => profileRow(p, i)).join('')
+    : '<tr><td colspan="6" class="prof-sub">No profiles.</td></tr>';
+
+  const count = e => profiles.filter(p => e === 'all' || p.engine === e).length;
+  for (const b of document.querySelectorAll('#engineTabs button')) {
+    const label = { all: 'All', handbrake: 'HandBrake', ffmpeg: 'ffmpeg' }[b.dataset.f];
+    b.textContent = `${label} (${count(b.dataset.f)})`;
+    b.classList.toggle('on', b.dataset.f === engineFilter);
+  }
 }
 
 async function loadProfiles() {
   const res = await fetch('/api/profiles');
   const dto = await res.json();
   profiles = dto.profiles;
-
-  document.getElementById('profileRows').innerHTML = profiles.length
-    ? profiles.map(profileRow).join('')
-    : '<tr><td colspan="6" class="prof-sub">No profiles.</td></tr>';
+  renderRows();
   document.getElementById('userFilePath').textContent = dto.userFilePath;
+  if (dto.ffmpegUserFilePath) document.getElementById('ffUserFilePath').textContent = dto.ffmpegUserFilePath;
 
+  const errors = [];
+  if (dto.userFileError) errors.push(`Your HandBrake profile file could not be read, so only the built-ins are shown: ${dto.userFileError}`);
+  if (dto.ffmpegUserFileError) errors.push(`Your ffmpeg profile file could not be read, so only the built-ins are shown: ${dto.ffmpegUserFileError}`);
   const errorBox = document.getElementById('profileError');
-  if (dto.userFileError) {
-    errorBox.textContent = `Your own profile file could not be read, so only the built-ins are shown: ${dto.userFileError}`;
+  if (errors.length) {
+    errorBox.textContent = errors.join(' ');
     errorBox.classList.remove('hidden');
   } else {
     errorBox.classList.add('hidden');
   }
+
+  loadWarnings();
 }
 
-function editorUrl(name) { return `/profile-edit.html?name=${encodeURIComponent(name)}`; }
+// Which ffmpeg profiles this build can't run - asked after the list is on screen (it runs ffmpeg briefly).
+async function loadWarnings() {
+  if (!profiles.some(p => p.engine === 'ffmpeg')) return;
+  try {
+    const caps = await (await fetch('/api/ffmpeg/capabilities')).json();
+    warnings = caps.found ? (caps.profileWarnings || {}) : {};
+    renderRows();
+  } catch { /* the warning is a nicety */ }
+}
+
+document.getElementById('engineTabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-f]');
+  if (!b) return;
+  engineFilter = b.dataset.f;
+  renderRows();
+});
 
 document.getElementById('profileRows').addEventListener('click', async e => {
   const btn = e.target.closest('button[data-act]');
@@ -54,9 +99,9 @@ document.getElementById('profileRows').addEventListener('click', async e => {
   const p = profiles[Number(btn.dataset.i)];
 
   if (btn.dataset.act === 'edit' || btn.dataset.act === 'view') {
-    location.href = editorUrl(p.name);
+    location.href = editorUrl(p);
   } else if (btn.dataset.act === 'dup') {
-    const res = await fetch(`/api/profiles/handbrake/${encodeURIComponent(p.name)}/duplicate`, {
+    const res = await fetch(`${apiBase(p)}${encodeURIComponent(p.name)}/duplicate`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
     });
     const body = await res.json().catch(() => ({}));
@@ -66,9 +111,20 @@ document.getElementById('profileRows').addEventListener('click', async e => {
     } else {
       setStatus(body.message || 'Could not duplicate the profile.');
     }
+  } else if (btn.dataset.act === 'dupff') {
+    const res = await fetch(`/api/profiles/handbrake/${encodeURIComponent(p.name)}/duplicate-as-ffmpeg`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) {
+      showConversion(p.name, body);
+      await loadProfiles();
+    } else {
+      setStatus(body.message || 'Could not make an ffmpeg profile from this one.');
+    }
   } else if (btn.dataset.act === 'del') {
-    if (!confirm(`Delete the profile "${p.name}"?\n\nThis can't be undone.`)) return;
-    const res = await fetch(`/api/profiles/handbrake/${encodeURIComponent(p.name)}`, { method: 'DELETE' });
+    if (!confirm(`Delete the ${p.engine === 'ffmpeg' ? 'ffmpeg ' : ''}profile "${p.name}"?\n\nThis can't be undone.`)) return;
+    const res = await fetch(`${apiBase(p)}${encodeURIComponent(p.name)}`, { method: 'DELETE' });
     if (res.ok) {
       setStatus(`Deleted "${p.name}".`, true);
       await loadProfiles();
@@ -80,8 +136,25 @@ document.getElementById('profileRows').addEventListener('click', async e => {
 });
 
 document.getElementById('newHbBtn').addEventListener('click', () => { location.href = '/profile-edit.html?new=1'; });
+document.getElementById('newFfBtn').addEventListener('click', () => { location.href = '/ffmpeg-edit.html?new=1'; });
 
-// ---- Import dialog -------------------------------------------------------------------------------
+// ---- "Duplicate as ffmpeg": what carried over, and what ffmpeg can't express ---------------------------
+
+function showConversion(source, result) {
+  const box = document.getElementById('conversionBox');
+  document.getElementById('conversionTitle').textContent = `"${source}" is now an ffmpeg profile named "${result.name}"`;
+  document.getElementById('conversionCarried').innerHTML = result.carried.map(n => `<li>${escapeHtml(n)}</li>`).join('');
+  const lost = result.notCarried || [];
+  document.getElementById('conversionLostWrap').classList.toggle('hidden', lost.length === 0);
+  document.getElementById('conversionLost').innerHTML = lost.map(n => `<li>${escapeHtml(n)}</li>`).join('');
+  document.getElementById('conversionOpen').onclick = () => { location.href = `/ffmpeg-edit.html?name=${encodeURIComponent(result.name)}`; };
+  box.classList.remove('hidden');
+  box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+document.getElementById('conversionClose').addEventListener('click', () => document.getElementById('conversionBox').classList.add('hidden'));
+
+// ---- Import dialog (HandBrake profiles) ----------------------------------------------------------------
 
 const overlay = document.getElementById('importOverlay');
 let importPath = '';

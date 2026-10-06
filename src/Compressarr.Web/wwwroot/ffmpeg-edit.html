@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Compressarr - ffmpeg profile</title>
+  <link rel="icon" href="/assets/favicon.ico" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#5b6389" />
+  <link rel="apple-touch-icon" href="/assets/logo.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Compressarr" />
+  <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('compressarr.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main>
+    <h2 class="page-title" id="pageTitle">Edit ffmpeg profile</h2>
+    <div class="page-actions">
+      <button id="saveBtn" class="primary">Save Profile</button>
+      <button id="dupBtn" class="hidden">Duplicate</button>
+      <button id="cancelBtn">Back to Profiles</button>
+    </div>
+
+    <div id="edBanner" class="banner ed-banner hidden"></div>
+
+    <div class="ed-layout">
+      <div class="card">
+        <div class="card-head"><h2 id="cardTitle">ffmpeg profile</h2><span class="prof-chip warn" style="margin-left:8px">Experimental</span></div>
+        <div class="card-body">
+          <fieldset id="formFields" style="border:0;padding:0;margin:0;min-width:0">
+          <div id="startFromRow" class="field-block hidden">
+            <label for="startFrom">Start from</label>
+            <select id="startFrom"></select>
+            <div class="ed-hint">The new profile begins as a copy of this one - change what you like, then save.</div>
+          </div>
+
+          <div class="ed-grp">General</div>
+          <div class="ed-row2">
+            <div class="field-block"><label for="name">Name</label><input type="text" id="name" /></div>
+            <div class="field-block"><label for="container">Container</label><select id="container"><option value="mkv">MKV</option><option value="mp4">MP4</option></select></div>
+          </div>
+          <div class="field-block"><label for="description">Description</label><input type="text" id="description" placeholder="Optional - shown on the Profiles page" /></div>
+          <div class="check-row" id="optimizeRow"><input type="checkbox" id="optimize" /><label for="optimize">Optimize for web streaming (MP4 only)</label></div>
+
+          <div class="ed-grp">Video</div>
+          <div class="ed-row2">
+            <div class="field-block"><label for="videoCodec">Encoder</label><select id="videoCodec"></select></div>
+            <div class="field-block"><label for="preset">Encoder preset (speed)</label><select id="preset"></select></div>
+          </div>
+          <div class="field-block"><label for="qualityMode">Quality</label>
+            <select id="qualityMode"><option value="quality">Constant quality (CRF/CQ) - recommended</option><option value="bitrate">Average bitrate (kbps)</option></select></div>
+          <div class="field-block" id="qualityBlock"><label for="quality">Constant quality <span style="font-weight:400;color:var(--text-dim)">- lower = better quality, bigger file</span></label>
+            <div class="ed-crf"><span class="ed-hint">Better</span><input type="range" id="quality" min="0" max="51" step="1" /><span class="ed-hint">Smaller</span><output id="qualityOut"></output></div></div>
+          <div class="field-block hidden" id="bitrateBlock"><label for="videoBitrate">Average video bitrate (kbps)</label><input type="number" id="videoBitrate" min="0" step="100" /></div>
+          <div class="ed-row3">
+            <div class="field-block"><label for="videoProfile">Encoder profile</label><select id="videoProfile"></select></div>
+            <div class="field-block"><label for="pixFmt">Pixel format</label><select id="pixFmt"></select></div>
+            <div class="field-block"><label for="tune">Tune</label><select id="tune"></select></div>
+          </div>
+          <div class="ed-row2">
+            <div class="field-block"><label for="framerateMode">Frame rate</label>
+              <select id="framerateMode"><option value="vfr">Same as source (variable)</option><option value="cfr">Constant</option></select></div>
+            <div class="field-block hidden" id="framerateBlock"><label for="framerate">Rate (fps)</label><select id="framerate"></select></div>
+          </div>
+          <div class="ed-hint">10-bit needs a 10-bit pixel format (yuv420p10le, or p010le for NVENC) and an encoder profile to match (e.g. main10).</div>
+
+          <div class="ed-grp">Picture</div>
+          <div class="ed-row2">
+            <div class="field-block"><label for="deinterlace">Deinterlace</label>
+              <select id="deinterlace"><option value="auto">Auto - only when the file is flagged interlaced</option><option value="always">Always</option><option value="off">Off</option></select></div>
+            <div class="field-block"><label for="crop">Cropping</label>
+              <select id="crop"><option value="auto">Automatic - find black bars by sampling the file</option><option value="off">Off</option></select></div>
+          </div>
+
+          <div class="ed-grp">Audio</div>
+          <div class="ed-row2">
+            <div class="field-block"><label for="audioLanguages">Languages (in order of preference)</label><input type="text" id="audioLanguages" placeholder="eng, und" /><div class="ed-hint">Comma-separated 3-letter codes; <code>any</code> accepts every language. If nothing matches, the first track is kept rather than none.</div></div>
+            <div class="field-block"><label for="audioTracks">Tracks to keep</label>
+              <select id="audioTracks"><option value="first">Only the first matching track</option><option value="all">Every matching track</option></select></div>
+          </div>
+          <div class="field-block"><label for="audioMode">Audio handling</label>
+            <select id="audioMode"><option value="passthru">Pass a track through untouched when its format is ticked, otherwise encode it</option><option value="encode">Always encode</option></select></div>
+          <div class="field-block" id="passBlock"><label>Pass through when the track is</label>
+            <div class="ed-formats" id="passthrough"></div></div>
+          <div class="ed-row3" style="margin-top:10px">
+            <div class="field-block"><label for="audioCodec" id="audioCodecLabel">Encode as</label><select id="audioCodec"></select></div>
+            <div class="field-block"><label for="audioBitrate">Bitrate (kbps)</label><input type="number" id="audioBitrate" min="0" step="16" /></div>
+            <div class="field-block"><label for="audioMixdown">Mixdown (at most)</label><select id="audioMixdown"></select></div>
+          </div>
+
+          <div class="ed-grp">Subtitles &amp; chapters</div>
+          <div class="ed-row2">
+            <div class="field-block"><label for="subtitleLanguages">Subtitle languages</label><input type="text" id="subtitleLanguages" placeholder="eng" /></div>
+            <div class="field-block"><label for="subtitleTracks">Keep</label>
+              <select id="subtitleTracks"><option value="all">All matching tracks</option><option value="first">First matching track</option><option value="none">None</option></select></div>
+          </div>
+          <div class="ed-hint">MKV keeps text and picture subtitles as they are. MP4 can only hold text subtitles (converted to mov_text) - picture subtitles (PGS, DVD) are dropped, and Preview decisions says so.</div>
+          <div class="check-row" style="margin-top:8px"><input type="checkbox" id="chapters" /><label for="chapters">Keep chapter markers</label></div>
+
+          <div class="ed-grp">Dolby Vision &amp; HDR10+</div>
+          <div class="field-block"><label for="fallbackHandBrakePreset">HandBrake profile for Dolby Vision / HDR10+ files</label>
+            <select id="fallbackHandBrakePreset"></select>
+            <div class="ed-hint">ffmpeg would silently drop that dynamic metadata, so such files are encoded by HandBrake with this profile instead. Leave it blank to refuse those files (they are left untouched and reported). Ordinary HDR10 is handled by ffmpeg itself.</div></div>
+
+          <div class="ed-grp">Advanced</div>
+          <div class="field-block"><label for="extraArgs">Extra ffmpeg arguments</label><input type="text" id="extraArgs" placeholder="e.g. -metadata comment=&quot;compressed&quot;" />
+            <div class="ed-hint">Added just before the output file, after this profile's own options. Use with care - a wrong option can make ffmpeg fail.</div></div>
+          </fieldset>
+        </div>
+      </div>
+
+      <div class="ed-sticky">
+        <div class="card"><div class="card-head"><h2>Preview decisions for a file</h2></div>
+          <div class="card-body">
+            <div class="field-with-btn"><input type="text" id="previewPath" placeholder="C:\Media\Some Movie (2020).mkv" /><button id="previewBtn" class="primary">Preview</button></div>
+            <div class="ed-hint">Reads a real file with ffprobe and shows what this profile would do with it - nothing is encoded or changed.</div>
+            <div id="previewOut" class="prev-out"></div>
+          </div>
+        </div>
+        <div class="card"><div class="card-head"><h2>Good to know</h2></div>
+          <div class="card-body ed-note-list" style="font-size:12.5px;line-height:1.55">
+            <p>&bull; Saved to <code id="userFilePath">%AppData%\Compressarr\Profiles\ffmpeg-profiles.json</code> - it's in Compressarr's automatic backups with the rest of your settings.</p>
+            <p>&bull; Names must be unique among the ffmpeg built-ins and your ffmpeg profiles (a HandBrake profile may share a name).</p>
+            <p style="margin-bottom:0">&bull; Renaming a profile updates every ffmpeg lane and queued file that uses it.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/nav.js"></script>
+  <script src="/ffmpeg-edit.js"></script>
+</body>
+</html>

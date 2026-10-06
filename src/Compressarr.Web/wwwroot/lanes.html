@@ -66,6 +66,12 @@
           </div>
         </div>
 
+        <div class="field-block lane-encoder">
+          <label>Encoder<span class="help-tag" tabindex="0" title="Which tool encodes this lane's files. The profiles below are that tool's own - HandBrake's or ffmpeg's. ffmpeg is experimental; set it up on the Encoder page.">?<span class="help-tip">Which tool encodes this lane's files. The profiles below are that tool's own - HandBrake's or ffmpeg's. ffmpeg is experimental; set it up on the Encoder page.</span></span></label>
+          <select class="f-engine"><option value="HandBrake">HandBrake</option><option value="FFmpeg">ffmpeg (Experimental)</option></select>
+          <div class="lane-encoder-note f-engineNote hidden"></div>
+        </div>
+
         <div class="routing-heading">Content routing</div>
         <div class="routing-grid">
           <div class="routing-col">
@@ -74,7 +80,7 @@
               Movie
             </div>
             <div class="field-block">
-              <label>Preset<span class="help-tag" tabindex="0" title="HandBrake preset used for files detected as movies.">?<span class="help-tip">HandBrake preset used for files detected as movies.</span></span></label>
+              <label>Profile<span class="help-tag" tabindex="0" title="Encoding profile used for files detected as movies (from this lane's encoder - see the Profiles page).">?<span class="help-tip">Encoding profile used for files detected as movies (from this lane's encoder - see the Profiles page).</span></span></label>
               <select class="f-moviePreset"></select>
             </div>
             <div class="field-block">
@@ -91,7 +97,7 @@
               TV
             </div>
             <div class="field-block">
-              <label>Preset<span class="help-tag" tabindex="0" title="HandBrake preset used for files detected as TV episodes.">?<span class="help-tip">HandBrake preset used for files detected as TV episodes.</span></span></label>
+              <label>Profile<span class="help-tag" tabindex="0" title="Encoding profile used for files detected as TV episodes (from this lane's encoder - see the Profiles page).">?<span class="help-tip">Encoding profile used for files detected as TV episodes (from this lane's encoder - see the Profiles page).</span></span></label>
               <select class="f-tvPreset"></select>
             </div>
             <div class="field-block">

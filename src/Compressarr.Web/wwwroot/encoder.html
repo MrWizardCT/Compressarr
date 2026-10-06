@@ -36,6 +36,11 @@
             <div class="enc-tool-line" id="hbVersionLine">Checking&hellip;</div>
             <div class="enc-tool-line" id="hbUsedBy"></div>
           </div>
+          <div class="enc-tool">
+            <div class="enc-tool-title"><span class="enc-dot" id="ffDot"></span>ffmpeg <span class="prof-chip warn">Experimental</span></div>
+            <div class="enc-tool-line" id="ffVersionLine">Checking&hellip;</div>
+            <div class="enc-tool-line" id="ffUsedBy"></div>
+          </div>
         </div>
         <p class="enc-note">Which tool a lane uses is set on the <a href="/lanes.html">Lanes</a> page; the recipes it can pick (profiles) are on the <a href="/profiles.html">Profiles</a> page.</p>
       </div>
@@ -55,6 +60,34 @@
         <div class="field-block">
           <label for="hbOptions">Extra CLI options<span class="help-tag" tabindex="0" title="Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.">?<span class="help-tip">Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.</span></span></label>
           <input type="text" id="hbOptions" placeholder="e.g. --two-pass" />
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+        <h2>ffmpeg <span class="prof-chip warn" style="margin-left:8px">Experimental</span></h2>
+      </div>
+      <div class="card-body">
+        <p class="enc-note" style="margin-top:0">An optional second encoder. A lane uses it only if you pick <em>ffmpeg</em> as that lane's encoder on the <a href="/lanes.html">Lanes</a> page - until then nothing changes. ffmpeg won't produce byte-identical output to HandBrake, and Dolby Vision / HDR10+ files are handed to HandBrake automatically (see the ffmpeg profile's fallback).</p>
+        <div class="field-block">
+          <label for="ffPath">ffmpeg path<span class="help-tag" tabindex="0" title="Full path to ffmpeg.exe. Check/Install uses one already on this computer, or downloads a managed copy into Compressarr's own folder after asking.">?<span class="help-tip">Full path to ffmpeg.exe. Check/Install uses one already on this computer, or downloads a managed copy into Compressarr's own folder after asking.</span></span></label>
+          <div class="field-with-btn"><input type="text" id="ffPath" /><button id="checkFfmpegBtn">Check/Install</button></div>
+        </div>
+        <div class="field-block">
+          <label for="ffProbePath">ffprobe path<span class="help-tag" tabindex="0" title="Full path to ffprobe.exe - it reads each file's tracks, length and HDR information. It comes in the same download as ffmpeg.">?<span class="help-tip">Full path to ffprobe.exe - it reads each file's tracks, length and HDR information. It comes in the same download as ffmpeg.</span></span></label>
+          <input type="text" id="ffProbePath" />
+        </div>
+        <div class="field-block">
+          <label>Detected</label>
+          <div id="ffDetected" class="enc-note" style="margin-top:0">Checking&hellip;</div>
+          <div class="enc-chips" id="ffChips"></div>
+          <p class="enc-note">Profiles that need an encoder your build lacks are flagged on the Profiles page instead of failing in the middle of a run.</p>
+        </div>
+        <div class="field-block">
+          <label for="ffOptions">Extra ffmpeg options<span class="help-tag" tabindex="0" title="Additional ffmpeg options added to every ffmpeg encode, e.g. -threads 6. They go just before the output file.">?<span class="help-tip">Additional ffmpeg options added to every ffmpeg encode, e.g. -threads 6. They go just before the output file.</span></span></label>
+          <input type="text" id="ffOptions" placeholder="e.g. -threads 6" />
         </div>
       </div>
     </div>

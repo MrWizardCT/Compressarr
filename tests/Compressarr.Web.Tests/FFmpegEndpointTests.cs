@@ -134,6 +134,24 @@ public class FFmpegEndpointTests
         Assert.DoesNotContain("HB Lane", withLane["handBrakeLanes"]!.AsArray().Select(n => n!.GetValue<string>()));
     }
 
+    // The page's JavaScript reads these keys case-sensitively; the tests' own JSON helpers don't, so the raw text is checked
+    // (a property named FFmpegPath would be sent as "fFmpegPath").
+    [Fact]
+    public async Task EncoderAndProfilesJson_UsesTheKeysThePagesRead()
+    {
+        await using var host = await QueueHost.StartAsync(HbLane);
+
+        var encoder = await host.Client.GetStringAsync("/api/encoder");
+        var profiles = await host.Client.GetStringAsync("/api/profiles");
+
+        foreach (var key in new[] { "\"ffmpegPath\"", "\"ffmpegProbePath\"", "\"ffmpegOptions\"", "\"ffmpegProfileCount\"", "\"ffmpegLanes\"" })
+        {
+            Assert.Contains(key, encoder);
+        }
+        Assert.Contains("\"ffmpegUserFilePath\"", profiles);
+        Assert.DoesNotContain("fFmpeg", encoder + profiles);
+    }
+
     [Fact]
     public async Task Encoder_SavesTheFfmpegSettings_AndAnOlderPageThatOmitsThemLeavesThemAlone()
     {

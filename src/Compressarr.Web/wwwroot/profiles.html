@@ -21,6 +21,7 @@
     <h2 class="page-title">Profiles</h2>
     <div class="page-actions">
       <button id="newHbBtn" class="primary">New HandBrake profile</button>
+      <button id="newFfBtn">New ffmpeg profile</button>
       <button id="importBtn">Import&hellip;</button>
     </div>
 
@@ -30,14 +31,25 @@
         <h2>Profiles</h2>
       </div>
       <div class="card-body">
-        <p class="enc-note" style="margin-top:0">These are all the encoding profiles Compressarr has - its own built-ins plus yours. A lane picks one on the <a href="/lanes.html">Lanes</a> page. Compressarr never reads HandBrake's own presets file while encoding; <em>Import</em> is how presets get in from it.</p>
+        <p class="enc-note" style="margin-top:0">These are all the encoding profiles Compressarr has - its own built-ins plus yours. A lane picks one on the <a href="/lanes.html">Lanes</a> page. Compressarr never reads HandBrake's own presets file while encoding; <em>Import</em> (HandBrake profiles) is how presets get in from it. A lane picks profiles from its own encoder's list, so the same name can exist for both.</p>
         <div id="profileError" class="banner err hidden"></div>
+        <div class="prof-tabs" id="engineTabs"><button class="on" data-f="all">All</button><button data-f="handbrake">HandBrake</button><button data-f="ffmpeg">ffmpeg</button></div>
         <div class="table-wrap">
           <table class="prof-table">
             <thead><tr><th>Profile</th><th>Encoder</th><th>Video</th><th>Audio</th><th>Used by</th><th></th></tr></thead>
             <tbody id="profileRows"><tr><td colspan="6" class="prof-sub">Loading&hellip;</td></tr></tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <div class="card hidden" id="conversionBox">
+      <div class="card-head"><h2 id="conversionTitle">Duplicated as ffmpeg</h2></div>
+      <div class="card-body">
+        <p class="enc-note" style="margin-top:0">This is a starting point, saved as one of your own ffmpeg profiles - review it before using it on a lane.</p>
+        <div class="enc-note"><strong>Carried over</strong><ul id="conversionCarried" class="conv-list"></ul></div>
+        <div class="enc-note" id="conversionLostWrap"><strong>ffmpeg can't carry these over</strong><ul id="conversionLost" class="conv-list"></ul></div>
+        <div class="page-actions" style="margin-top:12px"><button id="conversionOpen" class="primary">Open the ffmpeg profile</button><button id="conversionClose">Close</button></div>
       </div>
     </div>
 
@@ -49,6 +61,7 @@
       <div class="card-body">
         <div class="prof-where">
           <div><b>Built-in</b> (locked)<br>Ship with Compressarr, so they are always the same and can't be changed or deleted. Duplicate one to make your own.</div>
+          <div><b>Yours - ffmpeg</b><br><code id="ffUserFilePath">%AppData%\Compressarr\Profiles\ffmpeg-profiles.json</code><br>Your ffmpeg profiles. Included in the automatic backups and in Export/Import config too. ffmpeg reads its profiles straight from here - there is no generated copy.</div>
           <div><b>Yours - HandBrake</b><br><code id="userFilePath">%AppData%\Compressarr\Profiles\handbrake-profiles.json</code><br>Everything you create, duplicate or import. It is included in Compressarr's automatic backups and in Export/Import config, with the rest of your settings. For every encode Compressarr hands HandBrake its own generated copy (built-ins plus yours), so the HandBrake app and Compressarr never touch each other's files.</div>
         </div>
       </div>

@@ -5,7 +5,7 @@ const template = document.getElementById('lane-template');
 
 // Populated by populatePresetList() before any lane card is built - a <select> needs its
 // <option>s to already exist before setting .value, unlike the old <input list> combo.
-let presetNames = [];
+let presetNamesByEngine = { HandBrake: [], FFmpeg: [] };
 
 // success truthy -> green (auto-clears after 4s), same convention as settings.js's setStatus -
 // this used to just set plain text with no color at all, which is why Lanes' own save messages
@@ -19,12 +19,14 @@ const LANE_FIELD_MAP = {
   input: '.f-input',
   output: '.f-output',
   tvPreset: '.f-tvPreset',
-  moviePreset: '.f-moviePreset'
+  moviePreset: '.f-moviePreset',
+  engine: '.f-engine'
 };
 
 // Highlights just this one card's fields - the aggregate page-level status message (if any) is
 // decided by the caller, since a single lane's issues shouldn't overwrite/hide another card's.
 function applyLaneValidation(node, issues) {
+  showEngineNote(node, node.querySelector('.f-engine').value, issues);
   return applyValidationIssues(node, issues, LANE_FIELD_MAP, '');
 }
 
@@ -34,7 +36,8 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function fillPresetSelect(select, currentValue) {
+function fillPresetSelect(select, currentValue, engine) {
+  const presetNames = presetNamesByEngine[engine || 'HandBrake'] || [];
   // If the lane's saved preset isn't in the current list (e.g. presets.json changed since this
   // lane was configured), keep it as a selectable option anyway rather than silently blanking
   // the field out from under the user.
@@ -53,8 +56,19 @@ function laneCardFromDto(dto) {
   node.querySelector('.f-displayName').value = dto.displayName;
   node.querySelector('.f-input').value = dto.input;
   node.querySelector('.f-output').value = dto.output;
-  fillPresetSelect(node.querySelector('.f-tvPreset'), dto.tvPreset);
-  fillPresetSelect(node.querySelector('.f-moviePreset'), dto.moviePreset);
+  const engine = dto.engine || 'HandBrake';
+  node.querySelector('.f-engine').value = engine;
+  fillPresetSelect(node.querySelector('.f-tvPreset'), dto.tvPreset, engine);
+  fillPresetSelect(node.querySelector('.f-moviePreset'), dto.moviePreset, engine);
+  showEngineNote(node, engine, dto.validationIssues);
+  // Switching encoder swaps the profile lists (each tool has its own); a chosen name that isn't in the
+  // new list stays selectable and gets flagged on save, rather than being blanked behind the user's back.
+  node.querySelector('.f-engine').addEventListener('change', e => {
+    const next = e.target.value;
+    fillPresetSelect(node.querySelector('.f-tvPreset'), node.querySelector('.f-tvPreset').value, next);
+    fillPresetSelect(node.querySelector('.f-moviePreset'), node.querySelector('.f-moviePreset').value, next);
+    showEngineNote(node, next, []);
+  });
   node.querySelector('.f-tvShowBasePath').value = dto.tvShowBasePath;
   node.querySelector('.f-movieBasePath').value = dto.movieBasePath;
 
@@ -80,6 +94,7 @@ function readLaneCard(node) {
     output: node.querySelector('.f-output').value,
     tvPreset: node.querySelector('.f-tvPreset').value,
     moviePreset: node.querySelector('.f-moviePreset').value,
+    engine: node.querySelector('.f-engine').value,
     tvShowBasePath: node.querySelector('.f-tvShowBasePath').value,
     movieBasePath: node.querySelector('.f-movieBasePath').value
   };
@@ -165,8 +180,23 @@ async function removeLane(node) {
 }
 
 async function populatePresetList() {
-  const presetsRes = await fetch('/api/presets');
-  presetNames = await presetsRes.json();
+  const [hb, ff] = await Promise.all([fetch('/api/presets'), fetch('/api/presets?engine=ffmpeg')]);
+  presetNamesByEngine = { HandBrake: await hb.json(), FFmpeg: await ff.json() };
+}
+
+// Under the Encoder select: why this lane's encoder can't run yet (ffmpeg missing, ...), or a reminder that it is experimental.
+function showEngineNote(node, engine, issues) {
+  const note = node.querySelector('.f-engineNote');
+  const problem = (issues || []).find(i => i.field === 'engine');
+  if (problem) {
+    note.textContent = problem.message;
+    note.classList.remove('hidden');
+  } else if (engine === 'FFmpeg') {
+    note.textContent = "Experimental. Files with Dolby Vision or HDR10+ are handed to HandBrake, using the ffmpeg profile's fallback profile.";
+    note.classList.remove('hidden');
+  } else {
+    note.classList.add('hidden');
+  }
 }
 
 async function loadLanes() {

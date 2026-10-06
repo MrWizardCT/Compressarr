@@ -14,11 +14,11 @@ public sealed record EncoderSettingsDto(
     int UserProfileCount,
     List<string> HandBrakeLanes,
     List<ValidationIssueDto> ValidationIssues,
-    string? FFmpegPath = null,
-    string? FFmpegProbePath = null,
-    string? FFmpegOptions = null,
-    int FFmpegProfileCount = 0,
-    List<string>? FFmpegLanes = null);
+    string? FfmpegPath = null,
+    string? FfmpegProbePath = null,
+    string? FfmpegOptions = null,
+    int FfmpegProfileCount = 0,
+    List<string>? FfmpegLanes = null);
 
 /// <summary>One row of the Profiles page. Engine is "handbrake" or "ffmpeg". UsedBy lists the lanes
 /// (of that engine) whose TV or Movie preset is this profile.</summary>
@@ -37,8 +37,8 @@ public sealed record ProfileListDto(
     string UserFilePath,
     string ActivePresetsPath,
     string? UserFileError,
-    string? FFmpegUserFilePath = null,
-    string? FFmpegUserFileError = null);
+    string? FfmpegUserFilePath = null,
+    string? FfmpegUserFileError = null);
 
 /// <summary>The editor's view of one HandBrake profile: the form fields, whether it is a locked
 /// built-in (the editor is then read-only), and which lanes use it.</summary>

@@ -156,7 +156,10 @@ let openMenuKey = null;
 let selectOpenKey = null;
 let ghostEl = null;
 let grabOffsetY = 0;
-let presetNames = [];
+let presetNamesByEngine = { HandBrake: [], FFmpeg: [] };
+// Whether any lane uses ffmpeg - only then do HandBrake rows get an encoder chip too, so a HandBrake-only
+// setup's queue looks exactly as it always did.
+let anyFfmpegLane = false;
 // Loaded once at startup alongside the preset list below (same settings fetch, no extra round
 // trip) - a Settings-page change to this while Monitor is already open needs a Monitor page
 // reload to take effect, same "load once" pattern this function already had for presetNames.
@@ -172,8 +175,8 @@ async function loadQueuePresetNames() {
     const settingsRes = await fetch('/api/settings');
     const settings = await settingsRes.json();
     queueEtaFormat = settings.queueEtaFormat || 'DateTime';
-    const presetsRes = await fetch('/api/presets');
-    presetNames = await presetsRes.json();
+    const [hb, ff] = await Promise.all([fetch('/api/presets'), fetch('/api/presets?engine=ffmpeg')]);
+    presetNamesByEngine = { HandBrake: await hb.json(), FFmpeg: await ff.json() };
   } catch { /* best-effort - the preset-override dropdown just stays empty if this fails */ }
 }
 
@@ -184,7 +187,9 @@ let queueLanes = [];
 async function loadQueueLanes() {
   try {
     const res = await fetch('/api/lanes');
-    queueLanes = (await res.json()).map(l => ({ id: l.id, displayName: l.displayName, enabled: l.enabled }));
+    const lanes = await res.json();
+    queueLanes = lanes.map(l => ({ id: l.id, displayName: l.displayName, enabled: l.enabled }));
+    anyFfmpegLane = lanes.some(l => l.enabled && l.engine === 'FFmpeg');
   } catch { /* best-effort - the "lands in" dropdown just offers nothing if this fails */ }
 }
 setInterval(loadQueueLanes, 30000);
@@ -214,6 +219,8 @@ function fillQueueDestinationSelect(select, item) {
 // explicit choice to clear an override, but only when there IS one to clear - it's never what's
 // shown by default for a file that's already just using the lane's own preset.
 function fillQueuePresetSelect(select, item) {
+  // Each row offers its OWN lane's encoder's profiles, so a file can only be given one its lane can run.
+  const presetNames = presetNamesByEngine[item.engine || 'HandBrake'] || [];
   const currentValue = item.preset || '';
   // If the file's current value isn't in presetNames (a stale override from a presets.json
   // that's since changed), keep it as a selectable option anyway rather than silently dropping it.
@@ -234,6 +241,12 @@ function queueDestinationMarker(item) {
     return ' <span class="queue-dest missing" title="The lane this file was assigned to has been deleted. The finished file will wait in Output until you choose where it lands.">&#8618; deleted lane</span>';
   }
   return ` <span class="queue-dest" title="The finished file will land in ${escapeHtml(item.destinationLaneName)}'s library. The source file is not moved.">&#8618; ${escapeHtml(item.destinationLaneName)}</span>`;
+}
+
+// A small encoder tag beside the lane name: ffmpeg rows always; HandBrake rows only when some lane uses ffmpeg.
+function queueEngineChip(item) {
+  if (item.engine === 'FFmpeg') return ' <span class="queue-chip ff">ffmpeg</span>';
+  return anyFfmpegLane ? ' <span class="queue-chip">HandBrake</span>' : '';
 }
 
 function queueBadgeClass(item) {
@@ -307,7 +320,7 @@ function renderQueueList() {
       ${item.isError ? '' : `<span class="queue-handle">${QUEUE_ICON_GRIP}</span>`}
       <span class="queue-badge ${queueBadgeClass(item)}">${item.isSkipped ? 'Skipped' : queueBadgeLabel(item)}</span>
       ${item.isFileBotUnmatched ? '<span class="queue-badge unmatched">Unmatched</span>' : ''}
-      <div class="queue-lane">${escapeHtml(item.laneDisplayName)}${queueDestinationMarker(item)}</div>
+      <div class="queue-lane">${escapeHtml(item.laneDisplayName)}${queueEngineChip(item)}${queueDestinationMarker(item)}</div>
 
       <div class="queue-file">${escapeHtml(item.fileName)}</div>
       <div class="queue-meta">${item.sizeGb.toFixed(2)} GB</div>
@@ -617,7 +630,7 @@ async function poll() {
   document.getElementById('fileLabel').textContent = s.isRenaming
     ? `Renaming files with FileBot in Lane ${s.laneDisplayName}`
     : (s.isRunning && s.laneDisplayName)
-      ? `Compressing File in Lane ${s.laneDisplayName}${s.presetName ? ` using preset ${s.presetName}` : ''}`
+      ? `Compressing File in Lane ${s.laneDisplayName}${s.presetName ? ` using ${s.engine === 'FFmpeg' ? 'ffmpeg profile' : 'preset'} ${s.presetName}` : ''}`
       : 'Waiting for files';
   document.getElementById('fileValue').textContent = s.isRenaming ? '-' : (s.isRunning ? (s.fileName || '-') : '-');
 

@@ -1711,3 +1711,27 @@ pre.ed-cmd { margin: 0; padding: 12px 14px; background: #1d2130; color: #d6dcf0;
 .ed-kept { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; }
 .ed-stored { margin: 10px 0 0; max-height: 280px; overflow: auto; font-size: 11px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
 .ed-note-list p { margin: 0 0 8px; }
+
+/* ffmpeg: Encoder card, Profiles, Lanes, queue, editor preview */
+.enc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+.enc-chip { font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); }
+.enc-chip.ok { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+.enc-chip.no { background: var(--bg); color: var(--text-dim); }
+.enc-warn { margin-top: 6px; color: var(--warn); font-size: 12px; }
+.prof-chip.ff { background: var(--warn-bg); color: var(--warn); }
+.prof-warn { margin-top: 4px; font-size: 11.5px; color: var(--warn); font-weight: 600; }
+.conv-list { margin: 6px 0 0; padding-left: 18px; }
+.conv-list li { margin: 3px 0; }
+.lane-encoder { margin-top: 12px; }
+.lane-encoder-note { margin-top: 5px; font-size: 12px; color: var(--text-dim); }
+.queue-chip { font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text-dim); margin-left: 4px; vertical-align: middle; }
+.queue-chip.ff { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+.prev-out { margin-top: 10px; font-size: 12.5px; }
+.prev-file { margin-bottom: 4px; }
+.prev-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
+.prev-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.prev-table tr.act-drop td { color: var(--text-dim); }
+.prev-act { font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 999px; text-transform: uppercase; }
+.prev-act.copy { background: var(--ok-bg); color: var(--ok); }
+.prev-act.encode { background: var(--accent-dim); color: var(--accent); }
+.prev-act.drop { background: var(--bg); color: var(--text-dim); border: 1px solid var(--border); }
