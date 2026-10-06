@@ -20,6 +20,7 @@ public sealed record SkipQueueEntryRequest(string LaneId, string FullName, bool 
 public sealed record ReorderQueueItem(string LaneId, string FullName);
 public sealed record ReorderQueueRequest(List<ReorderQueueItem> Items);
 public sealed record PresetOverrideRequest(string LaneId, string FullName, string? Preset);
+public sealed record DestinationRequest(string LaneId, string FullName, string? DestinationLaneId);
 
 public static class RunEndpoints
 {
@@ -96,6 +97,16 @@ public static class RunEndpoints
         // override back to the lane default.
         app.MapPost("/api/run/queue/preset-override", (PresetOverrideRequest request, IConfigStore configStore, IQueueService queue) =>
             ToResult(queue.OverridePreset(configStore.Load(AppPaths.GetConfigFilePath()), request.LaneId, request.FullName, request.Preset)));
+
+        // "Lands in" lane picker on a queue row - routes the finished file into another lane's library without
+        // moving the source (see ResumeEntry.DestinationLaneId). A null/blank DestinationLaneId clears it.
+        app.MapPost("/api/run/queue/destination", (DestinationRequest request, IConfigStore configStore, IQueueService queue) =>
+        {
+            var result = queue.SetDestination(configStore.Load(AppPaths.GetConfigFilePath()), request.LaneId, request.FullName, request.DestinationLaneId);
+            return result == QueueEditResult.UnknownDestinationLane
+                ? Results.BadRequest(new { message = "That lane no longer exists." })
+                : ToResult(result);
+        });
 
         app.MapPost("/api/run/pause", (IActiveEncodeProcess activeProcess) =>
         {

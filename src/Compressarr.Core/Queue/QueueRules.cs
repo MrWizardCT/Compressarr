@@ -11,7 +11,7 @@ namespace Compressarr.Core.Queue;
 /// name in different subfolders (e.g. two different shows' own "episode.mkv"). Code-review finding:
 /// matching on FileName alone let a skip/remove/preset-override/reorder request silently target the
 /// wrong one of two same-named files, or fail ambiguously.</summary>
-public sealed record UpNextItem(string LaneId, string LaneDisplayName, string FileName, string FullName, double SizeGb, string? Preset, bool IsResumed, bool IsError, bool IsSkipped, bool IsCustomPreset, bool IsFileBotUnmatched);
+public sealed record UpNextItem(string LaneId, string LaneDisplayName, string FileName, string FullName, double SizeGb, string? Preset, bool IsResumed, bool IsError, bool IsSkipped, bool IsCustomPreset, bool IsFileBotUnmatched, string? DestinationLaneId = null, string? DestinationLaneName = null, bool DestinationMissing = false);
 
 /// <summary>What the queue display needs to know about the run currently in progress: the full path
 /// of the file being encoded (excluded from the waiting list) and, per lane, whether that lane
@@ -250,7 +250,11 @@ public static class QueueRules
                 var preset = hasOverride ? entry!.PresetOverride : (ContentClassifier.IsTvFile(file.Name) ? lane.TvPreset : lane.MoviePreset);
                 var sizeGb = Math.Round(file.Length / (double)BytesPerGb, 3);
                 var isFileBotUnmatched = entry?.FileBotUnmatched ?? false;
-                var item = new UpNextItem(lane.Id, lane.DisplayName, file.Name, file.FullName, sizeGb, preset, isResumed, IsError: false, isSkipped, hasOverride, isFileBotUnmatched);
+                // A "lands in another lane" assignment, shown as a marker on the row. An assignment to a
+                // lane that has since been deleted is flagged rather than hidden - the file will wait in
+                // Output until the user picks somewhere to land it.
+                var (destinationId, destinationName, destinationMissing) = DescribeDestination(config, lane, entry);
+                var item = new UpNextItem(lane.Id, lane.DisplayName, file.Name, file.FullName, sizeGb, preset, isResumed, IsError: false, isSkipped, hasOverride, isFileBotUnmatched, destinationId, destinationName, destinationMissing);
                 candidates.Add((item, laneOrderIndex, entry?.Order, naturalIndex[file.FullName]));
             }
 
@@ -280,6 +284,18 @@ public static class QueueRules
             .ToList();
         items.AddRange(errorItems);
         return items;
+    }
+
+    /// <summary>The row marker for a file assigned to land in a different lane: that lane'"'"'s id and display
+    /// name, or (id, null, true) if the lane no longer exists. All null/false for an ordinary file, and
+    /// for an assignment to the file'"'"'s own lane (which means nothing).</summary>
+    private static (string? Id, string? Name, bool Missing) DescribeDestination(CompressarrConfig config, LaneConfig homeLane, ResumeEntry? entry)
+    {
+        var id = entry?.DestinationLaneId;
+        if (string.IsNullOrWhiteSpace(id) || id == homeLane.Id) return (null, null, false);
+
+        var destination = config.Lanes.FirstOrDefault(l => l.Id == id);
+        return destination is null ? (id, null, true) : (destination.Id, destination.DisplayName, false);
     }
 
     // ---- engine-side rules ------------------------------------------------------------------
@@ -439,9 +455,9 @@ public static class QueueRules
         return changed;
     }
 
-    /// <summary>Merges the user-owned queue fields (Order / Skipped / PresetOverride / Removed) from
+    /// <summary>Merges the user-owned queue fields (Order / Skipped / PresetOverride / Removed / DestinationLaneId) from
     /// what's currently on disk onto the matching in-memory entries (by LaneId + FullName). Deliberately
-    /// narrow: only those four fields are ever touched, never Status or EncodedFilePath, so this can
+    /// narrow: only those five fields are ever touched, never Status or EncodedFilePath, so this can
     /// never resurrect or misclassify an entry actively being driven through the engine's own state
     /// machine - it only pulls in what a queue-control web request could actually have changed. A
     /// disk entry with no in-memory match (a freshly-scanned file the user, or the Monitor page, acted
@@ -457,6 +473,7 @@ public static class QueueRules
                 inMemory.Skipped = diskEntry.Skipped;
                 inMemory.PresetOverride = diskEntry.PresetOverride;
                 inMemory.Removed = diskEntry.Removed;
+                inMemory.DestinationLaneId = diskEntry.DestinationLaneId;
             }
             else
             {

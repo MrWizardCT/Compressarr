@@ -25,7 +25,10 @@ public sealed record QueueItem(
     bool IsResumed,
     bool IsError,
     bool IsSkipped,
-    bool IsCustomPreset);
+    bool IsCustomPreset,
+    string? DestinationLaneId = null,
+    string? DestinationLaneName = null,
+    bool DestinationMissing = false);
 
 public sealed record StatusDto(List<QueueItem> UpNext);
 
@@ -145,6 +148,14 @@ public sealed class QueueHost : IAsyncDisposable
 
     public Task<HttpStatusCode> OverridePresetAsync(string laneId, string fullName, string? preset) =>
         PostAsync("/api/run/queue/preset-override", new { laneId, fullName, preset });
+
+    /// <summary>The "lands in" picker on a queue row. A null destination clears it.</summary>
+    public Task<HttpStatusCode> SetDestinationAsync(string laneId, string fullName, string? destinationLaneId) =>
+        PostAsync("/api/run/queue/destination", new { laneId, fullName, destinationLaneId });
+
+    /// <summary>Deletes a lane from the saved config (as the Lanes page does), leaving everything else.</summary>
+    public void DeleteLane(string laneId) =>
+        Services.GetRequiredService<IConfigStore>().Update(AppPaths.GetConfigFilePath(), config => config.Lanes.RemoveAll(l => l.Id == laneId));
 
     /// <summary>Submits the whole queue in the given order, exactly like a drag-reorder or Move to
     /// top/bottom does (items are lane id + full path).</summary>

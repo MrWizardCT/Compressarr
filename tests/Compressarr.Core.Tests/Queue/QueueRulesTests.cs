@@ -306,6 +306,18 @@ public sealed class QueueRulesTests : IDisposable
     }
 
     [Fact]
+    public void MergeUserEdits_CarriesALaneAssignmentAcross_AndItsClearing()
+    {
+        var state = new List<ResumeEntry> { Pending("laneA", "f", order: 1) };
+
+        QueueRules.MergeUserEdits(state, new[] { new ResumeEntry { LaneId = "laneA", FullName = "f", Status = ResumeStatus.Pending, DestinationLaneId = "laneB" } });
+        Assert.Equal("laneB", state.Single().DestinationLaneId);
+
+        QueueRules.MergeUserEdits(state, new[] { new ResumeEntry { LaneId = "laneA", FullName = "f", Status = ResumeStatus.Pending, DestinationLaneId = null } });
+        Assert.Null(state.Single().DestinationLaneId);
+    }
+
+    [Fact]
     public void MergeUserEdits_AdoptsAnEntryTheEngineHasNotSeenYet()
     {
         var state = new List<ResumeEntry>();

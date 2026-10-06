@@ -39,4 +39,12 @@ public sealed class ConversionResult
     /// downstream of that needs a look, shown as a distinct marker rather than lumped in with
     /// "ERROR". Null when nothing went wrong.</summary>
     public string? PostProcessWarning { get; init; }
+
+    /// <summary>The lane the user assigned this file to land in instead (see ResumeEntry.
+    /// DestinationLaneId), set only when the file really was routed into that lane's library -
+    /// null for every ordinary file. HomeLaneName is the lane it came from (always set), so the
+    /// report can say "redirected from X".</summary>
+    public string? RedirectedToLaneId { get; init; }
+    public string? RedirectedToLaneName { get; init; }
+    public string? HomeLaneName { get; init; }
 }

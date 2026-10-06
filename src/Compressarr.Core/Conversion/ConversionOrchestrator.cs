@@ -356,7 +356,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
             try
             {
-                retryDestPath = _fileRouter.RouteFile(encodedFilePath, desiredFileName, retryIsTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
+                var retryLibraries = LaneDestination.Resolve(config, _pathExpander, entry, tvShowBasePath, movieBasePath);
+                retryDestPath = _fileRouter.RouteFile(encodedFilePath, desiredFileName, retryIsTv, retryLibraries.TvShowBasePath, retryLibraries.MovieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
                 entry.Status = ResumeStatus.Completed;
                 entry.EncodedFilePath = null;
                 entry.EncodedFileDesiredName = null;
@@ -932,6 +933,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         string? finalFileName = newFileName;
         var moveFailed = false;
         var diskFull = false;
+        LaneConfig? redirectedTo = null;
         string? failureReason = null;
         ReportErrorCode? errorCode = null;
         string? postProcessWarning = null;
@@ -979,7 +981,11 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             string? routedDestPath = null;
             try
             {
-                routedDestPath = _fileRouter.RouteFile(tempFileName, desiredFileName, isTv, tvShowBasePath, movieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
+                var libraries = LaneDestination.Resolve(config, _pathExpander, resumeEntry, tvShowBasePath, movieBasePath);
+                routedDestPath = _fileRouter.RouteFile(tempFileName, desiredFileName, isTv, libraries.TvShowBasePath, libraries.MovieBasePath, config.Processing.MoveFiles, config.Processing.OnDestinationCollision);
+                // Only a file that really reached a library counts as redirected - one resting in Output
+                // (MoveFiles off, a Skip) or stuck on a failed move landed nowhere yet.
+                if (routedDestPath is not null) redirectedTo = libraries.RedirectedTo;
                 currentPath = routedDestPath is not null
                     ? routedDestPath
                     // MoveFiles is false - nothing further to route to, so unlike the moveFailed
@@ -1021,6 +1027,11 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     diskFull = true;
                     failureReason = "Output drive full, monitoring stopped";
                     errorCode = ReportErrorCode.MoveDiskFull;
+                }
+                else if (ex is DestinationLaneMissingException)
+                {
+                    failureReason = "Destination lane no longer exists, move skipped";
+                    errorCode = ReportErrorCode.MoveFailedOther;
                 }
                 else if (LooksLikePathUnavailable(ex))
                 {
@@ -1271,7 +1282,10 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             StartTime = startTime,
             EndTime = endTime,
             ArrStatus = arrStatus,
-            PostProcessWarning = postProcessWarning
+            PostProcessWarning = postProcessWarning,
+            HomeLaneName = lane.DisplayName,
+            RedirectedToLaneId = redirectedTo?.Id,
+            RedirectedToLaneName = redirectedTo?.DisplayName
         };
     }
 

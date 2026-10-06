@@ -129,6 +129,16 @@ public sealed class ResumeEntry
     /// treated as "FileBot didn't/couldn't confidently match this one." Drives the Monitor page's
     /// "Unmatched" queue badge. Never recomputed for an already-tracked entry.</summary>
     public bool FileBotUnmatched { get; set; }
+
+    /// <summary>User-set "land this file in a different lane's library" - the ONLY thing it changes
+    /// is which lane's TvShowBasePath / MovieBasePath the finished file is routed into (and its
+    /// companion files with it). LaneId keeps meaning "the lane whose Input folder holds this file",
+    /// which owns scanning, the preset, the Output/staging folder, the source-cleanup boundary and
+    /// the Sonarr/Radarr handoff - none of that changes, and the file is never moved, so Sonarr/
+    /// Radarr never see it missing. Null (every existing entry) means "land in my own lane's
+    /// library". Additive: a build that predates this field ignores it and lands the file in its
+    /// own lane's library, which is the wrong place for that one file but loses nothing.</summary>
+    public string? DestinationLaneId { get; set; }
 }
 
 /// <summary>The single source of truth for "what Order value does a newly-tracked file get" -

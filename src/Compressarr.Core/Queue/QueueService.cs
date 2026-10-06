@@ -10,7 +10,9 @@ public enum QueueEditResult
     UnknownLane,
     /// <summary>The lane is fine but the file no longer exists, or already has an entry that
     /// isn't Pending (e.g. a failed file), so there is nothing editable to change.</summary>
-    NotFound
+    NotFound,
+    /// <summary>The lane the file was to be assigned to isn't configured.</summary>
+    UnknownDestinationLane
 }
 
 /// <summary>
@@ -40,6 +42,12 @@ public interface IQueueService
 
     /// <summary>Overrides the preset for this one file; null/blank clears it back to the lane's.</summary>
     QueueEditResult OverridePreset(CompressarrConfig config, string laneId, string fullName, string? preset);
+
+    /// <summary>Assigns the file to land in another lane's library (see ResumeEntry.DestinationLaneId): only
+    /// the landing library changes, never the file's position, preset, Output folder or lane. Null/blank, or
+    /// the file's own lane, clears the assignment. A disabled destination lane is fine - its paths still
+    /// exist.</summary>
+    QueueEditResult SetDestination(CompressarrConfig config, string laneId, string fullName, string? destinationLaneId);
 
     /// <summary>Clears a failed file's Error entry (only that status) so the next scan can pick it up
     /// fresh. Returns how many entries were removed.</summary>
@@ -98,6 +106,14 @@ public sealed class QueueService : IQueueService
 
     public QueueEditResult OverridePreset(CompressarrConfig config, string laneId, string fullName, string? preset) =>
         Edit(config, laneId, fullName, entry => entry.PresetOverride = string.IsNullOrWhiteSpace(preset) ? null : preset);
+
+    public QueueEditResult SetDestination(CompressarrConfig config, string laneId, string fullName, string? destinationLaneId)
+    {
+        var wanted = string.IsNullOrWhiteSpace(destinationLaneId) || destinationLaneId == laneId ? null : destinationLaneId;
+        if (wanted is not null && config.Lanes.All(l => l.Id != wanted)) return QueueEditResult.UnknownDestinationLane;
+
+        return Edit(config, laneId, fullName, entry => entry.DestinationLaneId = wanted);
+    }
 
     public int RemoveError(string laneId, string fullName) =>
         _resumeStore.Update(AppPaths.GetResumeFilePath(), resumeState => resumeState.RemoveAll(e =>

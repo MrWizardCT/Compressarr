@@ -401,6 +401,22 @@ file sealed class NoOpResumeStateStore : IResumeStateStore
     public T Update<T>(string path, Func<List<ResumeEntry>, T> mutate) => mutate(new List<ResumeEntry>());
 }
 
+/// <summary>Records every EncodeRequest it is given (so a test can check which preset and Output
+/// folder were used) and writes a tiny output file like the other fake runners.</summary>
+file sealed class RequestRecordingRunner : IEncoderRunner
+{
+    public List<EncodeRequest> Requests { get; } = new();
+
+    public Task<EncodeResult> RunAsync(EncodeRequest request, Action<EncodeProgress>? onProgress, CancellationToken cancellationToken)
+    {
+        Requests.Add(request);
+        File.WriteAllText(request.OutputPath, "fake encoded output");
+        Directory.CreateDirectory(Path.GetDirectoryName(request.DetailLogFile)!);
+        File.WriteAllText(request.DetailLogFile, "fake HandBrake detail output");
+        return Task.FromResult(new EncodeResult(Success: true, DetailLogFile: request.DetailLogFile));
+    }
+}
+
 /// <summary>Covers the mid-run config-reload fix: settings used to be read once per run/loop
 /// lifetime, so a change made while a lane was still processing files had no effect until
 /// restarted. ConversionOrchestrator now reloads config immediately after each file's
@@ -3245,4 +3261,270 @@ public class ConversionOrchestratorTests : IDisposable
         var order = resumeState.OrderBy(e => e.Order ?? int.MaxValue).ToList();
         Assert.Equal(new[] { entryA, entryB, entryC }, order);
     }
+    // ---- Phase 4: assigning a file to land in another lane's library -----------------------------
+    // The file never moves; only the library its finished encode is routed into changes. Everything
+    // else - preset, Output folder, queue position, the cleanup boundary - stays with its own lane.
+
+    private sealed class TwoLanes
+    {
+        public required CompressarrConfig Config { get; init; }
+        public required LaneConfig Home { get; init; }
+        public required LaneConfig Kids { get; init; }
+        public required string HomeInput { get; init; }
+        public required string KidsInput { get; init; }
+        public required string HomeOutput { get; init; }
+        public required string HomeMovies { get; init; }
+        public required string HomeTv { get; init; }
+        public required string KidsMovies { get; init; }
+        public required string KidsTv { get; init; }
+    }
+
+    private TwoLanes BuildTwoLanes(bool moveFiles = true)
+    {
+        string Dir(string name) { var p = Path.Combine(_tempDir, name); Directory.CreateDirectory(p); return p; }
+
+        var homeInput = Dir("HomeInput");
+        var kidsInput = Dir("KidsInput");
+        var homeOutput = Dir("HomeOutput");
+        var home = new LaneConfig
+        {
+            Id = "hdsd", DisplayName = "SD-HD", Enabled = true, Input = homeInput, Output = homeOutput,
+            TvPreset = "Home TV Preset", MoviePreset = "Home Movie Preset",
+            TvShowBasePath = Dir("HomeTvLibrary"), MovieBasePath = Dir("HomeMovieLibrary")
+        };
+        var kids = new LaneConfig
+        {
+            Id = "kids", DisplayName = "Kids", Enabled = true, Input = kidsInput, Output = Dir("KidsOutput"),
+            TvPreset = "Kids TV Preset", MoviePreset = "Kids Movie Preset",
+            TvShowBasePath = Dir("KidsTvLibrary"), MovieBasePath = Dir("KidsMovieLibrary")
+        };
+        var config = new CompressarrConfig
+        {
+            Processing = new ProcessingSettings { DeleteAfterConvert = DeleteAfterConvertMode.Delete, MoveFiles = moveFiles, ClearTitleMetadata = false }
+        };
+        config.Lanes.Add(home);
+        config.Lanes.Add(kids);
+
+        return new TwoLanes
+        {
+            Config = config, Home = home, Kids = kids, HomeInput = homeInput, KidsInput = kidsInput, HomeOutput = homeOutput,
+            HomeMovies = home.MovieBasePath, HomeTv = home.TvShowBasePath, KidsMovies = kids.MovieBasePath, KidsTv = kids.TvShowBasePath
+        };
+    }
+
+    private ConversionOrchestrator OrchestratorFor(TwoLanes setup, IEncoderRunner runner) => new(
+        new PassThroughPathExpander(), new RecursiveFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+        runner, new FileRouter(), new CompanionFileService(new DeletingTrashService()), new NoOpArrUnmonitorService(),
+        new DeletingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(),
+        new SwitchingConfigStore(setup.Config, setup.Config, switchOnCall: int.MaxValue));
+
+    /// <summary>One movie in its own subfolder of the home lane's Input, assigned to <paramref name="destination"/>.</summary>
+    private (string SourcePath, string SourceFolder, ResumeEntry Entry) QueueMovie(TwoLanes setup, string? destination, string title = "Sesame Street (1969)")
+    {
+        var folder = Path.Combine(setup.HomeInput, title);
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, title + ".mkv");
+        File.WriteAllText(path, "source");
+        var entry = new ResumeEntry { LaneId = setup.Home.Id, FullName = path, Status = ResumeStatus.Pending, Order = 7, DestinationLaneId = destination, PresetOverride = null };
+        return (path, folder, entry);
+    }
+
+    [Fact]
+    public async Task LaneAssignment_AMovieLandsInTheDestinationLanesLibrary_NotItsOwn()
+    {
+        var setup = BuildTwoLanes();
+        var (_, _, entry) = QueueMovie(setup, destination: "kids");
+        var orchestrator = OrchestratorFor(setup, new FakeProcessRunner());
+        var resumeState = new List<ResumeEntry> { entry };
+
+        var results = await RunLaneAsync(orchestrator, setup.Home, setup.Config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.True(result.Success);
+        Assert.True(File.Exists(Path.Combine(setup.KidsMovies, "Sesame Street (1969)", "Sesame Street (1969).mkv")));
+        Assert.Empty(Directory.GetFileSystemEntries(setup.HomeMovies)); // nothing landed in its own lane's library
+        Assert.Equal("kids", result.RedirectedToLaneId);
+        Assert.Equal("Kids", result.RedirectedToLaneName);
+        Assert.Equal("SD-HD", result.HomeLaneName);
+        Assert.Equal(ResumeStatus.Completed, entry.Status);
+        Assert.Equal("hdsd", entry.LaneId); // its home lane never changes
+    }
+
+    [Fact]
+    public async Task LaneAssignment_ATvEpisodeLandsInTheDestinationLanesTvLibrary()
+    {
+        var setup = BuildTwoLanes();
+        var folder = Path.Combine(setup.HomeInput, "Sesame Street");
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, "Sesame Street - S01E01 - Pilot.mkv");
+        File.WriteAllText(path, "source");
+        var entry = new ResumeEntry { LaneId = "hdsd", FullName = path, Status = ResumeStatus.Pending, Order = 0, DestinationLaneId = "kids" };
+        var orchestrator = OrchestratorFor(setup, new FakeProcessRunner());
+
+        await RunLaneAsync(orchestrator, setup.Home, setup.Config, _tempDir, "20260101_000000", new List<ResumeEntry> { entry }, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        Assert.NotEmpty(Directory.GetFiles(setup.KidsTv, "*.mkv", SearchOption.AllDirectories));
+        Assert.Empty(Directory.GetFileSystemEntries(setup.HomeTv));
+    }
+
+    [Fact]
+    public async Task LaneAssignment_ChangesOnlyTheLandingLibrary_NotPresetOutputFolderOrOrder()
+    {
+        var setup = BuildTwoLanes();
+        var (_, _, entry) = QueueMovie(setup, destination: "kids");
+        var runner = new RequestRecordingRunner();
+        var orchestrator = OrchestratorFor(setup, runner);
+        var resumeState = new List<ResumeEntry> { entry };
+
+        await RunLaneAsync(orchestrator, setup.Home, setup.Config, _tempDir, "20260101_000000", resumeState, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var request = Assert.Single(runner.Requests);
+        Assert.Equal("Home Movie Preset", request.PresetName);                              // the home lane's preset, not Kids'
+        Assert.Equal(setup.HomeOutput, Path.GetDirectoryName(request.OutputPath));          // staged in the home lane's Output
+        Assert.Equal(7, entry.Order);                                                       // queue position untouched
+    }
+
+    [Fact]
+    public async Task LaneAssignment_APerFilePresetOverrideStillApplies()
+    {
+        var setup = BuildTwoLanes();
+        var (_, _, entry) = QueueMovie(setup, destination: "kids");
+        entry.PresetOverride = "My Special Preset";
+        var runner = new RequestRecordingRunner();
+
+        await RunLaneAsync(OrchestratorFor(setup, runner), setup.Home, setup.Config, _tempDir, "20260101_000000", new List<ResumeEntry> { entry }, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        Assert.Equal("My Special Preset", Assert.Single(runner.Requests).PresetName);
+    }
+
+    [Fact]
+    public async Task LaneAssignment_SourceCleanupStopsAtTheHomeLanesInputRoot_NeverTheDestinationsOrAnAncestor()
+    {
+        // The exact data-loss scenario from the abandoned 2.1 attempt: the cleanup boundary was taken from
+        // the NEW lane, so the empty-folder cascade could climb out of the file's own lane and delete real
+        // folders. The boundary must always be the home lane's Input root.
+        var setup = BuildTwoLanes();
+        var (sourcePath, sourceFolder, entry) = QueueMovie(setup, destination: "kids");
+        File.WriteAllText(Path.Combine(setup.KidsInput, "keep-me.txt"), "someone else's file in the destination lane's Input");
+
+        await RunLaneAsync(OrchestratorFor(setup, new FakeProcessRunner()), setup.Home, setup.Config, _tempDir, "20260101_000000", new List<ResumeEntry> { entry }, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        Assert.False(File.Exists(sourcePath));              // the encoded source was cleaned up...
+        Assert.False(Directory.Exists(sourceFolder));       // ...and so was its now-empty subfolder
+        Assert.True(Directory.Exists(setup.HomeInput));     // but never the home lane's Input root, even though it is now empty
+        Assert.True(Directory.Exists(setup.KidsInput));     // nor the destination lane's
+        Assert.True(File.Exists(Path.Combine(setup.KidsInput, "keep-me.txt")));
+        Assert.True(Directory.Exists(_tempDir));            // nor anything above
+    }
+
+    [Fact]
+    public async Task LaneAssignment_CompanionFilesLandWithTheVideoInTheDestinationLibrary()
+    {
+        var setup = BuildTwoLanes();
+        var (_, sourceFolder, entry) = QueueMovie(setup, destination: "kids");
+        File.WriteAllText(Path.Combine(sourceFolder, "Sesame Street (1969).srt"), "subtitles");
+
+        await RunLaneAsync(OrchestratorFor(setup, new FakeProcessRunner()), setup.Home, setup.Config, _tempDir, "20260101_000000", new List<ResumeEntry> { entry }, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        Assert.True(File.Exists(Path.Combine(setup.KidsMovies, "Sesame Street (1969)", "Sesame Street (1969).srt")));
+        Assert.Empty(Directory.GetFileSystemEntries(setup.HomeMovies));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("hdsd")] // assigned to its own lane: means nothing
+    public async Task LaneAssignment_NoAssignmentOrOneToItsOwnLane_LandsNormallyAndIsNotReportedAsARedirect(string? destination)
+    {
+        var setup = BuildTwoLanes();
+        var (_, _, entry) = QueueMovie(setup, destination);
+
+        var results = await RunLaneAsync(OrchestratorFor(setup, new FakeProcessRunner()), setup.Home, setup.Config, _tempDir, "20260101_000000", new List<ResumeEntry> { entry }, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.True(File.Exists(Path.Combine(setup.HomeMovies, "Sesame Street (1969)", "Sesame Street (1969).mkv")));
+        Assert.Null(result.RedirectedToLaneId);
+        Assert.Null(result.RedirectedToLaneName);
+        Assert.Equal("SD-HD", result.HomeLaneName);
+    }
+
+    [Fact]
+    public async Task LaneAssignment_WithMoveFilesOff_TheFileRestsInOutputAndIsNotReportedAsRedirected()
+    {
+        var setup = BuildTwoLanes(moveFiles: false);
+        var (_, _, entry) = QueueMovie(setup, destination: "kids");
+
+        var results = await RunLaneAsync(OrchestratorFor(setup, new FakeProcessRunner()), setup.Home, setup.Config, _tempDir, "20260101_000000", new List<ResumeEntry> { entry }, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        Assert.Null(Assert.Single(results).RedirectedToLaneId); // it landed in no library at all
+    }
+
+    [Fact]
+    public async Task LaneAssignment_ADeletedDestinationLane_HoldsTheFileInOutput_NeverFallingBackToTheHomeLibrary()
+    {
+        var setup = BuildTwoLanes();
+        var (sourcePath, _, entry) = QueueMovie(setup, destination: "kids");
+        setup.Config.Lanes.Remove(setup.Kids); // the destination lane is deleted before the encode finishes
+        var orchestrator = OrchestratorFor(setup, new FakeProcessRunner());
+        var resumeState = new List<ResumeEntry> { entry };
+        var resumePath = Path.Combine(_tempDir, "resume.json");
+
+        var results = await RunLaneAsync(orchestrator, setup.Home, setup.Config, _tempDir, "20260101_000000", resumeState, resumePath, CancellationToken.None);
+
+        var result = Assert.Single(results);
+        Assert.False(result.Success);
+        Assert.Equal("Destination lane no longer exists, move skipped", result.FailureReason);
+        Assert.Equal(ResumeStatus.MoveFailed, entry.Status);
+        Assert.True(File.Exists(entry.EncodedFilePath));                                  // the finished encode is safe
+        Assert.Equal(setup.HomeOutput, Path.GetDirectoryName(entry.EncodedFilePath));     // ...in Output
+        Assert.Empty(Directory.GetFileSystemEntries(setup.HomeMovies));                   // and NOT misfiled in the home library
+        Assert.True(File.Exists(sourcePath));                                             // the source is untouched until it really lands
+
+        // Every later pass keeps holding it: still no home library, still MoveFailed.
+        await RunLaneAsync(orchestrator, setup.Home, setup.Config, _tempDir, "20260101_000100", resumeState, resumePath, CancellationToken.None);
+        Assert.Equal(ResumeStatus.MoveFailed, entry.Status);
+        Assert.Empty(Directory.GetFileSystemEntries(setup.HomeMovies));
+
+        // The user picks a real destination again: the held file lands there on the next retry.
+        setup.Config.Lanes.Add(setup.Kids);
+        await RunLaneAsync(orchestrator, setup.Home, setup.Config, _tempDir, "20260101_000200", resumeState, resumePath, CancellationToken.None);
+        Assert.Equal(ResumeStatus.Completed, entry.Status);
+        Assert.True(File.Exists(Path.Combine(setup.KidsMovies, "Sesame Street (1969)", "Sesame Street (1969).mkv")));
+        Assert.Empty(Directory.GetFileSystemEntries(setup.HomeMovies));
+    }
+
+    [Fact]
+    public async Task LaneAssignment_AFailedMoveIsRetriedIntoTheDestinationLane_NotTheHomeLane()
+    {
+        var setup = BuildTwoLanes();
+        var (_, _, entry) = QueueMovie(setup, destination: "kids");
+        var reachable = setup.Kids.MovieBasePath;
+        setup.Kids.MovieBasePath = @"Z:\Unavailable\KidsMovies"; // the destination library is offline at first
+        var orchestrator = OrchestratorFor(setup, new FakeProcessRunner());
+        var resumeState = new List<ResumeEntry> { entry };
+        var resumePath = Path.Combine(_tempDir, "resume.json");
+
+        await RunLaneAsync(orchestrator, setup.Home, setup.Config, _tempDir, "20260101_000000", resumeState, resumePath, CancellationToken.None);
+        Assert.Equal(ResumeStatus.MoveFailed, entry.Status);
+        Assert.Equal("kids", entry.DestinationLaneId); // the assignment survives the failure
+
+        setup.Kids.MovieBasePath = reachable; // ...and comes back
+        await RunLaneAsync(orchestrator, setup.Home, setup.Config, _tempDir, "20260101_000100", resumeState, resumePath, CancellationToken.None);
+
+        Assert.Equal(ResumeStatus.Completed, entry.Status);
+        Assert.True(File.Exists(Path.Combine(reachable, "Sesame Street (1969)", "Sesame Street (1969).mkv")));
+        Assert.Empty(Directory.GetFileSystemEntries(setup.HomeMovies));
+    }
+
+    [Fact]
+    public async Task LaneAssignment_ADisabledDestinationLaneStillWorks()
+    {
+        var setup = BuildTwoLanes();
+        setup.Kids.Enabled = false; // its paths still exist
+        var (_, _, entry) = QueueMovie(setup, destination: "kids");
+
+        await RunLaneAsync(OrchestratorFor(setup, new FakeProcessRunner()), setup.Home, setup.Config, _tempDir, "20260101_000000", new List<ResumeEntry> { entry }, Path.Combine(_tempDir, "resume.json"), CancellationToken.None);
+
+        Assert.True(File.Exists(Path.Combine(setup.KidsMovies, "Sesame Street (1969)", "Sesame Street (1969).mkv")));
+    }
+
 }
