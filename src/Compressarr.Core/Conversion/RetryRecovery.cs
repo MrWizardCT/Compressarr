@@ -25,6 +25,7 @@ internal sealed class RetryRecovery
     private readonly ITrashService _trash;
     private readonly IRunLogger _logger;
     private readonly IResumeStateStore _resumeStore;
+    private readonly SourceCleanupCoordinator _cleanup;
 
     public RetryRecovery(
         IPathExpander pathExpander,
@@ -42,6 +43,7 @@ internal sealed class RetryRecovery
         _trash = trash;
         _logger = logger;
         _resumeStore = resumeStore;
+        _cleanup = new SourceCleanupCoordinator(arrUnmonitor, companionFiles, logger);
     }
 
     /// <param name="inputPath">The lane's own Input root - the cleanup boundary, never the destination lane's.</param>
@@ -265,18 +267,7 @@ internal sealed class RetryRecovery
             // - nothing to finalize yet.
             if (retrySucceeded)
             {
-                try
-                {
-                    var arrResult = await _arrUnmonitor.UnmonitorAsync(config, desiredFileName, retryIsTv, cancellationToken);
-                    if (arrResult.Message is not null) _logger.Log($"  {arrResult.Message}");
-                    arrCleanupSafe = arrResult.SafeToCleanUp;
-                    if (!arrCleanupSafe) _logger.Log($"  Source folder cleanup deferred - rescan was not positively confirmed complete ({arrResult.Outcome}).");
-                }
-                catch (Exception ex)
-                {
-                    _logger.Log($"  Arr unmonitor skipped on move retry: {ex.Message}", LogSeverity.Error);
-                    arrCleanupSafe = false;
-                }
+                arrCleanupSafe = (await _cleanup.ConfirmRescanAsync(config, desiredFileName, retryIsTv, " on move retry", logDeferred: true, cancellationToken)).Safe;
 
                 // Only now, after Sonarr/Radarr has had the chance to rescan the source folder
                 // while it still physically existed AND that rescan was positively confirmed to
@@ -288,21 +279,13 @@ internal sealed class RetryRecovery
                 // own call site for why.
                 if (retryDestPath is not null && !companionMoveFailed && arrCleanupSafe)
                 {
-                    try
-                    {
-                        _companionFiles.CleanUpEmptySourceFolder(originalSourceDirectory, inputPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
-                    }
-                    catch (Exception ex)
-                    {
-                        // Code-review finding: a filesystem-level cleanup failure (locked file,
-                        // permission, antivirus interference, etc) was logged here but otherwise
-                        // ignored - the entry still ended up Completed below regardless, so a
-                        // transient cleanup error was just as permanently forgotten as an
-                        // unconfirmed rescan used to be. Treated the same way now: falls through
-                        // to CleanupPending just like arrCleanupSafe == false does.
-                        _logger.Log($"  Source folder cleanup skipped on move retry: {ex.Message}", LogSeverity.Error);
-                        cleanupFailed = true;
-                    }
+                    // Code-review finding: a filesystem-level cleanup failure (locked file,
+                    // permission, antivirus interference, etc) was logged here but otherwise
+                    // ignored - the entry still ended up Completed below regardless, so a
+                    // transient cleanup error was just as permanently forgotten as an
+                    // unconfirmed rescan used to be. Treated the same way now: falls through
+                    // to CleanupPending just like arrCleanupSafe == false does.
+                    cleanupFailed = _cleanup.TryCleanUpSourceFolder(config, originalSourceDirectory, inputPath, " on move retry") is not null;
                 }
             }
 
@@ -351,37 +334,23 @@ internal sealed class RetryRecovery
                 // way this retry can get a FRESH, positively-confirmed signal that it's now safe
                 // to remove the source folder, without needing to persist the original pass's
                 // rescan outcome across a run boundary.
-                var arrCleanupSafe = true;
-                try
-                {
-                    var arrResult = await _arrUnmonitor.UnmonitorAsync(config, desiredFileName, companionRetryIsTv, cancellationToken);
-                    if (arrResult.Message is not null) _logger.Log($"  {arrResult.Message}");
-                    arrCleanupSafe = arrResult.SafeToCleanUp;
-                    if (!arrCleanupSafe) _logger.Log($"  Source folder cleanup deferred - rescan was not positively confirmed complete ({arrResult.Outcome}).");
-                }
-                catch (Exception ex)
-                {
-                    _logger.Log($"  Arr unmonitor skipped on companion retry: {ex.Message}", LogSeverity.Error);
-                    arrCleanupSafe = false;
-                }
+                var arrCleanupSafe = (await _cleanup.ConfirmRescanAsync(config, desiredFileName, companionRetryIsTv, " on companion retry", logDeferred: true, cancellationToken)).Safe;
 
                 if (arrCleanupSafe)
                 {
-                    try
+                    if (_cleanup.TryCleanUpSourceFolder(config, sourceDirectory, inputPath, " on companion retry") is null)
                     {
-                        _companionFiles.CleanUpEmptySourceFolder(sourceDirectory, inputPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
                         entry.Status = ResumeStatus.Completed;
                         entry.PendingCompanionSourceDirectory = null;
                         entry.PendingCompanionVideoDestPath = null;
                     }
-                    catch (Exception ex)
+                    else
                     {
                         // Code-review finding: a filesystem-level cleanup failure here used to be
                         // logged and then ignored - the entry still ended up Completed regardless,
                         // permanently forgetting the still-outstanding folder. PendingCompanion*
                         // fields are already correct (unchanged from the CompanionMoveFailed values
                         // above), so no need to re-set them - just stay in the cleanup lifecycle.
-                        _logger.Log($"  Source folder cleanup skipped on companion retry: {ex.Message}", LogSeverity.Error);
                         entry.Status = ResumeStatus.CleanupPending;
                     }
                 }
@@ -449,26 +418,17 @@ internal sealed class RetryRecovery
             var desiredFileName = Path.GetFileName(videoDestPath);
             var cleanupRetryIsTv = ContentClassifier.IsTvFile(desiredFileName);
 
-            var arrCleanupSafe = false;
-            string reasonKey;
-            try
-            {
-                var arrResult = await _arrUnmonitor.UnmonitorAsync(config, desiredFileName, cleanupRetryIsTv, cancellationToken);
-                if (arrResult.Message is not null) _logger.Log($"  {arrResult.Message}");
-                arrCleanupSafe = arrResult.SafeToCleanUp;
-                reasonKey = arrResult.Outcome.ToString();
-            }
-            catch (Exception ex)
-            {
-                _logger.Log($"  Arr unmonitor skipped on cleanup retry: {ex.Message}", LogSeverity.Error);
-                reasonKey = ex.Message;
-            }
+            // logDeferred is off: this loop logs its own, deduplicated "still deferred" line below.
+            var rescan = await _cleanup.ConfirmRescanAsync(config, desiredFileName, cleanupRetryIsTv, " on cleanup retry", logDeferred: false, cancellationToken);
+            var arrCleanupSafe = rescan.Safe;
+            var reasonKey = rescan.Outcome?.ToString() ?? rescan.FailureMessage!;
 
             if (arrCleanupSafe)
             {
-                try
+                // context is null: this loop logs a failure itself, below, with its own Error-once/Info-on-repeat dedup.
+                var cleanupError = _cleanup.TryCleanUpSourceFolder(config, sourceDirectory, inputPath, null);
+                if (cleanupError is null)
                 {
-                    _companionFiles.CleanUpEmptySourceFolder(sourceDirectory, inputPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
                     _logger.Log($"  Retried source folder cleanup for '{desiredFileName}' - succeeded.");
                     entry.Status = ResumeStatus.Completed;
                     entry.PendingCompanionSourceDirectory = null;
@@ -476,7 +436,7 @@ internal sealed class RetryRecovery
                     entry.LastRetryFailureMessage = null;
                     retriesSucceeded++;
                 }
-                catch (Exception ex)
+                else
                 {
                     // Code-review finding: this used to be a "best-effort, log and move on"
                     // failure like every other cleanup call site - but for THIS status, the *arr
@@ -488,11 +448,11 @@ internal sealed class RetryRecovery
                     // Info-on-repeat dedup as the "not confirmed" branch below, keyed off the same
                     // LastRetryFailureMessage field (only one of the two branches runs per pass, so
                     // there's no ambiguity about which kind of failure it's tracking at any time).
-                    var isSameAsLastPoll = entry.LastRetryFailureMessage == ex.Message;
+                    var isSameAsLastPoll = entry.LastRetryFailureMessage == cleanupError;
                     var severity = isSameAsLastPoll ? LogSeverity.Info : LogSeverity.Error;
                     var suffix = isSameAsLastPoll ? " (still failing, same as last check)" : "";
-                    _logger.Log($"  Source folder cleanup failed on cleanup retry: {ex.Message}{suffix}", severity);
-                    entry.LastRetryFailureMessage = ex.Message;
+                    _logger.Log($"  Source folder cleanup failed on cleanup retry: {cleanupError}{suffix}", severity);
+                    entry.LastRetryFailureMessage = cleanupError;
                 }
             }
             else

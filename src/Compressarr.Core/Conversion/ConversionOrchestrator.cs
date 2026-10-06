@@ -154,6 +154,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
     private readonly IRunProgressReporter _progress;
     private readonly IConfigStore _configStore;
     private readonly RetryRecovery _retryRecovery;
+    private readonly SourceCleanupCoordinator _cleanup;
 
     public ConversionOrchestrator(
         IPathExpander pathExpander,
@@ -186,6 +187,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         _progress = progress;
         _configStore = configStore;
         _retryRecovery = new RetryRecovery(pathExpander, fileRouter, companionFiles, arrUnmonitor, trash, logger, resumeStore);
+        _cleanup = new SourceCleanupCoordinator(arrUnmonitor, companionFiles, logger);
     }
 
     public async Task<LaneProcessingContext?> PrepareLaneAsync(
@@ -672,27 +674,17 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             var cleanupFailed = false;
             if (!moveFailed)
             {
-                try
+                var rescan = await _cleanup.ConfirmRescanAsync(config, file.Name, isTv, "", logDeferred: true, cancellationToken);
+                arrCleanupSafe = rescan.Safe;
+                if (rescan.FailureMessage is not null)
                 {
-                    var arrResult = await _arrUnmonitor.UnmonitorAsync(config, file.Name, isTv, cancellationToken);
-                    if (arrResult.Message is not null)
-                    {
-                        _logger.Log($"  {arrResult.Message}");
-                        arrStatus = arrResult.Message;
-                    }
-                    arrCleanupSafe = arrResult.SafeToCleanUp;
-                    if (!arrCleanupSafe)
-                    {
-                        _logger.Log($"  Source folder cleanup deferred - rescan was not positively confirmed complete ({arrResult.Outcome}).");
-                        postProcessWarning = AppendWarning(postProcessWarning, "Source folder cleanup deferred until the next pass (rescan not confirmed complete)");
-                    }
+                    arrStatus = $"Failed: {rescan.FailureMessage}";
+                    postProcessWarning = AppendWarning(postProcessWarning, $"Sonarr/Radarr unmonitor failed: {rescan.FailureMessage}");
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.Log($"  Arr unmonitor skipped: {ex.Message}", LogSeverity.Error);
-                    arrStatus = $"Failed: {ex.Message}";
-                    postProcessWarning = AppendWarning(postProcessWarning, $"Sonarr/Radarr unmonitor failed: {ex.Message}");
-                    arrCleanupSafe = false;
+                    if (rescan.Message is not null) arrStatus = rescan.Message;
+                    if (!rescan.Safe) postProcessWarning = AppendWarning(postProcessWarning, "Source folder cleanup deferred until the next pass (rescan not confirmed complete)");
                 }
             }
 
@@ -709,11 +701,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             // companion still waiting to be moved, not a genuine orphan to sweep.
             if (routedDestPath is not null && !companionMoveFailed && arrCleanupSafe)
             {
-                try
-                {
-                    _companionFiles.CleanUpEmptySourceFolder(file.DirectoryName!, inputPath, config.Processing.VidTypes, config.Processing.DeleteAfterConvert, config.Processing.UnmatchedCompanionAction);
-                }
-                catch (Exception ex)
+                var cleanupError = _cleanup.TryCleanUpSourceFolder(config, file.DirectoryName!, inputPath, "");
+                if (cleanupError is not null)
                 {
                     // Code-review finding: a filesystem-level cleanup failure (locked file,
                     // permission, antivirus interference, etc) was logged here but otherwise
@@ -724,8 +713,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                     // the sibling !arrCleanupSafe branch above, this didn't append a
                     // PostProcessWarning - the report could show a plain, unqualified "OK" for a
                     // file whose folder cleanup actually failed and is still pending retry.
-                    _logger.Log($"  Source folder cleanup skipped: {ex.Message}", LogSeverity.Error);
-                    postProcessWarning = AppendWarning(postProcessWarning, $"Source folder cleanup deferred: {ex.Message}");
+                    postProcessWarning = AppendWarning(postProcessWarning, $"Source folder cleanup deferred: {cleanupError}");
                     cleanupFailed = true;
                 }
             }
