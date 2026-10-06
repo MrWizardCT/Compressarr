@@ -42,6 +42,7 @@ public sealed class CompressarrConfig
     public NotificationSettings Notifications { get; set; } = new();
     public FileBotSettings FileBot { get; set; } = new();
     public UiStateSettings UiState { get; set; } = new();
+    public ScheduleSettings Schedule { get; set; } = new();
 }
 
 /// <summary>Small, purely client-driven UI state that happens to need server-side persistence
@@ -339,4 +340,56 @@ public sealed class NotificationChannel
     /// NotificationChannelDto entirely so a Settings save can never accidentally reset it.</summary>
     public DateOnly? LastDailyDigestSentDate { get; set; }
     public DateOnly? LastWeeklyDigestSentDate { get; set; }
+}
+
+/// <summary>Process priority an encode can run at. Maps to the OS process priority classes
+/// (Low = Windows "Idle"). Realtime needs administrator rights; without them Windows quietly treats
+/// it as High - and either can make the PC sluggish for whoever is using it, which is why they're
+/// only ever chosen deliberately.</summary>
+public enum EncodePriority
+{
+    Low,
+    BelowNormal,
+    Normal,
+    AboveNormal,
+    High,
+    Realtime
+}
+
+/// <summary>What "off-hours only" does to an encode that is already running when the daytime
+/// window begins. FinishCurrentFile never interrupts it - the queue just stops starting new files.
+/// SuspendEncode freezes it (the same Pause the Monitor page's Pause button uses) until off-hours
+/// return.</summary>
+public enum DayHoldBehavior
+{
+    FinishCurrentFile,
+    SuspendEncode
+}
+
+/// <summary>Optional day/night encoding schedule - OFF by default, so an install that never touches
+/// it behaves exactly as before. Inside the daytime window encodes run at DayPriority (and, with
+/// OnlyEncodeOffHours, don't run at all); outside it they run at NightPriority. All times are the
+/// PC's local clock, so daylight saving follows automatically. A window may cross midnight (e.g.
+/// 22:00 to 06:00); a window whose start equals its end means "no daytime window", i.e. always night.
+/// A window belongs to the day it STARTS on.</summary>
+public sealed class ScheduleSettings
+{
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>HH:mm. Monday-Friday window (every day, unless WeekendDifferent).</summary>
+    public string DayStart { get; set; } = "08:00";
+    public string DayEnd { get; set; } = "22:00";
+
+    /// <summary>When true, Saturday and Sunday use the weekend window below instead.</summary>
+    public bool WeekendDifferent { get; set; } = false;
+    public string WeekendDayStart { get; set; } = "10:00";
+    public string WeekendDayEnd { get; set; } = "20:00";
+
+    public EncodePriority DayPriority { get; set; } = EncodePriority.BelowNormal;
+    public EncodePriority NightPriority { get; set; } = EncodePriority.Normal;
+
+    /// <summary>Hold the queue (start no new files) during the daytime window.</summary>
+    public bool OnlyEncodeOffHours { get; set; } = false;
+
+    public DayHoldBehavior WhenDayStarts { get; set; } = DayHoldBehavior.FinishCurrentFile;
 }

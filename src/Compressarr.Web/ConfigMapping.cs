@@ -48,7 +48,12 @@ internal static class ConfigMapping
         BackupIntervalDays: config.Backup.IntervalDays,
         BackupRetentionDays: config.Backup.RetentionDays,
         BackupLastRunUtc: config.Backup.LastRunUtc,
-        ValidationIssues: validationIssues);
+        ValidationIssues: validationIssues,
+        Schedule: new ScheduleDto(
+            config.Schedule.Enabled, config.Schedule.DayStart, config.Schedule.DayEnd,
+            config.Schedule.WeekendDifferent, config.Schedule.WeekendDayStart, config.Schedule.WeekendDayEnd,
+            config.Schedule.DayPriority.ToString(), config.Schedule.NightPriority.ToString(),
+            config.Schedule.OnlyEncodeOffHours, config.Schedule.WhenDayStarts.ToString()));
 
     public static void ApplySettingsDto(CompressarrConfig config, SettingsDto dto)
     {
@@ -92,6 +97,20 @@ internal static class ConfigMapping
         config.Backup.RetentionDays = dto.BackupRetentionDays;
         // BackupLastRunUtc is read-only from the client's perspective - set only by BackupService
         // itself after a real backup runs, never round-tripped back in from a settings save.
+
+        if (dto.Schedule is { } schedule)
+        {
+            config.Schedule.Enabled = schedule.Enabled;
+            config.Schedule.DayStart = schedule.DayStart;
+            config.Schedule.DayEnd = schedule.DayEnd;
+            config.Schedule.WeekendDifferent = schedule.WeekendDifferent;
+            config.Schedule.WeekendDayStart = schedule.WeekendDayStart;
+            config.Schedule.WeekendDayEnd = schedule.WeekendDayEnd;
+            config.Schedule.DayPriority = Enum.Parse<EncodePriority>(schedule.DayPriority);
+            config.Schedule.NightPriority = Enum.Parse<EncodePriority>(schedule.NightPriority);
+            config.Schedule.OnlyEncodeOffHours = schedule.OnlyEncodeOffHours;
+            config.Schedule.WhenDayStarts = Enum.Parse<DayHoldBehavior>(schedule.WhenDayStarts);
+        }
     }
 
     public static LaneDto ToLaneDto(LaneConfig lane, List<ValidationIssueDto> validationIssues) => new(

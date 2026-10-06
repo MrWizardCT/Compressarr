@@ -106,6 +106,18 @@ runNowBtn.addEventListener('click', async () => {
   poll();
 });
 
+// Only shown while the optional off-hours-only schedule is holding the queue for the daytime
+// window (see poll()). Releases the hold for the rest of this window, then nudges an idle monitor
+// to start its next pass right away instead of waiting out the poll countdown.
+const runAnywayBtn = document.getElementById('runAnywayBtn');
+runAnywayBtn.addEventListener('click', async () => {
+  runAnywayBtn.disabled = true;
+  await fetch('/api/run/run-anyway', { method: 'POST' });
+  await fetch('/api/run/trigger-now', { method: 'POST' });
+  runAnywayBtn.disabled = false;
+  poll();
+});
+
 abortBtn.addEventListener('click', async () => {
   if (!confirm('Abort the current conversion immediately and stop monitoring?')) return;
   await fetch('/api/run/abort', { method: 'POST' });
@@ -540,8 +552,13 @@ async function poll() {
   togglePauseIsPaused = s.isPaused;
   renderPauseButton();
 
+  // "Held" only means something when there is something being held back - a queued file, or an encode
+  // the schedule has frozen - not merely because it happens to be daytime with an empty queue.
+  const scheduleHeld = !!(s.schedule && s.schedule.isHeld) && ((s.upNext && s.upNext.length > 0) || s.isPaused);
+  runAnywayBtn.classList.toggle('hidden', !scheduleHeld);
+
   const stateValueEl = document.getElementById('stateValue');
-  stateValueEl.textContent = s.isRenaming ? 'Renaming' : (s.isRunning ? 'Running' : (s.isMonitoring ? 'Watching' : 'Idle'));
+  stateValueEl.textContent = s.isRenaming ? 'Renaming' : (s.isRunning ? 'Running' : (scheduleHeld ? 'Held' : (s.isMonitoring ? 'Watching' : 'Idle')));
   stateValueEl.classList.toggle('running', s.isRunning);
   document.getElementById('fileLabel').textContent = s.isRenaming
     ? `Renaming files with FileBot in Lane ${s.laneDisplayName}`

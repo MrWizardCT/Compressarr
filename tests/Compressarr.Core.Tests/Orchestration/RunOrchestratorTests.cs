@@ -8,6 +8,7 @@ using Compressarr.Core.Orchestration;
 using Compressarr.Core.Presets;
 using Compressarr.Core.Reporting;
 using Compressarr.Core.Routing;
+using Compressarr.Core.Scheduling;
 
 namespace Compressarr.Core.Tests.Orchestration;
 
@@ -174,6 +175,20 @@ file sealed class StaticConfigStore : IConfigStore
     public T Update<T>(string path, Func<CompressarrConfig, T> mutate) => mutate(_config);
 }
 
+file sealed class ScriptedSchedule : IEncodeSchedule
+{
+    public ScheduleStatus Status { get; set; } = new(false, false, null, false, false, false, null);
+    public bool Held { set => Status = value ? new(true, true, EncodePriority.BelowNormal, true, true, false, DateTimeOffset.Now.AddHours(8)) : new(true, false, EncodePriority.Normal, true, false, false, null); }
+    public ScheduleStatus GetStatus() => Status;
+    public ScheduleStatus GetStatus(CompressarrConfig config) => Status;
+    public void RunAnyway() => Held = false;
+    public DateTime? ProjectCompletion(double currentMinutes, double queuedMinutes) => null;
+    public bool TryMarkHoldNoticed(ScheduleStatus status) => true;
+    public void Start(IRunLoopController? runLoop = null) { }
+    public Task StopAsync() => Task.CompletedTask;
+    public void Tick() { }
+}
+
 /// <summary>Covers RunOrchestrator's global, cross-lane processing loop - added alongside the
 /// cross-lane priority queue feature, since this exact loop (previously "drain lane 1 fully, then
 /// drain lane 2") had zero dedicated regression coverage before this: ConversionOrchestratorTests
@@ -207,7 +222,7 @@ public class RunOrchestratorTests : IDisposable
     // even a private one, so the caller constructs it and passes it in instead of getting it back.
     private (RunOrchestrator Orchestrator, string ResumeFilePath) BuildOrchestrator(
         CompressarrConfig config, IEncoderRunner processRunner, IResumeStateStore? resumeStore = null,
-        IRunLogger? logger = null, TimeSpan? postExecTimeout = null)
+        IRunLogger? logger = null, TimeSpan? postExecTimeout = null, IEncodeSchedule? schedule = null)
     {
         // HandBrakeCLI/presets "paths" just need to exist on disk for PathExists to pass -
         // PassThroughPathExpander does no real expansion, and FixedExtensionPresetService never
@@ -226,6 +241,7 @@ public class RunOrchestratorTests : IDisposable
         // singleton) - RunOrchestrator's own HasLoggedError check needs to see errors logged
         // from deep inside ConversionOrchestrator too, the same as it does in production.
         var effectiveLogger = logger ?? new NoOpRunLogger();
+        var effectiveSchedule = schedule ?? new EncodeSchedule(new StaticConfigStore(config), new ActiveEncodeProcess());
 
         var conversionOrchestrator = new ConversionOrchestrator(
             new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
@@ -241,12 +257,12 @@ public class RunOrchestratorTests : IDisposable
                 new PassThroughPathExpander(), new FixedExtensionPresetService(), conversionOrchestrator, new MetadataService(),
                 effectiveResumeStore, effectiveLogger, new NoOpHistoryStore(), new NoOpHistoryRollupCalculator(),
                 new Compressarr.Core.Reporting.HtmlReportGenerator(), new NoOpReportLauncher(), new NoOpNotificationService(), new NoOpNotificationDispatcher(),
-                new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController(), timeout)
+                new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController(), effectiveSchedule, timeout)
             : new RunOrchestrator(
                 new PassThroughPathExpander(), new FixedExtensionPresetService(), conversionOrchestrator, new MetadataService(),
                 effectiveResumeStore, effectiveLogger, new NoOpHistoryStore(), new NoOpHistoryRollupCalculator(),
                 new Compressarr.Core.Reporting.HtmlReportGenerator(), new NoOpReportLauncher(), new NoOpNotificationService(), new NoOpNotificationDispatcher(),
-                new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController());
+                new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController(), effectiveSchedule);
 
         return (runOrchestrator, resumeFilePath);
     }
@@ -334,6 +350,58 @@ public class RunOrchestratorTests : IDisposable
         config.Report.ReportPath = Path.Combine(_tempDir, "Reports");
         config.Lanes.Add(MakeLane("lane", "Lane", input, output));
         return (config, input);
+    }
+
+    [Fact]
+    public async Task RunOnceAsync_HeldByTheSchedule_StartsNothing_ButStillTracksTheFilesInOrder()
+    {
+        var (config, input) = MakeSingleLaneConfig("b.mkv", "a.mkv");
+        var processRunner = new RecordingProcessRunner();
+        var schedule = new ScriptedSchedule { Held = true };
+        var (orchestrator, resumeFilePath) = BuildOrchestrator(config, processRunner, schedule: schedule);
+
+        var result = await orchestrator.RunOnceAsync(config);
+
+        Assert.Empty(processRunner.ProcessedInOrder);
+        Assert.Equal(0, result!.TotalFiles);
+        var tracked = new JsonResumeStateStore().Load(resumeFilePath);
+        Assert.Equal(2, tracked.Count);
+        Assert.All(tracked, e => Assert.Equal(ResumeStatus.Pending, e.Status));
+        Assert.Equal(new[] { "a.mkv", "b.mkv" }, tracked.OrderBy(e => e.Order).Select(e => Path.GetFileName(e.FullName)).ToArray());
+    }
+
+    [Fact]
+    public async Task RunOnceAsync_TheDaytimeBeginsMidPass_FinishesTheFileInFlight_ThenHoldsTheNextOne()
+    {
+        var (config, _) = MakeSingleLaneConfig("a.mkv", "b.mkv", "c.mkv");
+        var schedule = new ScriptedSchedule();
+        // The window opens while the first file is encoding.
+        var processRunner = new RecordingProcessRunner(onEachRun: _ => schedule.Held = true);
+        var (orchestrator, resumeFilePath) = BuildOrchestrator(config, processRunner, schedule: schedule);
+
+        var result = await orchestrator.RunOnceAsync(config);
+
+        Assert.Equal(new[] { "a.mkv" }, processRunner.ProcessedInOrder);
+        Assert.Equal(1, result!.TotalFiles);
+        var pending = new JsonResumeStateStore().Load(resumeFilePath).Where(e => e.Status == ResumeStatus.Pending).ToList();
+        Assert.Equal(2, pending.Count);
+    }
+
+    [Fact]
+    public async Task RunOnceAsync_AHeldQueueThatIsReleased_ProcessesEverythingOnTheNextPass()
+    {
+        var (config, _) = MakeSingleLaneConfig("a.mkv", "b.mkv");
+        var processRunner = new RecordingProcessRunner();
+        var schedule = new ScriptedSchedule { Held = true };
+        var (orchestrator, _) = BuildOrchestrator(config, processRunner, schedule: schedule);
+        await orchestrator.RunOnceAsync(config);
+        Assert.Empty(processRunner.ProcessedInOrder);
+
+        schedule.RunAnyway();
+        var result = await orchestrator.RunOnceAsync(config);
+
+        Assert.Equal(new[] { "a.mkv", "b.mkv" }, processRunner.ProcessedInOrder);
+        Assert.Equal(2, result!.TotalFiles);
     }
 
     [Fact]

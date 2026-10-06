@@ -135,6 +135,12 @@ public partial class App : Application
         // on/off switches, checked every tick, so there's nothing to gate Start() itself on.
         Services.GetRequiredService<Compressarr.Core.Notifications.IDigestScheduler>().Start();
 
+        // Applies the optional day/night schedule (encode priority, off-hours suspend). Inert unless the
+        // schedule is switched on in Settings, so it is started unconditionally. The run loop is passed
+        // so a Stop Monitoring request can release an encode the schedule has frozen.
+        Services.GetRequiredService<Compressarr.Core.Scheduling.IEncodeSchedule>()
+            .Start(Services.GetRequiredService<Compressarr.Core.Orchestration.IRunLoopController>());
+
         // Checks immediately on startup (not just once a day) - a restart is the one moment most
         // likely to have just resolved a previously-flagged update, so the toolbar indicator
         // shouldn't need to wait out the rest of a day's cache to notice.

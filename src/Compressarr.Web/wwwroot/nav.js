@@ -102,6 +102,7 @@ function renderNav(activePage) {
       <span class="status-dot" id="statusDot"></span>
       <span id="monitoringState"></span>
       <span id="countdown" class="countdown"></span>
+      <span id="scheduleTag" class="toolbar-schedule hidden"></span>
       <span class="toolbar-cpu" title="CPU Usage">${CPU_ICON}<span id="cpuValue">-</span></span>
     </div>
     <label class="theme-toggle">
@@ -342,6 +343,54 @@ function renderMonitoringState() {
     : (globalIsMonitoring ? `Monitoring is ON${globalIsPaused ? ': Paused' : runningSuffix}` : 'Monitoring is OFF');
 }
 
+// "10:00 PM", or "Tue 8:00 AM" when the moment isn't today - the day/night schedule's tags only
+// ever name the next window change, which is at most a few days out.
+function formatScheduleMoment(iso) {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString()
+    ? time
+    : `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
+}
+
+// How the schedule's priority reads in the toolbar. Off-hours with anything at or above Normal is
+// "full speed" (the user's own wording); daytime names the actual level.
+function schedulePriorityWords(priority, isDaytime) {
+  if (priority === 'Low' || priority === 'BelowNormal') return 'low priority';
+  if (!isDaytime) return 'full speed';
+  return priority === 'Normal' ? 'normal priority' : 'high priority';
+}
+
+// The informational tag for the optional day/night schedule: what mode the PC is in right now, or
+// that the queue is held (and until when). Null when the schedule is off, so the tag stays hidden
+// and a default install looks exactly as it did before the feature existed.
+function scheduleTagInfo(schedule) {
+  if (!schedule || !schedule.enabled) return null;
+  const until = schedule.nextChange ? formatScheduleMoment(schedule.nextChange) : null;
+  if (schedule.isHeld) {
+    return { text: until ? `Paused until ${until}` : 'Paused for the daytime', kind: 'held', title: 'Off-hours only: no new file starts during the daytime window. Use Run anyway on the Monitor page to start now.' };
+  }
+  if (schedule.overrideActive) {
+    return { text: until ? `Running anyway until ${until}` : 'Running anyway', kind: 'override', title: 'Run anyway is in effect: the daytime hold is released until the window ends.' };
+  }
+  const words = schedulePriorityWords(schedule.priority, schedule.isDaytime);
+  const change = until ? ` Changes at ${until}.` : '';
+  return schedule.isDaytime
+    ? { text: `Daytime - ${words}`, kind: 'day', title: `Daytime window: encodes run at ${schedule.priority} priority.${change}` }
+    : { text: `Off-hours - ${words}`, kind: 'night', title: `Off-hours: encodes run at ${schedule.priority} priority.${change}` };
+}
+
+function renderScheduleTag(schedule) {
+  const el = document.getElementById('scheduleTag');
+  if (!el) return;
+  const info = scheduleTagInfo(schedule);
+  el.classList.toggle('hidden', !info);
+  if (!info) return;
+  el.textContent = info.text;
+  el.title = info.title;
+  el.className = `toolbar-schedule ${info.kind}`;
+}
+
 async function pollGlobalStatus() {
   const dot = document.getElementById('statusDot');
   const cpuEl = document.getElementById('cpuValue');
@@ -372,6 +421,7 @@ async function pollGlobalStatus() {
     ? Date.now() + s.secondsUntilNextRun * 1000
     : null;
   renderGlobalCountdown();
+  renderScheduleTag(s.schedule);
 
   cpuEl.textContent = (s.cpuUsagePercent === null || s.cpuUsagePercent === undefined) ? 'unavailable' : `${Math.round(s.cpuUsagePercent)}%`;
 }

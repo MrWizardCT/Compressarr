@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Compressarr.Core.Config;
 
 namespace Compressarr.Core.Conversion;
 
@@ -37,6 +38,13 @@ public interface IActiveEncodeProcess
 
     /// <summary>No-op if nothing is running or it isn't currently paused.</summary>
     void Resume();
+
+    /// <summary>Sets the OS priority the encoder runs at: applied to the process running right now
+    /// (so a day/night boundary changes an in-flight encode with no restart) and remembered for
+    /// the next one that registers. Null means "leave the OS default" - and also puts a process
+    /// this previously changed back to Normal. Best-effort: a process that exits mid-call, or one
+    /// we aren't allowed to touch, is silently skipped.</summary>
+    void SetPriority(EncodePriority? priority);
 }
 
 public sealed class ActiveEncodeProcess : IActiveEncodeProcess
@@ -75,6 +83,44 @@ public sealed class ActiveEncodeProcess : IActiveEncodeProcess
         {
             _process = process;
             _isPaused = false;
+            ApplyPriorityLocked(_priority ?? (_priorityTouched ? EncodePriority.Normal : null));
+        }
+    }
+
+    private EncodePriority? _priority;
+    private bool _priorityTouched;
+
+    public void SetPriority(EncodePriority? priority)
+    {
+        lock (_lock)
+        {
+            if (priority == _priority) return;
+            _priority = priority;
+            ApplyPriorityLocked(priority ?? (_priorityTouched ? EncodePriority.Normal : null));
+        }
+    }
+
+    private void ApplyPriorityLocked(EncodePriority? priority)
+    {
+        if (priority is null || _process is null) return;
+        try
+        {
+            if (_process.HasExited) return;
+            _process.PriorityClass = priority.Value switch
+            {
+                EncodePriority.Low => ProcessPriorityClass.Idle,
+                EncodePriority.BelowNormal => ProcessPriorityClass.BelowNormal,
+                EncodePriority.AboveNormal => ProcessPriorityClass.AboveNormal,
+                EncodePriority.High => ProcessPriorityClass.High,
+                EncodePriority.Realtime => ProcessPriorityClass.RealTime,
+                _ => ProcessPriorityClass.Normal
+            };
+            _priorityTouched = true;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
+        {
+            // Exited between the check and the call, or the OS refused - the encode still runs, just
+            // at whatever priority it already had.
         }
     }
 

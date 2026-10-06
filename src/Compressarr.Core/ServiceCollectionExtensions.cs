@@ -9,6 +9,7 @@ using Compressarr.Core.Logging;
 using Compressarr.Core.Notifications;
 using Compressarr.Core.Orchestration;
 using Compressarr.Core.Queue;
+using Compressarr.Core.Scheduling;
 using Compressarr.Core.Presets;
 using Compressarr.Core.Reporting;
 using Compressarr.Core.Routing;
@@ -36,6 +37,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IVideoFileScanner, VideoFileScanner>();
         services.AddSingleton<IFileBotRunner, FileBotRunner>();
         services.AddSingleton<IActiveEncodeProcess, ActiveEncodeProcess>();
+        services.AddSingleton<IEncodeSchedule, EncodeSchedule>();
         services.AddSingleton<IEncoderRunner, HandBrakeProcessRunner>();
         services.AddSingleton<IMetadataService, MetadataService>();
         services.AddSingleton<IResumeStateStore, JsonResumeStateStore>();

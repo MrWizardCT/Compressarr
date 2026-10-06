@@ -42,6 +42,22 @@ public sealed record SettingsDto(
     int BackupIntervalDays,
     int BackupRetentionDays,
     DateTimeOffset? BackupLastRunUtc,
-    List<ValidationIssueDto> ValidationIssues);
+    List<ValidationIssueDto> ValidationIssues,
+    ScheduleDto? Schedule = null);
+
+/// <summary>The optional day/night encode schedule (ScheduleSettings). Enums travel as their names. A
+/// settings save from a client that predates the schedule sends no Schedule at all, which leaves the
+/// saved schedule untouched.</summary>
+public sealed record ScheduleDto(
+    bool Enabled,
+    string DayStart,
+    string DayEnd,
+    bool WeekendDifferent,
+    string WeekendDayStart,
+    string WeekendDayEnd,
+    string DayPriority,
+    string NightPriority,
+    bool OnlyEncodeOffHours,
+    string WhenDayStarts);
 
 public sealed record ArrServiceDto(bool Enabled, string Url, string ApiKey);

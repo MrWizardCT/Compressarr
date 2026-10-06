@@ -1569,3 +1569,19 @@ td { font-variant-numeric: tabular-nums; }
   word-break: break-all;
   margin-bottom: 16px;
 }
+
+/* The optional day/night schedule's tag in the toolbar (see nav.js scheduleTagInfo). Fixed colors, not
+   content-theme tokens - the toolbar is dark chrome in both themes. Hidden entirely while the schedule
+   is off. day = amber (the PC is being shared), night = calm blue, held = warning, override = green. */
+.toolbar-schedule {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: default;
+  border: 1px solid transparent;
+}
+.toolbar-schedule.day { color: #f0c27a; background: rgba(201, 122, 18, 0.18); border-color: rgba(201, 122, 18, 0.45); }
+.toolbar-schedule.night { color: #a9c4ff; background: rgba(90, 130, 220, 0.18); border-color: rgba(90, 130, 220, 0.45); }
+.toolbar-schedule.held { color: #ffb3a8; background: rgba(214, 60, 60, 0.2); border-color: rgba(214, 60, 60, 0.5); }
+.toolbar-schedule.override { color: #9fe0b0; background: rgba(60, 170, 90, 0.18); border-color: rgba(60, 170, 90, 0.45); }

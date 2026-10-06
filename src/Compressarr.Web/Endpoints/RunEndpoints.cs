@@ -4,6 +4,7 @@ using Compressarr.Core.Conversion;
 using Compressarr.Core.Diagnostics;
 using Compressarr.Core.Orchestration;
 using Compressarr.Core.Queue;
+using Compressarr.Core.Scheduling;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 
@@ -102,9 +103,20 @@ public static class RunEndpoints
             return Results.Ok();
         });
 
-        app.MapPost("/api/run/resume", (IActiveEncodeProcess activeProcess) =>
+        app.MapPost("/api/run/resume", (IActiveEncodeProcess activeProcess, IEncodeSchedule schedule) =>
         {
+            // Resuming by hand while the off-hours schedule has the encode frozen would just be frozen
+            // again on its next tick - so it counts as choosing to run anyway for the rest of the window.
+            if (schedule.GetStatus().IsHeld) schedule.RunAnyway();
             activeProcess.Resume();
+            return Results.Ok();
+        });
+
+        // "Run anyway" - releases the off-hours hold for the rest of the current daytime window (see
+        // IEncodeSchedule.RunAnyway). Not saved; the hold returns at the next window change.
+        app.MapPost("/api/run/run-anyway", (IEncodeSchedule schedule) =>
+        {
+            schedule.RunAnyway();
             return Results.Ok();
         });
 
@@ -114,6 +126,7 @@ public static class RunEndpoints
             ICpuUsageSampler cpuSampler,
             IConfigStore configStore,
             IQueueService queue,
+            IEncodeSchedule schedule,
             IActiveEncodeProcess activeProcess) =>
         {
             var snapshot = runState.GetSnapshot();
@@ -126,7 +139,8 @@ public static class RunEndpoints
 
             var config = configStore.Load(AppPaths.GetConfigFilePath());
             var upNext = queue.GetUpNext(config, new QueueRunContext(snapshot.FileFullName, snapshot.LaneIsResumedById));
-            var queueEtaText = ComputeQueueEtaText(upNext, runState);
+            var scheduleStatus = schedule.GetStatus(config);
+            var queueEtaText = ComputeQueueEtaText(upNext, runState, schedule, scheduleStatus);
 
             return Results.Json(new
             {
@@ -147,6 +161,16 @@ public static class RunEndpoints
                 recentLogLines = snapshot.RecentLogLines,
                 cpuUsagePercent = cpu,
                 secondsUntilNextRun,
+                schedule = new
+                {
+                    enabled = scheduleStatus.Enabled,
+                    isDaytime = scheduleStatus.IsDaytime,
+                    priority = scheduleStatus.Priority?.ToString(),
+                    onlyOffHours = scheduleStatus.OnlyOffHours,
+                    isHeld = scheduleStatus.IsHeld,
+                    overrideActive = scheduleStatus.OverrideActive,
+                    nextChange = scheduleStatus.NextChange
+                },
                 upNext,
                 queueEtaText
             });
@@ -164,29 +188,36 @@ public static class RunEndpoints
     /// can't be resolved yet (a genuinely fresh install, or a preset that's never appeared in a
     /// report or a live sample); otherwise an ISO 8601 timestamp for the client to format into a
     /// local date/time. Returns null if there's genuinely nothing left to estimate (idle, empty
-    /// queue).</summary>
-    private static string? ComputeQueueEtaText(IReadOnlyList<UpNextItem> upNext, CurrentRunStateService runState)
+    /// queue). With the optional off-hours-only schedule on, time the queue is held for the daytime
+    /// window is counted too (see IEncodeSchedule.ProjectCompletion).</summary>
+    private static string? ComputeQueueEtaText(IReadOnlyList<UpNextItem> upNext, CurrentRunStateService runState, IEncodeSchedule schedule, ScheduleStatus scheduleStatus)
     {
         var remaining = upNext.Where(i => !i.IsSkipped && !i.IsError).ToList();
         var current = runState.GetCurrentFileRemaining();
         if (remaining.Count == 0 && current is null) return null;
 
-        var totalMinutes = 0.0;
+        var currentMinutes = 0.0;
+        var queuedMinutes = 0.0;
 
         if (current is { } c)
         {
             var currentRate = runState.GetRateGbPerMinute(c.PresetName);
             if (currentRate is null || currentRate <= 0) return "Estimating";
-            totalMinutes += c.RemainingGb / currentRate.Value;
+            currentMinutes = c.RemainingGb / currentRate.Value;
         }
 
         foreach (var item in remaining)
         {
             var rate = runState.GetRateGbPerMinute(item.Preset);
             if (rate is null || rate <= 0) return "Estimating";
-            totalMinutes += item.SizeGb / rate.Value;
+            queuedMinutes += item.SizeGb / rate.Value;
         }
 
-        return DateTime.Now.AddMinutes(totalMinutes).ToString("o");
+        if (scheduleStatus.Enabled && scheduleStatus.OnlyOffHours && schedule.ProjectCompletion(currentMinutes, queuedMinutes) is { } held)
+        {
+            return DateTime.SpecifyKind(held, DateTimeKind.Local).ToString("o");
+        }
+
+        return DateTime.Now.AddMinutes(currentMinutes + queuedMinutes).ToString("o");
     }
 }

@@ -4,6 +4,7 @@ using Compressarr.Core.Logging;
 using Compressarr.Core.Notifications;
 using Compressarr.Core.Presets;
 using Compressarr.Core.Queue;
+using Compressarr.Core.Scheduling;
 using Compressarr.Core.Reporting;
 using Compressarr.Core.Routing;
 
@@ -75,6 +76,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
     private readonly ITrashService _trash;
     private readonly IRunProgressReporter _progress;
     private readonly IActiveRunController _activeRunController;
+    private readonly IEncodeSchedule _schedule;
 
     public RunOrchestrator(
         IPathExpander pathExpander,
@@ -91,10 +93,11 @@ public sealed class RunOrchestrator : IRunOrchestrator
         INotificationDispatcher notificationDispatcher,
         ITrashService trash,
         IRunProgressReporter progress,
-        IActiveRunController activeRunController)
+        IActiveRunController activeRunController,
+        IEncodeSchedule schedule)
         : this(pathExpander, presets, conversionOrchestrator, metadata, resumeStore, logger, historyStore,
               rollupCalculator, reportGenerator, reportLauncher, notifications, notificationDispatcher, trash,
-              progress, activeRunController, DefaultPostExecTimeout)
+              progress, activeRunController, schedule, DefaultPostExecTimeout)
     {
     }
 
@@ -120,6 +123,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         ITrashService trash,
         IRunProgressReporter progress,
         IActiveRunController activeRunController,
+        IEncodeSchedule schedule,
         TimeSpan postExecTimeout)
     {
         _postExecTimeout = postExecTimeout;
@@ -138,6 +142,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
         _trash = trash;
         _progress = progress;
         _activeRunController = activeRunController;
+        _schedule = schedule;
     }
 
     public async Task<RunResult?> RunOnceAsync(CompressarrConfig config, CancellationToken stopToken = default)
@@ -341,6 +346,22 @@ public sealed class RunOrchestrator : IRunOrchestrator
                     (laneId, fullName) => laneContexts[laneId].NaturalOrderIndex.TryGetValue(fullName, out var idx) ? idx : int.MaxValue);
 
                 if (next is null) break;
+
+                // Optional off-hours-only schedule: during the daytime window no NEW file starts
+                // (one already encoding is handled separately - finished or suspended - by
+                // IEncodeSchedule). Lane prep above still ran, so new files keep being tracked in
+                // arrival order while they wait. Checked fresh before every file, so a window that
+                // begins mid-pass holds the very next file, and "run anyway" releases it at once.
+                var scheduleStatus = _schedule.GetStatus();
+                if (scheduleStatus.IsHeld)
+                {
+                    if (_schedule.TryMarkHoldNoticed(scheduleStatus))
+                    {
+                        var resumeAt = scheduleStatus.NextChange?.ToString("t") ?? "off-hours";
+                        _logger.Log($"\nOff-hours only is on - encoding is held for the daytime window and resumes at {resumeAt}. Use \"Run anyway\" on the Monitor page to start now.");
+                    }
+                    break;
+                }
 
                 var context = laneContexts[next.LaneId];
                 var result = await _conversionOrchestrator.ProcessOneFileAsync(context, next, logFilePath, timestamp, resumeState, resumeFilePath, token);
