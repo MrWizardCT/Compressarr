@@ -78,6 +78,9 @@ public sealed class RunOrchestrator : IRunOrchestrator
     private readonly IActiveRunController _activeRunController;
     private readonly IEncodeSchedule _schedule;
 
+    /// <summary>Per-lane encoder choice (2.2); null = HandBrake only, as before.</summary>
+    private readonly IEncoderResolver? _encoders;
+
     public RunOrchestrator(
         IPathExpander pathExpander,
         IEncoderPresetService presets,
@@ -94,10 +97,11 @@ public sealed class RunOrchestrator : IRunOrchestrator
         ITrashService trash,
         IRunProgressReporter progress,
         IActiveRunController activeRunController,
-        IEncodeSchedule schedule)
+        IEncodeSchedule schedule,
+        IEncoderResolver? encoders = null)
         : this(pathExpander, presets, conversionOrchestrator, metadata, resumeStore, logger, historyStore,
               rollupCalculator, reportGenerator, reportLauncher, notifications, notificationDispatcher, trash,
-              progress, activeRunController, schedule, DefaultPostExecTimeout)
+              progress, activeRunController, schedule, DefaultPostExecTimeout, encoders)
     {
     }
 
@@ -124,8 +128,10 @@ public sealed class RunOrchestrator : IRunOrchestrator
         IRunProgressReporter progress,
         IActiveRunController activeRunController,
         IEncodeSchedule schedule,
-        TimeSpan postExecTimeout)
+        TimeSpan postExecTimeout,
+        IEncoderResolver? encoders = null)
     {
+        _encoders = encoders;
         _postExecTimeout = postExecTimeout;
         _pathExpander = pathExpander;
         _presets = presets;
@@ -188,7 +194,12 @@ public sealed class RunOrchestrator : IRunOrchestrator
     private async Task<RunResult?> RunOnceCoreAsync(CompressarrConfig config, string timestamp, DateTime beginTime, string logFilePath, string reportPath, string summaryLogFilePath, CancellationToken token, CancellationToken stopToken)
     {
         var hbloc = _pathExpander.Expand(config.HandBrake.CliPath);
-        if (!_pathExpander.PathExists(config.HandBrake.CliPath))
+
+        // A setup with an ffmpeg lane checks each lane's own encoder below instead (a missing
+        // HandBrake must not stop the ffmpeg lanes, nor the other way round). A HandBrake-only setup
+        // keeps the original rule: no HandBrakeCLI, no run.
+        var hasFfmpegLane = _encoders is not null && config.Lanes.Any(l => l.Enabled && l.Engine == EncoderEngine.FFmpeg);
+        if (!hasFfmpegLane && !_pathExpander.PathExists(config.HandBrake.CliPath))
         {
             _logger.LogProblem("handbrake-cli-missing", $"HandBrakeCLI.exe not found at {hbloc}. Download it from https://handbrake.fr/downloads2.php");
             _progress.RunCompleted(0);
@@ -265,6 +276,15 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 }
                 _logger.ClearProblem($"lane-no-preset:{lane.Id}");
 
+                if (_encoders is not null && _encoders.NotReadyReason(lane.Engine, config) is { } engineProblem)
+                {
+                    _logger.LogProblem($"lane-encoder:{lane.Id}", $"Skipping lane [{lane.DisplayName}] - {engineProblem}");
+                    thisLaneProblems.Add(ReportErrorCode.LaneEncoderNotAvailable);
+                    configLaneIndex++;
+                    continue;
+                }
+                _logger.ClearProblem($"lane-encoder:{lane.Id}");
+
                 // LaneValidator is the single source of truth for "does this lane's own configured
                 // TV/Movie preset actually exist in Compressarr's profiles" - shared with the Lanes page's
                 // own validation (LaneEndpoints.cs), so the two can never disagree. At this point
@@ -273,7 +293,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 // can only mean "set, but not found in Compressarr's profiles" - the log/report wording
                 // below is kept exactly as it was before this was factored out, only the
                 // PresetExists condition itself moved.
-                var laneIssues = LaneValidator.Validate(lane, config, _pathExpander, _presets);
+                var laneIssues = LaneValidator.Validate(lane, config, _pathExpander, _encoders?.PresetsFor(lane.Engine) ?? _presets);
 
                 if (laneIssues.Any(i => i.Field == "tvPreset"))
                 {

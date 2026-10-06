@@ -62,6 +62,18 @@ public enum ReportErrorCode
     /// <summary>FileBot pre-processing is enabled but its configured path wasn't found - the lane
     /// still ran normally, FileBot pre-processing was just skipped for this pass.</summary>
     FileBotPathNotFound = 110,
+
+    /// <summary>An ffmpeg encode exited normally, but the file it wrote is not the length of the
+    /// source (a corrupt source, a full disk). It was not kept and the original was left alone.</summary>
+    EncodedLengthMismatch = 111,
+
+    /// <summary>The source has Dolby Vision or HDR10+ dynamic metadata, which ffmpeg would silently
+    /// drop, and there is no usable HandBrake profile to hand it to. The file was not touched.</summary>
+    DynamicHdrNeedsHandBrake = 112,
+
+    /// <summary>The lane's encoder (HandBrake or ffmpeg) isn't installed where Compressarr looks for it,
+    /// so the lane was skipped this pass.</summary>
+    LaneEncoderNotAvailable = 113,
 }
 
 public static class ReportErrorCodeExtensions
@@ -90,6 +102,12 @@ public static class ReportErrorCodeExtensions
             "This lane's configured Movie preset wasn't found in Compressarr's profiles, so movies in it were skipped this pass. Check the preset name on the Lanes page, or add it on the Profiles page.",
         ReportErrorCode.FileBotPathNotFound =>
             "FileBot pre-processing is enabled but its configured path wasn't found, so it was skipped for this pass. Check the FileBot path on the Settings page.",
+        ReportErrorCode.EncodedLengthMismatch =>
+            "The encoded file is much shorter (or longer) than the source, so it was not kept and the original was left alone. This can mean a corrupt source or a full disk. Open the encode details for ffmpeg's own output.",
+        ReportErrorCode.DynamicHdrNeedsHandBrake =>
+            "This file has Dolby Vision or HDR10+ dynamic metadata, which ffmpeg would silently drop. It needs a HandBrake fallback profile on the ffmpeg profile (and HandBrake installed), so it was left alone. Set one on the Profiles page.",
+        ReportErrorCode.LaneEncoderNotAvailable =>
+            "This lane's encoder (HandBrake or ffmpeg) wasn't found where Compressarr looks for it, so the lane was skipped this pass. Check the Encoder page.",
         _ => "An unspecified error occurred.",
     };
 }

@@ -17,6 +17,13 @@ public static class LaneValidator
         var issues = new List<ValidationIssue>();
         if (!lane.Enabled) return issues;
 
+        // An ffmpeg lane needs ffmpeg and ffprobe in place. (A HandBrake lane's CLI is checked on the
+        // Encoder page and at run time, exactly as before.)
+        if (lane.Engine == EncoderEngine.FFmpeg && EncoderReadiness.Problem(EncoderEngine.FFmpeg, config, pathExpander) is { } engineProblem)
+        {
+            issues.Add(new ValidationIssue("engine", engineProblem));
+        }
+
         var inputPath = pathExpander.Expand(lane.Input);
         if (string.IsNullOrWhiteSpace(inputPath) || !Directory.Exists(inputPath))
         {

@@ -222,7 +222,8 @@ public class RunOrchestratorTests : IDisposable
     // even a private one, so the caller constructs it and passes it in instead of getting it back.
     private (RunOrchestrator Orchestrator, string ResumeFilePath) BuildOrchestrator(
         CompressarrConfig config, IEncoderRunner processRunner, IResumeStateStore? resumeStore = null,
-        IRunLogger? logger = null, TimeSpan? postExecTimeout = null, IEncodeSchedule? schedule = null, IRunHistoryStore? historyStore = null)
+        IRunLogger? logger = null, TimeSpan? postExecTimeout = null, IEncodeSchedule? schedule = null, IRunHistoryStore? historyStore = null,
+        IEncoderResolver? encoders = null)
     {
         // HandBrakeCLI/presets "paths" just need to exist on disk for PathExists to pass -
         // PassThroughPathExpander does no real expansion, and FixedExtensionPresetService never
@@ -248,7 +249,7 @@ public class RunOrchestratorTests : IDisposable
             new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
             processRunner, new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
             new NoOpTrashService(), effectiveLogger, effectiveResumeStore, new NoOpProgressReporter(),
-            new StaticConfigStore(config));
+            new StaticConfigStore(config), encoders);
 
         // postExecTimeout only ever non-null in the PostExec timeout test below - resolves the
         // internal test-only constructor overload; every other test keeps using the real
@@ -258,12 +259,12 @@ public class RunOrchestratorTests : IDisposable
                 new PassThroughPathExpander(), new FixedExtensionPresetService(), conversionOrchestrator, new MetadataService(),
                 effectiveResumeStore, effectiveLogger, effectiveHistory, new NoOpHistoryRollupCalculator(),
                 new Compressarr.Core.Reporting.HtmlReportGenerator(), new NoOpReportLauncher(), new NoOpNotificationService(), new NoOpNotificationDispatcher(),
-                new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController(), effectiveSchedule, timeout)
+                new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController(), effectiveSchedule, timeout, encoders)
             : new RunOrchestrator(
                 new PassThroughPathExpander(), new FixedExtensionPresetService(), conversionOrchestrator, new MetadataService(),
                 effectiveResumeStore, effectiveLogger, effectiveHistory, new NoOpHistoryRollupCalculator(),
                 new Compressarr.Core.Reporting.HtmlReportGenerator(), new NoOpReportLauncher(), new NoOpNotificationService(), new NoOpNotificationDispatcher(),
-                new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController(), effectiveSchedule);
+                new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController(), effectiveSchedule, encoders);
 
         return (runOrchestrator, resumeFilePath);
     }
@@ -1047,5 +1048,96 @@ public class RunOrchestratorTests : IDisposable
 
         Assert.DoesNotContain(logger.Messages, m => m.Message.Contains("Post-execution command was killed", StringComparison.Ordinal));
         Assert.Contains(logger.Messages, m => m.Message.Contains("Running post-execution command:", StringComparison.Ordinal));
+    }
+
+    // ---- per-lane encoders (2.2) ----------------------------------------------------------------
+
+    private CompressarrConfig TwoEngineConfig(out string handBrakeFile, out string ffmpegFile)
+    {
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = false, ClearTitleMetadata = false } };
+        config.HandBrake.CliPath = Path.Combine(_tempDir, "HandBrakeCLI.exe");
+        config.HandBrake.PresetsPath = Path.Combine(_tempDir, "presets.json");
+        config.Logging.LogFilePath = Path.Combine(_tempDir, "Logs");
+        config.Report.ReportPath = Path.Combine(_tempDir, "Reports");
+
+        handBrakeFile = null!;
+        ffmpegFile = null!;
+        foreach (var (id, engine) in new[] { ("hb", EncoderEngine.HandBrake), ("ff", EncoderEngine.FFmpeg) })
+        {
+            var input = Path.Combine(_tempDir, id + "_in");
+            var output = Path.Combine(_tempDir, id + "_out");
+            Directory.CreateDirectory(input);
+            Directory.CreateDirectory(output);
+            var file = Path.Combine(input, id + "-movie.mkv");
+            File.WriteAllText(file, "x");
+            config.Lanes.Add(new LaneConfig { Id = id, DisplayName = id.ToUpperInvariant() + " lane", Enabled = true, Input = input, Output = output, MoviePreset = id == "hb" ? "HB Preset" : "FF Preset", Engine = engine });
+            if (id == "hb") handBrakeFile = file; else ffmpegFile = file;
+        }
+        return config;
+    }
+
+    [Fact]
+    public async Task RunOnceAsync_EachLaneIsEncodedByItsOwnEngine()
+    {
+        var config = TwoEngineConfig(out _, out _);
+        var resolver = new Compressarr.Core.Tests.Conversion.EngResolver();
+        var (orchestrator, _) = BuildOrchestrator(config, new RecordingProcessRunner(), encoders: resolver);
+
+        var result = await orchestrator.RunOnceAsync(config);
+
+        Assert.Equal(2, result!.TotalFiles);
+        Assert.Equal("HB Preset", Assert.Single(resolver.HandBrake.Requests).PresetName);
+        Assert.Equal("FF Preset", Assert.Single(resolver.FFmpeg.Requests).PresetName);
+    }
+
+    [Fact]
+    public async Task RunOnceAsync_AnFfmpegLaneWithNoFfmpeg_IsSkippedWithReportCode113_WhileTheHandBrakeLaneStillRuns()
+    {
+        var config = TwoEngineConfig(out _, out var ffmpegFile);
+        var resolver = new Compressarr.Core.Tests.Conversion.EngResolver();
+        resolver.NotReady[EncoderEngine.FFmpeg] = "ffmpeg was not found at 'X'.";
+        var (orchestrator, _) = BuildOrchestrator(config, new RecordingProcessRunner(), encoders: resolver);
+
+        var result = await orchestrator.RunOnceAsync(config);
+
+        Assert.Equal(1, result!.TotalFiles);
+        Assert.Single(resolver.HandBrake.Requests);
+        Assert.Empty(resolver.FFmpeg.Requests);
+        Assert.True(File.Exists(ffmpegFile));
+        var ffLane = result.Report.Lanes.Single(l => l.LaneDisplayName == "FF lane");
+        Assert.Contains(ReportErrorCode.LaneEncoderNotAvailable, ffLane.LaneProblems);
+    }
+
+    [Fact]
+    public async Task RunOnceAsync_WithAnFfmpegLane_AMissingHandBrakeOnlySkipsTheHandBrakeLanes()
+    {
+        var config = TwoEngineConfig(out var handBrakeFile, out _);
+        var resolver = new Compressarr.Core.Tests.Conversion.EngResolver();
+        resolver.NotReady[EncoderEngine.HandBrake] = "HandBrakeCLI.exe was not found at 'X'.";
+        var (orchestrator, _) = BuildOrchestrator(config, new RecordingProcessRunner(), encoders: resolver);
+        File.Delete(config.HandBrake.CliPath); // BuildOrchestrator created it; the whole-run abort must not fire
+
+        var result = await orchestrator.RunOnceAsync(config);
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result!.TotalFiles);
+        Assert.Single(resolver.FFmpeg.Requests);
+        Assert.Empty(resolver.HandBrake.Requests);
+        Assert.True(File.Exists(handBrakeFile));
+    }
+
+    [Fact]
+    public async Task RunOnceAsync_AHandBrakeOnlySetup_StillAbortsTheWholeRunWhenHandBrakeIsMissing()
+    {
+        var config = TwoEngineConfig(out _, out _);
+        config.Lanes.RemoveAll(l => l.Engine == EncoderEngine.FFmpeg);
+        var resolver = new Compressarr.Core.Tests.Conversion.EngResolver();
+        var (orchestrator, _) = BuildOrchestrator(config, new RecordingProcessRunner(), encoders: resolver);
+        File.Delete(config.HandBrake.CliPath);
+
+        var result = await orchestrator.RunOnceAsync(config);
+
+        Assert.Null(result);
+        Assert.Empty(resolver.HandBrake.Requests);
     }
 }

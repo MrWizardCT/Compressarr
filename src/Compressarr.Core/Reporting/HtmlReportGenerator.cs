@@ -98,6 +98,7 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
   .redir-text {{ color: #4a3fa8; }}
   .warn-text {{ color: #8a6414; }}
   .err-code {{ border-bottom: 1px dotted #a1231e; cursor: help; }}
+  .enc-tag {{ font-size: 0.7rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: #fdf3e0; color: #8a6414; white-space: nowrap; }}
   .lane-problem {{ background: #fdeaea; color: #a1231e; padding: 0.4rem 0.75rem; border-radius: 6px; margin: 0.25rem 0; }}
   .summary-grid {{ display: flex; gap: 2rem; flex-wrap: wrap; margin: 1rem 0; }}
   .stat {{ background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 0.75rem 1.25rem; min-width: 140px; }}
@@ -217,7 +218,7 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
                 // succeeded fine and the actual problem was a destination move). Those codes link
                 // this run's own Compressarr summary log instead - it has the real exception
                 // message for this file (search it by filename), which HandBrake's log never did.
-                var (linkTarget, linkText) = code == ReportErrorCode.EncodeFailed
+                var (linkTarget, linkText) = code is ReportErrorCode.EncodeFailed or ReportErrorCode.EncodedLengthMismatch
                     ? (r.DetailLogFile, "Full Details")
                     : (summaryLogFilePath, "Full Details (Compressarr log)");
                 if (!string.IsNullOrEmpty(linkTarget) && File.Exists(linkTarget))
@@ -259,7 +260,8 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
             sb.Append($"    <tr{rowClass}>");
             sb.Append($"<td>{WebUtility.HtmlEncode(r.FileName)}</td>");
             sb.Append($"<td>{WebUtility.HtmlEncode(r.ContentType)}</td>");
-            sb.Append($"<td>{WebUtility.HtmlEncode(r.PresetName ?? "")}</td>");
+            var encoderTag = string.IsNullOrEmpty(r.EncoderLabel) ? "" : $" <span class=\"enc-tag\">{WebUtility.HtmlEncode(r.EncoderLabel)}</span>";
+            sb.Append($"<td>{WebUtility.HtmlEncode(r.PresetName ?? "")}{encoderTag}</td>");
             sb.Append($"<td>{r.BeginSizeGb} GB</td>");
             sb.Append($"<td>{r.EndSizeGb} GB</td>");
             sb.Append($"<td>{savings} GB</td>");

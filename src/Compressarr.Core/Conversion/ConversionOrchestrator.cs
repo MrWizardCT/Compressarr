@@ -157,6 +157,10 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
     private readonly SourceCleanupCoordinator _cleanup;
     private readonly EncodedFileFinisher _finisher;
 
+    /// <summary>Picks the encoder per lane (2.2). Null means HandBrake only, exactly as before - the
+    /// tests that build this class directly never need to supply one.</summary>
+    private readonly IEncoderResolver? _encoders;
+
     public ConversionOrchestrator(
         IPathExpander pathExpander,
         IVideoFileScanner scanner,
@@ -171,8 +175,10 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         IRunLogger logger,
         IResumeStateStore resumeStore,
         IRunProgressReporter progress,
-        IConfigStore configStore)
+        IConfigStore configStore,
+        IEncoderResolver? encoders = null)
     {
+        _encoders = encoders;
         _pathExpander = pathExpander;
         _scanner = scanner;
         _fileBotRunner = fileBotRunner;
@@ -396,7 +402,65 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             };
         }
 
-        var extension = _presets.GetOutputExtension(presetName, out var extensionWarning);
+        // Which encoder runs this file: the lane's own (HandBrake unless the lane says ffmpeg). With no
+        // resolver (HandBrake-only wiring, and every test that builds this class directly) it is the
+        // HandBrake runner and preset service exactly as before 2.2.
+        var binding = _encoders?.For(lane.Engine, config)
+            ?? new EncoderBinding(EncoderEngine.HandBrake, _processRunner, _presets, hbloc, null, config.HandBrake.Options);
+        string? encoderLabel = binding.Engine == EncoderEngine.FFmpeg ? "ffmpeg" : null;
+
+        if (binding.Engine == EncoderEngine.FFmpeg && _encoders is not null)
+        {
+            // Stock ffmpeg + libx265 silently drops Dolby Vision / HDR10+ dynamic metadata, so such a
+            // file goes to HandBrake (which carries it through) using the ffmpeg profile's fallback
+            // preset - or is refused. It is never encoded in a way that quietly loses the HDR.
+            var probe = await _encoders.ProbeAsync(config, file.FullName, cancellationToken);
+            if (probe is { HasDynamicHdrMetadata: true })
+            {
+                var fallback = _encoders.FallbackHandBrakePreset(presetName);
+                var handBrake = _encoders.For(EncoderEngine.HandBrake, config);
+                var handBrakeProblem = _encoders.NotReadyReason(EncoderEngine.HandBrake, config);
+
+                if (fallback is not null && handBrakeProblem is null && handBrake.Presets.PresetExists(fallback))
+                {
+                    _logger.Log($"  {probe.DynamicHdrName} detected - ffmpeg would drop it, so this file is encoded by HandBrake with '{fallback}' instead of '{presetName}'.");
+                    binding = handBrake;
+                    presetName = fallback;
+                    encoderLabel = "HandBrake (Dolby Vision fallback)";
+                    _progress.FileStarted(lane.Id, i, fileCount, file.Name, file.FullName, presetName, beginSizeGb);
+                }
+                else
+                {
+                    var why = fallback is null ? "the profile has no HandBrake fallback preset"
+                        : handBrakeProblem is not null ? handBrakeProblem
+                        : $"the HandBrake preset '{fallback}' doesn't exist";
+                    var message = $"{probe.DynamicHdrName} dynamic metadata would be lost by ffmpeg, and {why} - the file was left alone.";
+                    _logger.Log($"  {message}", LogSeverity.Error);
+                    resumeEntry.Status = ResumeStatus.Error;
+                    SaveEntryResult(resumeEntry, resumeFilePath);
+
+                    return new ConversionResult
+                    {
+                        LaneId = lane.Id,
+                        FileName = file.Name,
+                        FullName = file.FullName,
+                        ContentType = contentType,
+                        PresetName = presetName,
+                        EncoderLabel = "ffmpeg",
+                        BeginSizeGb = beginSizeGb,
+                        EndSizeGb = 0,
+                        Success = false,
+                        FailureReason = message,
+                        ErrorCode = ReportErrorCode.DynamicHdrNeedsHandBrake,
+                        StartTime = startTime,
+                        EndTime = DateTime.Now,
+                        HomeLaneName = lane.DisplayName
+                    };
+                }
+            }
+        }
+
+        var extension = binding.Presets.GetOutputExtension(presetName, out var extensionWarning);
         if (extensionWarning is not null) _logger.Log(extensionWarning, LogSeverity.Error);
 
         var destFolder = config.Processing.OutSameAsIn ? file.DirectoryName! : outputBase;
@@ -416,7 +480,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         var newFileName = Path.Combine(destFolder, baseName + extension);
         var tempFileName = Path.Combine(destFolder, baseName + ".compressarr-" + Guid.NewGuid().ToString("N")[..8] + extension);
 
-        var logName = $"{baseName}_{timestamp}_{i.ToString().PadLeft(padSize, '0')}_HBdetails.txt";
+        var logName = $"{baseName}_{timestamp}_{i.ToString().PadLeft(padSize, '0')}_{(binding.Engine == EncoderEngine.FFmpeg ? "FFdetails" : "HBdetails")}.txt";
         var detailLogFile = Path.Combine(logFilePath, logName);
 
         var lastLoggedPercent = -10.0;
@@ -437,10 +501,10 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
 
         // Brings the generated profile file up to date (a no-op unless a profile changed since it
         // was last written) right before the encoder is started.
-        var presetSource = _presets.PreparePresetSource();
+        var presetSource = binding.Presets.PreparePresetSource();
 
-        var runResult = await _processRunner.RunAsync(
-            new EncodeRequest(hbloc, file.FullName, tempFileName, presetSource, presetName, config.HandBrake.Options, detailLogFile),
+        var runResult = await binding.Runner.RunAsync(
+            new EncodeRequest(binding.ToolPath, file.FullName, tempFileName, presetSource, presetName, binding.ExtraOptions, detailLogFile, binding.ProbePath),
             OnProgress,
             cancellationToken);
         var endTime = DateTime.Now;
@@ -518,7 +582,14 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             // HandBrake's own detail log is genuinely the relevant diagnostic for an encode
             // failure (unlike a move failure, where it's irrelevant) - stays linked from the
             // report for this code.
-            errorCode = ReportErrorCode.EncodeFailed;
+            errorCode = runResult.Failure == EncodeFailureKind.LengthMismatch
+                ? ReportErrorCode.EncodedLengthMismatch
+                : ReportErrorCode.EncodeFailed;
+            if (runResult.Failure != EncodeFailureKind.None && runResult.FailureMessage is not null)
+            {
+                failureReason = runResult.FailureMessage;
+                _logger.Log($"  {runResult.FailureMessage}", LogSeverity.Error);
+            }
 
             // HandBrakeCLI still writes its own log even on a failed encode - confirmed live
             // against a genuinely full disk that its mux error names the cause explicitly ("No
@@ -569,6 +640,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             NewFileName = finalFileName,
             ContentType = contentType,
             PresetName = presetName,
+            EncoderLabel = encoderLabel,
             BeginSizeGb = beginSizeGb,
             EndSizeGb = endSizeGb,
             Success = overallSuccess,

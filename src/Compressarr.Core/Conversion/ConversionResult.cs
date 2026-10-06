@@ -8,6 +8,12 @@ public sealed class ConversionResult
     public string? NewFileName { get; init; }
     public required string ContentType { get; init; }
     public string? PresetName { get; init; }
+
+    /// <summary>Which encoder actually encoded this file, when that is worth saying: "ffmpeg", or
+    /// "HandBrake (Dolby Vision fallback)" for a file an ffmpeg lane handed to HandBrake. Null for an
+    /// ordinary HandBrake encode, so a HandBrake-only setup's report reads exactly as before.</summary>
+    public string? EncoderLabel { get; init; }
+
     public double BeginSizeGb { get; init; }
     public double EndSizeGb { get; init; }
     public bool Success { get; init; }
