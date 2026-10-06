@@ -49,12 +49,12 @@ public enum ReportErrorCode
     /// input" is off - it was skipped entirely this pass, nothing in it was even scanned.</summary>
     LaneNoOutputConfigured = 107,
 
-    /// <summary>The lane's configured TV preset name doesn't exist in presets.json - the lane
+    /// <summary>The lane's configured TV preset name doesn't exist in Compressarr's profiles - the lane
     /// still ran, but any TV episodes in it were skipped this pass (Movies, if configured
     /// correctly, still processed normally).</summary>
     LaneTvPresetNotFound = 108,
 
-    /// <summary>The lane's configured Movie preset name doesn't exist in presets.json - the lane
+    /// <summary>The lane's configured Movie preset name doesn't exist in Compressarr's profiles - the lane
     /// still ran, but any movies in it were skipped this pass (TV, if configured correctly, still
     /// processed normally).</summary>
     LaneMoviePresetNotFound = 109,
@@ -85,9 +85,9 @@ public static class ReportErrorCodeExtensions
         ReportErrorCode.LaneNoOutputConfigured =>
             "This lane has no Output folder configured, and 'write output to same folder as input' is off, so it was skipped entirely this pass. Set an Output folder on the Lanes page, or enable that setting.",
         ReportErrorCode.LaneTvPresetNotFound =>
-            "This lane's configured TV preset wasn't found in presets.json, so TV episodes in it were skipped this pass. Check the preset name on the Lanes page, or reinstall/merge presets from Settings.",
+            "This lane's configured TV preset wasn't found in Compressarr's profiles, so TV episodes in it were skipped this pass. Check the preset name on the Lanes page, or add it on the Profiles page.",
         ReportErrorCode.LaneMoviePresetNotFound =>
-            "This lane's configured Movie preset wasn't found in presets.json, so movies in it were skipped this pass. Check the preset name on the Lanes page, or reinstall/merge presets from Settings.",
+            "This lane's configured Movie preset wasn't found in Compressarr's profiles, so movies in it were skipped this pass. Check the preset name on the Lanes page, or add it on the Profiles page.",
         ReportErrorCode.FileBotPathNotFound =>
             "FileBot pre-processing is enabled but its configured path wasn't found, so it was skipped for this pass. Check the FileBot path on the Settings page.",
         _ => "An unspecified error occurred.",

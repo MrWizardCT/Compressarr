@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Compressarr - Encoder</title>
+  <link rel="icon" href="/assets/favicon.ico" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#5b6389" />
+  <link rel="apple-touch-icon" href="/assets/logo.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Compressarr" />
+  <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('compressarr.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main>
+    <h2 class="page-title">Encoder</h2>
+    <div class="page-actions">
+      <button id="saveBtn" class="primary"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Save Encoder Settings</button>
+      <button id="clearChangesBtn"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>Clear Changes</button>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline></svg>
+        <h2>At a glance</h2>
+      </div>
+      <div class="card-body">
+        <div class="enc-glance">
+          <div class="enc-tool">
+            <div class="enc-tool-title"><span class="enc-dot" id="hbDot"></span>HandBrake</div>
+            <div class="enc-tool-line" id="hbVersionLine">Checking&hellip;</div>
+            <div class="enc-tool-line" id="hbUsedBy"></div>
+          </div>
+        </div>
+        <p class="enc-note">Which tool a lane uses is set on the <a href="/lanes.html">Lanes</a> page; the recipes it can pick (profiles) are on the <a href="/profiles.html">Profiles</a> page.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+        <h2>HandBrake</h2>
+      </div>
+      <div class="card-body">
+        <div class="field-block">
+          <label for="hbCliPath">HandBrakeCLI path<span class="help-tag" tabindex="0" title="Full path to HandBrakeCLI.exe. Use Check/Install to find or download it automatically.">?<span class="help-tip">Full path to HandBrakeCLI.exe. Use Check/Install to find or download it automatically.</span></span></label>
+          <div class="field-with-btn"><input type="text" id="hbCliPath" /><button id="checkHandBrakeBtn">Check/Install</button></div>
+        </div>
+        <p class="enc-note">HandBrake's presets are no longer set up here. Compressarr always uses its own profiles (built-ins plus yours), managed on the <a href="/profiles.html">Profiles</a> page - where you can also import presets from the HandBrake app or a presets file. There is no presets.json path or Install/Merge step any more.</p>
+        <div class="field-block">
+          <label for="hbOptions">Extra CLI options<span class="help-tag" tabindex="0" title="Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.">?<span class="help-tip">Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.</span></span></label>
+          <input type="text" id="hbOptions" placeholder="e.g. --two-pass" />
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/nav.js"></script>
+  <script src="/encoder.js"></script>
+</body>
+</html>

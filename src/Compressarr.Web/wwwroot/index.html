@@ -22,27 +22,6 @@
 
     <div class="card">
       <div class="card-head">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
-        <h2>HandBrake</h2>
-      </div>
-      <div class="card-body">
-        <div class="field-block">
-          <label for="hbCliPath">HandBrakeCLI path<span class="help-tag" tabindex="0" title="Full path to HandBrakeCLI.exe. Use Check/Install to find or download it automatically.">?<span class="help-tip">Full path to HandBrakeCLI.exe. Use Check/Install to find or download it automatically.</span></span></label>
-          <div class="field-with-btn"><input type="text" id="hbCliPath" /><button id="checkHandBrakeBtn">Check/Install</button></div>
-        </div>
-        <div class="field-block">
-          <label for="presetsPath">presets.json path<span class="help-tag" tabindex="0" title="Path to HandBrake's presets.json. Use Install/Merge Presets to add Compressarr's own presets to it.">?<span class="help-tip">Path to HandBrake's presets.json. Use Install/Merge Presets to add Compressarr's own presets to it.</span></span></label>
-          <div class="field-with-btn"><input type="text" id="presetsPath" /><button id="installPresetsBtn">Install/Merge Presets</button><button id="reloadPresetsBtn">Reload</button></div>
-        </div>
-        <div class="field-block">
-          <label for="hbOptions">Extra CLI options<span class="help-tag" tabindex="0" title="Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.">?<span class="help-tip">Additional command-line flags passed to every HandBrakeCLI conversion, e.g. --two-pass.</span></span></label>
-          <input type="text" id="hbOptions" />
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-head">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24L4 3a1 1 0 0 0-1 1l.24 5.59a2 2 0 0 0 .59 1.41l9.58 9.58a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.82z"></path><circle cx="7.5" cy="7.5" r="1.5"></circle></svg>
         <h2>File Name Processing</h2>
       </div>
@@ -277,7 +256,7 @@
       <div class="card-body">
         <div class="two-col">
           <div class="field-block">
-            <label>Export config<span class="help-tag" tabindex="0" title="Download your full configuration - lanes, presets path, HandBrake options, everything - as a JSON file.">?<span class="help-tip">Download your full configuration - lanes, presets path, HandBrake options, everything - as a JSON file.</span></span></label>
+            <label>Export config<span class="help-tag" tabindex="0" title="Download your full configuration - lanes, encoder settings, your own profiles, everything - as a JSON file.">?<span class="help-tip">Download your full configuration - lanes, encoder settings, your own profiles, everything - as a JSON file.</span></span></label>
             <button id="exportConfigBtn">Export</button>
           </div>
           <div class="field-block">

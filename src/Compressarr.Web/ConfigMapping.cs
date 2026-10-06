@@ -9,9 +9,6 @@ namespace Compressarr.Web;
 internal static class ConfigMapping
 {
     public static SettingsDto ToSettingsDto(CompressarrConfig config, List<ValidationIssueDto> validationIssues) => new(
-        HandBrakeCliPath: config.HandBrake.CliPath,
-        PresetsPath: config.HandBrake.PresetsPath,
-        HandBrakeOptions: config.HandBrake.Options,
         FileBotEnabled: config.FileBot.Enabled,
         FileBotCliPath: config.FileBot.CliPath,
         FileBotTvEnabled: config.FileBot.TvEnabled,
@@ -52,9 +49,6 @@ internal static class ConfigMapping
 
     public static void ApplySettingsDto(CompressarrConfig config, SettingsDto dto)
     {
-        config.HandBrake.CliPath = dto.HandBrakeCliPath;
-        config.HandBrake.PresetsPath = dto.PresetsPath;
-        config.HandBrake.Options = dto.HandBrakeOptions;
         config.FileBot.Enabled = dto.FileBotEnabled;
         config.FileBot.CliPath = dto.FileBotCliPath;
         config.FileBot.TvEnabled = dto.FileBotTvEnabled;

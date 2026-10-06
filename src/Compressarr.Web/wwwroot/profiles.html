@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Compressarr - Profiles</title>
+  <link rel="icon" href="/assets/favicon.ico" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#5b6389" />
+  <link rel="apple-touch-icon" href="/assets/logo.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Compressarr" />
+  <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('compressarr.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main>
+    <h2 class="page-title">Profiles</h2>
+
+    <div class="card">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+        <h2>Profiles</h2>
+      </div>
+      <div class="card-body">
+        <p class="enc-note" style="margin-top:0">These are all the encoding profiles Compressarr has - its own built-ins plus yours. A lane picks one on the <a href="/lanes.html">Lanes</a> page. Compressarr never reads HandBrake's own presets file while encoding.</p>
+        <div id="profileError" class="banner err hidden"></div>
+        <div class="table-wrap">
+          <table class="prof-table">
+            <thead><tr><th>Profile</th><th>Encoder</th><th>Video</th><th>Audio</th><th>Used by</th></tr></thead>
+            <tbody id="profileRows"><tr><td colspan="5" class="prof-sub">Loading&hellip;</td></tr></tbody>
+          </table>
+        </div>
+        <p class="enc-note">Creating, editing, duplicating and importing profiles arrives in the next pre-release.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+        <h2>Where profiles are stored</h2>
+      </div>
+      <div class="card-body">
+        <div class="prof-where">
+          <div><b>Built-in</b> (locked)<br>Ship with Compressarr, so they are always the same and can't be changed or deleted.</div>
+          <div><b>Yours - HandBrake</b><br><code id="userFilePath">%AppData%\Compressarr\Profiles\handbrake-profiles.json</code><br>Everything you create, duplicate or import. It is included in Compressarr's automatic backups and in Export/Import config, with the rest of your settings. For every encode Compressarr hands HandBrake its own generated copy (built-ins plus yours), so the HandBrake app and Compressarr never touch each other's files.</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/nav.js"></script>
+  <script src="/profiles.js"></script>
+</body>
+</html>

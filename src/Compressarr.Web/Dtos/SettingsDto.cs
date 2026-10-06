@@ -3,9 +3,6 @@ namespace Compressarr.Web.Dtos;
 public sealed record ValidationIssueDto(string Field, string Message);
 
 public sealed record SettingsDto(
-    string HandBrakeCliPath,
-    string PresetsPath,
-    string HandBrakeOptions,
     bool FileBotEnabled,
     string FileBotCliPath,
     bool FileBotTvEnabled,

@@ -1651,3 +1651,30 @@ td { font-variant-numeric: tabular-nums; }
 .sched-hint { margin-top: 5px; font-size: 12px; line-height: 1.45; color: var(--text-dim); }
 .sched-levels { margin: 8px 0 0; padding-left: 18px; }
 .sched-levels li { margin: 4px 0; }
+
+/* Encoder page */
+.enc-glance { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.enc-tool { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--bg); }
+.enc-tool-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+.enc-tool-line { margin-top: 5px; font-size: 12.5px; color: var(--text-dim); }
+.enc-tool-line b { color: var(--text); font-weight: 600; }
+.enc-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-dim); }
+.enc-dot.ok { background: var(--ok); }
+.enc-dot.bad { background: var(--err); }
+.enc-note { margin: 10px 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
+.enc-note a { color: var(--accent); }
+
+/* Profiles page */
+.prof-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.prof-table th { text-align: left; font-size: 11.5px; font-weight: 600; color: var(--text-dim); padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.prof-table td { padding: 9px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.prof-table tr:last-child td { border-bottom: none; }
+.prof-name { font-weight: 600; }
+.prof-sub { color: var(--text-dim); font-size: 11.5px; margin-top: 2px; }
+.prof-lock { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; font-size: 11.5px; font-weight: 400; color: var(--text-dim); }
+.prof-lock-icon { width: 12px; height: 12px; }
+.prof-chip { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--accent-dim); color: var(--accent); }
+.prof-where { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; font-size: 12.5px; line-height: 1.5; }
+.prof-where > div { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--bg); }
+.prof-where code { font-size: 11.5px; word-break: break-all; }
+.table-wrap { overflow-x: auto; }

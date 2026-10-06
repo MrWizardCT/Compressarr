@@ -31,12 +31,10 @@ file sealed class NoOpFileBotRunner : IFileBotRunner
 
 file sealed class FixedExtensionPresetService : IEncoderPresetService
 {
-    public IReadOnlyList<HandBrakePreset> GetPresets(string presetsPath) => Array.Empty<HandBrakePreset>();
-    public IReadOnlyList<string> GetPresetNames(string presetsPath) => Array.Empty<string>();
-    public bool PresetExists(string presetName, string presetsPath) => true;
-    public HandBrakePreset? GetPreset(string presetName, string presetsPath) => null;
-    public string GetOutputExtension(string presetName, string presetsPath, out string? warning) { warning = null; return ".mkv"; }
-    public void InvalidateCache(string? presetsPath = null) { }
+    public IReadOnlyList<string> GetPresetNames() => Array.Empty<string>();
+    public bool PresetExists(string presetName) => true;
+    public string GetOutputExtension(string presetName, out string? warning) { warning = null; return ".mkv"; }
+    public string PreparePresetSource() => "presets.json";
 }
 
 /// <summary>Simulates HandBrakeCLI by writing a real (tiny) output file, and records every source
@@ -196,6 +194,7 @@ file sealed class ScriptedSchedule : IEncodeSchedule
 /// only ever drives a single lane, and RunLoopControllerTests mocks IRunOrchestrator entirely.
 /// Uses the real ConversionOrchestrator (not mocked) so these tests exercise the actual
 /// PrepareLane/ProcessOneFileAsync split RunOrchestrator drives in production.</summary>
+[Collection("AppDataOverride")]
 public class RunOrchestratorTests : IDisposable
 {
     private readonly string _tempDir = Directory.CreateTempSubdirectory("compressarr-run-orchestrator-tests-").FullName;

@@ -14,12 +14,10 @@ file sealed class FixedExtensionPresetService : IEncoderPresetService
 {
     private readonly HashSet<string> _existingPresets;
     public FixedExtensionPresetService(params string[] existingPresets) => _existingPresets = existingPresets.ToHashSet(StringComparer.OrdinalIgnoreCase);
-    public IReadOnlyList<HandBrakePreset> GetPresets(string presetsPath) => Array.Empty<HandBrakePreset>();
-    public IReadOnlyList<string> GetPresetNames(string presetsPath) => _existingPresets.ToList();
-    public bool PresetExists(string presetName, string presetsPath) => _existingPresets.Contains(presetName);
-    public HandBrakePreset? GetPreset(string presetName, string presetsPath) => null;
-    public string GetOutputExtension(string presetName, string presetsPath, out string? warning) { warning = null; return ".mkv"; }
-    public void InvalidateCache(string? presetsPath = null) { }
+    public IReadOnlyList<string> GetPresetNames() => _existingPresets.ToList();
+    public bool PresetExists(string presetName) => _existingPresets.Contains(presetName);
+    public string GetOutputExtension(string presetName, out string? warning) { warning = null; return ".mkv"; }
+    public string PreparePresetSource() => "presets.json";
 }
 
 public class LaneValidatorTests : IDisposable
@@ -45,7 +43,7 @@ public class LaneValidatorTests : IDisposable
         var lane = MakeLane(Path.Combine(_tempDir, "Input"), Path.Combine(_tempDir, "Output"), moviePreset: "Compressarr SD-HD");
         var config = new CompressarrConfig();
 
-        var issues = LaneValidator.Validate(lane, config, "presets.json", new PassThroughPathExpander(), new FixedExtensionPresetService("Compressarr SD-HD"));
+        var issues = LaneValidator.Validate(lane, config, new PassThroughPathExpander(), new FixedExtensionPresetService("Compressarr SD-HD"));
 
         Assert.Empty(issues);
     }
@@ -56,7 +54,7 @@ public class LaneValidatorTests : IDisposable
         var lane = MakeLane(input: "", output: "", enabled: false);
         var config = new CompressarrConfig();
 
-        var issues = LaneValidator.Validate(lane, config, "presets.json", new PassThroughPathExpander(), new FixedExtensionPresetService());
+        var issues = LaneValidator.Validate(lane, config, new PassThroughPathExpander(), new FixedExtensionPresetService());
 
         Assert.Empty(issues);
     }
@@ -67,7 +65,7 @@ public class LaneValidatorTests : IDisposable
         var lane = MakeLane(input: Path.Combine(_tempDir, "DoesNotExist"), output: Path.Combine(_tempDir, "Output"), moviePreset: "Compressarr SD-HD");
         var config = new CompressarrConfig();
 
-        var issues = LaneValidator.Validate(lane, config, "presets.json", new PassThroughPathExpander(), new FixedExtensionPresetService("Compressarr SD-HD"));
+        var issues = LaneValidator.Validate(lane, config, new PassThroughPathExpander(), new FixedExtensionPresetService("Compressarr SD-HD"));
 
         Assert.Contains(issues, i => i.Field == "input");
     }
@@ -78,7 +76,7 @@ public class LaneValidatorTests : IDisposable
         var lane = MakeLane(input: "", output: Path.Combine(_tempDir, "Output"), moviePreset: "Compressarr SD-HD");
         var config = new CompressarrConfig();
 
-        var issues = LaneValidator.Validate(lane, config, "presets.json", new PassThroughPathExpander(), new FixedExtensionPresetService("Compressarr SD-HD"));
+        var issues = LaneValidator.Validate(lane, config, new PassThroughPathExpander(), new FixedExtensionPresetService("Compressarr SD-HD"));
 
         Assert.Contains(issues, i => i.Field == "input");
     }
@@ -90,7 +88,7 @@ public class LaneValidatorTests : IDisposable
         var lane = MakeLane(Path.Combine(_tempDir, "Input"), output: "", moviePreset: "Compressarr SD-HD");
         var config = new CompressarrConfig { Processing = new ProcessingSettings { OutSameAsIn = false } };
 
-        var issues = LaneValidator.Validate(lane, config, "presets.json", new PassThroughPathExpander(), new FixedExtensionPresetService("Compressarr SD-HD"));
+        var issues = LaneValidator.Validate(lane, config, new PassThroughPathExpander(), new FixedExtensionPresetService("Compressarr SD-HD"));
 
         Assert.Contains(issues, i => i.Field == "output");
     }
@@ -102,7 +100,7 @@ public class LaneValidatorTests : IDisposable
         var lane = MakeLane(Path.Combine(_tempDir, "Input"), output: "", moviePreset: "Compressarr SD-HD");
         var config = new CompressarrConfig { Processing = new ProcessingSettings { OutSameAsIn = true } };
 
-        var issues = LaneValidator.Validate(lane, config, "presets.json", new PassThroughPathExpander(), new FixedExtensionPresetService("Compressarr SD-HD"));
+        var issues = LaneValidator.Validate(lane, config, new PassThroughPathExpander(), new FixedExtensionPresetService("Compressarr SD-HD"));
 
         Assert.DoesNotContain(issues, i => i.Field == "output");
     }
@@ -114,7 +112,7 @@ public class LaneValidatorTests : IDisposable
         var lane = MakeLane(Path.Combine(_tempDir, "Input"), Path.Combine(_tempDir, "Output"));
         var config = new CompressarrConfig();
 
-        var issues = LaneValidator.Validate(lane, config, "presets.json", new PassThroughPathExpander(), new FixedExtensionPresetService());
+        var issues = LaneValidator.Validate(lane, config, new PassThroughPathExpander(), new FixedExtensionPresetService());
 
         Assert.Contains(issues, i => i.Field == "tvPreset");
         Assert.Contains(issues, i => i.Field == "moviePreset");
@@ -127,7 +125,7 @@ public class LaneValidatorTests : IDisposable
         var lane = MakeLane(Path.Combine(_tempDir, "Input"), Path.Combine(_tempDir, "Output"), tvPreset: "Ghost Preset");
         var config = new CompressarrConfig();
 
-        var issues = LaneValidator.Validate(lane, config, "presets.json", new PassThroughPathExpander(), new FixedExtensionPresetService("Some Other Preset"));
+        var issues = LaneValidator.Validate(lane, config, new PassThroughPathExpander(), new FixedExtensionPresetService("Some Other Preset"));
 
         Assert.Contains(issues, i => i.Field == "tvPreset");
         Assert.DoesNotContain(issues, i => i.Field == "moviePreset");
@@ -140,7 +138,7 @@ public class LaneValidatorTests : IDisposable
         var lane = MakeLane(Path.Combine(_tempDir, "Input"), Path.Combine(_tempDir, "Output"), moviePreset: "Ghost Preset");
         var config = new CompressarrConfig();
 
-        var issues = LaneValidator.Validate(lane, config, "presets.json", new PassThroughPathExpander(), new FixedExtensionPresetService("Some Other Preset"));
+        var issues = LaneValidator.Validate(lane, config, new PassThroughPathExpander(), new FixedExtensionPresetService("Some Other Preset"));
 
         Assert.Contains(issues, i => i.Field == "moviePreset");
         Assert.DoesNotContain(issues, i => i.Field == "tvPreset");
@@ -152,7 +150,7 @@ public class LaneValidatorTests : IDisposable
         var lane = MakeLane(input: "", output: "");
         var config = new CompressarrConfig { Processing = new ProcessingSettings { OutSameAsIn = false } };
 
-        var issues = LaneValidator.Validate(lane, config, "presets.json", new PassThroughPathExpander(), new FixedExtensionPresetService());
+        var issues = LaneValidator.Validate(lane, config, new PassThroughPathExpander(), new FixedExtensionPresetService());
 
         Assert.Contains(issues, i => i.Field == "input");
         Assert.Contains(issues, i => i.Field == "output");

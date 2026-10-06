@@ -1,9 +1,11 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 using Compressarr.Core.Backup;
 using Compressarr.Core.Config;
+using Compressarr.Core.Presets;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 
@@ -17,20 +19,28 @@ public static class BackupEndpoints
         Converters = { new JsonStringEnumConverter() }
     };
 
+    private const string ExportProfilesKey = "handBrakeUserProfiles";
+
     public static void MapBackupEndpoints(this IEndpointRouteBuilder app)
     {
         // Exports the fully-merged config (every field populated, not just whatever overrides
         // happen to be in the on-disk file) so the download is a complete, self-contained backup
         // regardless of how partial compressarr.settings.json currently is.
-        app.MapGet("/api/settings/export", (IConfigStore configStore) =>
+        //
+        // Also carries the user's own HandBrake profiles (under "handBrakeUserProfiles") - the
+        // lanes in this file name profiles, and an export that couldn't bring them along would
+        // restore lanes pointing at nothing. A 2.1.x install importing it just ignores that key.
+        app.MapGet("/api/settings/export", (IConfigStore configStore, IHandBrakeProfileStore profiles) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());
-            var json = JsonSerializer.Serialize(config, ExportOptions);
+            var node = JsonSerializer.SerializeToNode(config, ExportOptions)!.AsObject();
+            node[ExportProfilesKey] = new JsonArray(profiles.GetAll().Where(p => !p.IsBuiltIn).Select(p => (JsonNode)p.Definition.DeepClone()).ToArray());
+            var json = node.ToJsonString(ExportOptions);
             var bytes = Encoding.UTF8.GetBytes(json);
             return Results.File(bytes, "application/json", $"compressarr-config-{DateTime.Now:yyyy-MM-dd}.json");
         });
 
-        app.MapPost("/api/settings/import", async (HttpRequest request, IConfigStore configStore) =>
+        app.MapPost("/api/settings/import", async (HttpRequest request, IConfigStore configStore, IHandBrakeProfileStore profiles) =>
         {
             using var reader = new StreamReader(request.Body);
             var raw = await reader.ReadToEndAsync();
@@ -56,6 +66,18 @@ public static class BackupEndpoints
                 }
 
                 configStore.Save(imported, AppPaths.GetConfigFilePath());
+
+                // Profiles the export carried that this install doesn't have yet. Same-named ones
+                // are left alone - the built-ins are locked and the user's own are not overwritten.
+                if (JsonNode.Parse(raw) is JsonObject root && root[ExportProfilesKey] is JsonArray exported)
+                {
+                    var missing = exported.OfType<JsonObject>()
+                        .Where(d => d["PresetName"]?.GetValue<string>() is { Length: > 0 } name && profiles.Find(name) is null)
+                        .DistinctBy(d => d["PresetName"]!.GetValue<string>(), StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    if (missing.Count > 0) profiles.AddUserProfiles(missing);
+                }
+
                 return Results.Ok();
             }
             finally

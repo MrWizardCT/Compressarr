@@ -49,4 +49,17 @@ public static class AppPaths
     public static string GetRunCountFilePath() => Path.Combine(GetAppDataDirectory(), "compressarr.runcount.json");
 
     public static string GetResumeFilePath() => Path.Combine(GetAppDataDirectory(), "compressarr.resume.json");
+
+    /// <summary>Compressarr's own encoder profiles live here: the user's HandBrake profiles (backed
+    /// up with the rest of the settings) and the generated file HandBrake is actually handed.</summary>
+    public static string GetProfilesDirectory() => Path.Combine(GetAppDataDirectory(), "Profiles");
+
+    /// <summary>The user's own HandBrake profiles (created, duplicated or imported). The built-ins are
+    /// not in here - they ship inside the app.</summary>
+    public static string GetHandBrakeProfilesFilePath() => Path.Combine(GetProfilesDirectory(), "handbrake-profiles.json");
+
+    /// <summary>The single presets file Compressarr generates (built-ins plus the user's profiles) and
+    /// passes to HandBrakeCLI with one --preset-import-file. Derived data: never backed up, always
+    /// rebuilt from the two sources above.</summary>
+    public static string GetHandBrakeActivePresetsFilePath() => Path.Combine(GetProfilesDirectory(), "handbrake-active.json");
 }

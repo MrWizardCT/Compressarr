@@ -172,8 +172,7 @@ async function loadQueuePresetNames() {
     const settingsRes = await fetch('/api/settings');
     const settings = await settingsRes.json();
     queueEtaFormat = settings.queueEtaFormat || 'DateTime';
-    if (!settings.presetsPath) return;
-    const presetsRes = await fetch(`/api/presets?path=${encodeURIComponent(settings.presetsPath)}`);
+    const presetsRes = await fetch('/api/presets');
     presetNames = await presetsRes.json();
   } catch { /* best-effort - the preset-override dropdown just stays empty if this fails */ }
 }

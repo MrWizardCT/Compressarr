@@ -40,8 +40,8 @@ public interface IRunOrchestrator
     /// in, so a not-yet-started file from any lane can be prioritized ahead of any other lane's.
     /// Purges old logs/reports by retention, records history + increments the run counter (only if
     /// files were processed), runs the optional post-exec command, builds the HTML report, and
-    /// fires a notification. Ported from Invoke-CompressarrRun. Returns null if HandBrakeCLI or
-    /// presets.json can't be found (the whole run aborts, matching v1).
+    /// fires a notification. Ported from Invoke-CompressarrRun. Returns null if HandBrakeCLI
+    /// can't be found (the whole run aborts, matching v1).
     ///
     /// stopToken is a graceful "Stop Monitoring" signal, distinct from Abort's hard-kill token -
     /// checked before every file (across every lane, not just between lanes), so the file actively
@@ -196,15 +196,6 @@ public sealed class RunOrchestrator : IRunOrchestrator
         }
         _logger.ClearProblem("handbrake-cli-missing");
 
-        var presetsPath = _pathExpander.Expand(config.HandBrake.PresetsPath);
-        if (!_pathExpander.PathExists(config.HandBrake.PresetsPath))
-        {
-            _logger.LogProblem("presets-file-missing", $"HandBrake presets file not found at {presetsPath}");
-            _progress.RunCompleted(0);
-            return null;
-        }
-        _logger.ClearProblem("presets-file-missing");
-
         var resumeFilePath = AppPaths.GetResumeFilePath();
         var resumeState = _resumeStore.Load(resumeFilePath);
 
@@ -275,18 +266,18 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 _logger.ClearProblem($"lane-no-preset:{lane.Id}");
 
                 // LaneValidator is the single source of truth for "does this lane's own configured
-                // TV/Movie preset actually exist in presets.json" - shared with the Lanes page's
+                // TV/Movie preset actually exist in Compressarr's profiles" - shared with the Lanes page's
                 // own validation (LaneEndpoints.cs), so the two can never disagree. At this point
                 // at least one of TvPreset/MoviePreset is non-empty (the no-preset-at-all case
                 // above already continued), so a "tvPreset"/"moviePreset" issue coming back here
-                // can only mean "set, but not found in presets.json" - the log/report wording
+                // can only mean "set, but not found in Compressarr's profiles" - the log/report wording
                 // below is kept exactly as it was before this was factored out, only the
                 // PresetExists condition itself moved.
-                var laneIssues = LaneValidator.Validate(lane, config, presetsPath, _pathExpander, _presets);
+                var laneIssues = LaneValidator.Validate(lane, config, _pathExpander, _presets);
 
                 if (laneIssues.Any(i => i.Field == "tvPreset"))
                 {
-                    _logger.LogProblem($"lane-tv-preset-missing:{lane.Id}", $"Lane [{lane.DisplayName}] - TV preset '{lane.TvPreset}' not found in presets.json. TV episodes in this lane will be skipped.");
+                    _logger.LogProblem($"lane-tv-preset-missing:{lane.Id}", $"Lane [{lane.DisplayName}] - TV preset '{lane.TvPreset}' not found in Compressarr's profiles. TV episodes in this lane will be skipped.");
                     thisLaneProblems.Add(ReportErrorCode.LaneTvPresetNotFound);
                 }
                 else
@@ -295,7 +286,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 }
                 if (laneIssues.Any(i => i.Field == "moviePreset"))
                 {
-                    _logger.LogProblem($"lane-movie-preset-missing:{lane.Id}", $"Lane [{lane.DisplayName}] - Movie preset '{lane.MoviePreset}' not found in presets.json. Movies in this lane will be skipped.");
+                    _logger.LogProblem($"lane-movie-preset-missing:{lane.Id}", $"Lane [{lane.DisplayName}] - Movie preset '{lane.MoviePreset}' not found in Compressarr's profiles. Movies in this lane will be skipped.");
                     thisLaneProblems.Add(ReportErrorCode.LaneMoviePresetNotFound);
                 }
                 else

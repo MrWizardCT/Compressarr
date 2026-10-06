@@ -95,6 +95,20 @@ public partial class App : Application
 
         Services = _webApp.Services;
 
+        // 2.2: Compressarr only ever uses its own encoder profiles. Once, carry over the presets the
+        // lanes used from HandBrake's presets.json; then make sure the generated file HandBrake is
+        // handed is current. Best effort - a failure here is logged, and the file is checked again
+        // before every encode anyway.
+        try
+        {
+            Services.GetRequiredService<Compressarr.Core.Presets.IHandBrakeProfileMigration>().RunIfNeeded();
+            Services.GetRequiredService<Compressarr.Core.Presets.IHandBrakeProfileStore>().EnsureActiveFile();
+        }
+        catch (Exception ex)
+        {
+            Services.GetRequiredService<Compressarr.Core.Logging.IRunLogger>().Log($"Profile setup failed: {ex.Message}", Compressarr.Core.Logging.LogSeverity.Error);
+        }
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;

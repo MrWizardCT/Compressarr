@@ -11,7 +11,7 @@ public sealed record BackupFileInfo(string FileName, long SizeBytes, DateTimeOff
 
 public interface IBackupService
 {
-    /// <summary>Bundles settings/lanes, the run counter, resume state, and the history CSV into a
+    /// <summary>Bundles settings/lanes, the run counter, resume state, the history CSV and the user's own encoder profiles into a
     /// timestamped zip in the configured backup folder, then prunes bundles older than retention.
     /// Reloads config itself, so it always acts on whatever was most recently saved rather than a
     /// caller's possibly-stale copy.</summary>
@@ -63,15 +63,17 @@ public sealed class BackupService : IBackupService
             var zipPath = Path.Combine(folder, fileName);
 
             // Settings/lanes (one file - Lanes is a property inside compressarr.settings.json, not
-            // a separate file), the run counter, resume/run state, and the history CSV. Deliberately
-            // excludes presets.json (HandBrake's own file, lives outside Compressarr's AppData tree)
-            // and the Reports folder (regenerable HTML dumps, already retention-pruned).
+            // a separate file), the run counter, resume/run state, the history CSV, and the user's own
+            // encoder profiles. Deliberately excludes the generated handbrake-active.json (derived from
+            // the profiles, rebuilt before every encode) and the Reports folder (regenerable HTML dumps,
+            // already retention-pruned).
             var historyFile = Path.Combine(_pathExpander.Expand(config.Logging.LogFilePath), "Compressarr_History.csv");
             var sources = new[]
             {
                 AppPaths.GetConfigFilePath(),
                 AppPaths.GetRunCountFilePath(),
                 AppPaths.GetResumeFilePath(),
+                AppPaths.GetHandBrakeProfilesFilePath(),
                 historyFile
             };
 
@@ -144,6 +146,7 @@ public sealed class BackupService : IBackupService
 
                 RestoreEntry(tempDir, "compressarr.runcount.json", AppPaths.GetRunCountFilePath());
                 RestoreEntry(tempDir, "compressarr.resume.json", AppPaths.GetResumeFilePath());
+                RestoreEntry(tempDir, "handbrake-profiles.json", AppPaths.GetHandBrakeProfilesFilePath());
 
                 // Lands wherever the just-restored config's Log folder points - falls back to the
                 // pre-restore config if this particular backup didn't include settings at all.

@@ -12,7 +12,7 @@ namespace Compressarr.Core.Conversion;
 /// warning about its otherwise-incomplete config would just be noise.</summary>
 public static class LaneValidator
 {
-    public static List<ValidationIssue> Validate(LaneConfig lane, CompressarrConfig config, string presetsPath, IPathExpander pathExpander, IEncoderPresetService presets)
+    public static List<ValidationIssue> Validate(LaneConfig lane, CompressarrConfig config, IPathExpander pathExpander, IEncoderPresetService presets)
     {
         var issues = new List<ValidationIssue>();
         if (!lane.Enabled) return issues;
@@ -38,13 +38,13 @@ public static class LaneValidator
         }
         else
         {
-            if (!string.IsNullOrWhiteSpace(lane.TvPreset) && !presets.PresetExists(lane.TvPreset, presetsPath))
+            if (!string.IsNullOrWhiteSpace(lane.TvPreset) && !presets.PresetExists(lane.TvPreset))
             {
-                issues.Add(new ValidationIssue("tvPreset", $"TV preset '{lane.TvPreset}' was not found in presets.json - TV episodes in this lane will be skipped."));
+                issues.Add(new ValidationIssue("tvPreset", $"TV preset '{lane.TvPreset}' was not found in Compressarr's profiles - TV episodes in this lane will be skipped."));
             }
-            if (!string.IsNullOrWhiteSpace(lane.MoviePreset) && !presets.PresetExists(lane.MoviePreset, presetsPath))
+            if (!string.IsNullOrWhiteSpace(lane.MoviePreset) && !presets.PresetExists(lane.MoviePreset))
             {
-                issues.Add(new ValidationIssue("moviePreset", $"Movie preset '{lane.MoviePreset}' was not found in presets.json - movies in this lane will be skipped."));
+                issues.Add(new ValidationIssue("moviePreset", $"Movie preset '{lane.MoviePreset}' was not found in Compressarr's profiles - movies in this lane will be skipped."));
             }
         }
 

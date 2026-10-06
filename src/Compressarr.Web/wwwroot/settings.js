@@ -8,13 +8,10 @@ renderNav('settings');
 function setStatus(text, success) { setStatusMessage(text, success ? 'success' : ''); }
 
 // Logical validation-issue field key -> the actual input it lives on (see ValidationIssue's own
-// note on why these can differ - e.g. the HandBrakeCliPath field's real id is #hbCliPath).
+// note on why these can differ).
 const SETTINGS_FIELD_MAP = {
-  handBrakeCliPath: '#hbCliPath',
-  presetsPath: '#presetsPath',
   fileBotCliPath: '#fileBotCliPath',
-  vidTypes: '#vidTypes',
-  handBrakeOptions: '#hbOptions'
+  vidTypes: '#vidTypes'
 };
 
 function applySettingsValidation(issues) {
@@ -59,9 +56,6 @@ document.getElementById('fileBotTvEpisodeFormat').addEventListener('change', e =
 });
 
 function fillForm(dto) {
-  document.getElementById('hbCliPath').value = dto.handBrakeCliPath;
-  document.getElementById('presetsPath').value = dto.presetsPath;
-  document.getElementById('hbOptions').value = dto.handBrakeOptions;
   document.getElementById('fileBotEnabled').checked = dto.fileBotEnabled;
   document.getElementById('fileBotCliPath').value = dto.fileBotCliPath;
   document.getElementById('fileBotTvEnabled').checked = dto.fileBotTvEnabled;
@@ -115,9 +109,6 @@ function formatLastBackup(lastRunUtc) {
 
 function readForm() {
   return {
-    handBrakeCliPath: document.getElementById('hbCliPath').value,
-    presetsPath: document.getElementById('presetsPath').value,
-    handBrakeOptions: document.getElementById('hbOptions').value,
     fileBotEnabled: document.getElementById('fileBotEnabled').checked,
     fileBotCliPath: document.getElementById('fileBotCliPath').value,
     fileBotTvEnabled: document.getElementById('fileBotTvEnabled').checked,
@@ -228,66 +219,6 @@ document.getElementById('runOnceBtn').addEventListener('click', async () => {
   } else {
     setStatus(body.message || 'Run failed.');
   }
-});
-
-document.getElementById('checkHandBrakeBtn').addEventListener('click', async () => {
-  setStatus('Checking HandBrakeCLI...');
-  const statusRes = await fetch('/api/handbrake/status');
-  const statusBody = await statusRes.json();
-  if (statusBody.exists) {
-    setStatus('HandBrakeCLI already found at the configured path.', true);
-    return;
-  }
-
-  const releaseRes = await fetch('/api/handbrake/latest-release');
-  const release = await releaseRes.json();
-  if (!release.available) {
-    setStatus('No downloadable HandBrakeCLI build for this platform - on Linux, install it via your package manager or Flatpak.');
-    return;
-  }
-
-  const confirmed = confirm(
-    `Download and install HandBrakeCLI ${release.version}?\n\nFile: ${release.assetName}\nSize: ${release.sizeMb} MB\n\nInstalls into Compressarr's own folder - won't touch any existing HandBrake install.`
-  );
-  if (!confirmed) return;
-
-  setStatus('Downloading and installing HandBrakeCLI...');
-  const installRes = await fetch('/api/handbrake/install', { method: 'POST' });
-  const installBody = await installRes.json();
-  if (installRes.ok) {
-    document.getElementById('hbCliPath').value = installBody.installedPath;
-    setStatus(`HandBrakeCLI ${installBody.version} installed.`, true);
-  } else {
-    setStatus('HandBrakeCLI install failed.');
-  }
-});
-
-document.getElementById('installPresetsBtn').addEventListener('click', async () => {
-  const statusRes = await fetch('/api/presets/status');
-  const statusBody = await statusRes.json();
-
-  let mode = 'fresh';
-  if (statusBody.needsMergePrompt) {
-    const confirmed = confirm(
-      'A presets.json already exists at this path.\n\nMerge Compressarr\'s presets ("Compressarr SD-HD" and "Compressarr UHD AV1") into it? Every other preset already in that file is left untouched.'
-    );
-    if (!confirmed) return;
-    mode = 'merge';
-  }
-
-  setStatus('Installing presets...');
-  const res = await fetch('/api/presets/install', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode })
-  });
-  setStatus(res.ok ? 'Presets installed.' : 'Failed to install presets.', res.ok);
-});
-
-document.getElementById('reloadPresetsBtn').addEventListener('click', async () => {
-  setStatus('Reloading presets...');
-  const res = await fetch('/api/presets/reload', { method: 'POST' });
-  setStatus(res.ok ? 'Presets reloaded.' : 'Failed to reload presets.', res.ok);
 });
 
 async function testArrConnection(service) {

@@ -87,12 +87,10 @@ file sealed class TokenPathExpander : IPathExpander
 
 file sealed class FixedExtensionPresetService : IEncoderPresetService
 {
-    public IReadOnlyList<HandBrakePreset> GetPresets(string presetsPath) => Array.Empty<HandBrakePreset>();
-    public IReadOnlyList<string> GetPresetNames(string presetsPath) => Array.Empty<string>();
-    public bool PresetExists(string presetName, string presetsPath) => true;
-    public HandBrakePreset? GetPreset(string presetName, string presetsPath) => null;
-    public string GetOutputExtension(string presetName, string presetsPath, out string? warning) { warning = null; return ".mkv"; }
-    public void InvalidateCache(string? presetsPath = null) { }
+    public IReadOnlyList<string> GetPresetNames() => Array.Empty<string>();
+    public bool PresetExists(string presetName) => true;
+    public string GetOutputExtension(string presetName, out string? warning) { warning = null; return ".mkv"; }
+    public string PreparePresetSource() => "presets.json";
 }
 
 /// <summary>Simulates HandBrakeCLI by writing a real (tiny) output file, since the orchestrator

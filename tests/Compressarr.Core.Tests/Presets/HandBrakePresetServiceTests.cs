@@ -1,85 +1,58 @@
+using System.Text.Json.Nodes;
+using Compressarr.Core.Config;
 using Compressarr.Core.Presets;
 
 namespace Compressarr.Core.Tests.Presets;
 
-public class HandBrakePresetServiceTests : IDisposable
+public class HandBrakePresetServiceTests : AppDataTestBase
 {
-    private readonly string _tempDir = Directory.CreateTempSubdirectory("compressarr-preset-tests-").FullName;
-
-    public void Dispose() => Directory.Delete(_tempDir, recursive: true);
-
-    private string WritePresetsFile(string json)
+    private static JsonObject Profile(string name, string format) => new()
     {
-        var path = Path.Combine(_tempDir, "presets.json");
-        File.WriteAllText(path, json);
-        return path;
-    }
+        ["PresetName"] = name,
+        ["FileFormat"] = format,
+        ["Folder"] = false
+    };
 
-    // A folder-grouped tree: a top-level folder ("General") containing two leaf presets, plus one
-    // leaf preset directly under PresetList with no folder grouping - mirrors real HandBrake
-    // presets.json shape, confirmed against an actual generated presets.json: a folder node
-    // carries "Folder": true alongside a PresetName (used as its label in HandBrake's own UI) and
-    // a ChildrenArray, and must NOT be treated as a real, selectable preset itself.
-    private const string FixtureTree = """
-        {
-          "PresetList": [
-            {
-              "PresetName": "General",
-              "Folder": true,
-              "ChildrenArray": [
-                { "PresetName": "Fast 1080p30", "FileFormat": "av_mp4" },
-                { "PresetName": "H.265 MKV 2160p", "FileFormat": "av_mkv" }
-              ]
-            },
-            { "PresetName": "Very Fast 720p30", "FileFormat": "mp4" }
-          ]
-        }
-        """;
-
-    [Fact]
-    public void GetPresets_FlattensNestedTree_ReturnsOnlyLeaves()
+    private static (HandBrakePresetService Service, HandBrakeProfileStore Store) Make()
     {
-        var service = new HandBrakePresetService();
-        var path = WritePresetsFile(FixtureTree);
-
-        var presets = service.GetPresets(path);
-
-        Assert.Equal(3, presets.Count); // General's 2 children + the top-level leaf - NOT "General" itself
-        Assert.DoesNotContain(presets, p => p.PresetName == "General");
-        Assert.Contains(presets, p => p.PresetName == "Fast 1080p30" && p.FileFormat == "av_mp4");
-        Assert.Contains(presets, p => p.PresetName == "H.265 MKV 2160p" && p.FileFormat == "av_mkv");
-        Assert.Contains(presets, p => p.PresetName == "Very Fast 720p30" && p.FileFormat == "mp4");
+        var store = new HandBrakeProfileStore();
+        return (new HandBrakePresetService(store), store);
     }
 
     [Fact]
-    public void GetPresets_FolderNode_NeverIncludedEvenWithoutChildren()
+    public void GetPresetNames_IsBuiltInsPlusYours_SortedIgnoringCase()
     {
-        var service = new HandBrakePresetService();
-        var path = WritePresetsFile("""{"PresetList":[{"PresetName":"Empty Folder","Folder":true,"ChildrenArray":[]}]}""");
+        var (service, store) = Make();
+        store.AddUserProfiles(new[] { Profile("Alpha", "av_mkv"), Profile("zulu", "av_mp4") });
 
-        Assert.Empty(service.GetPresets(path));
+        Assert.Equal(
+            new[] { "Alpha", "Compressarr SD-HD", "Compressarr UHD AV1", "zulu" },
+            service.GetPresetNames().ToArray());
     }
 
     [Fact]
-    public void PresetExists_KnownAndUnknownNames()
+    public void PresetExists_KnownAndUnknownNames_IgnoringCase()
     {
-        var service = new HandBrakePresetService();
-        var path = WritePresetsFile(FixtureTree);
+        var (service, store) = Make();
+        store.AddUserProfiles(new[] { Profile("Mine", "av_mkv") });
 
-        Assert.True(service.PresetExists("Fast 1080p30", path));
-        Assert.False(service.PresetExists("Does Not Exist", path));
+        Assert.True(service.PresetExists("Compressarr SD-HD"));
+        Assert.True(service.PresetExists("compressarr sd-hd"));
+        Assert.True(service.PresetExists("Mine"));
+        Assert.False(service.PresetExists("Fast 1080p30")); // a HandBrake stock preset - not ours unless imported
+        Assert.False(service.PresetExists("Does Not Exist"));
     }
 
     [Theory]
-    [InlineData("Fast 1080p30", ".mp4")]
-    [InlineData("H.265 MKV 2160p", ".mkv")]
-    [InlineData("Very Fast 720p30", ".mp4")]
+    [InlineData("Compressarr SD-HD", ".mkv")]
+    [InlineData("Mp4One", ".mp4")]
+    [InlineData("MkvOne", ".mkv")]
     public void GetOutputExtension_MapsFileFormatSubstring(string presetName, string expectedExtension)
     {
-        var service = new HandBrakePresetService();
-        var path = WritePresetsFile(FixtureTree);
+        var (service, store) = Make();
+        store.AddUserProfiles(new[] { Profile("Mp4One", "av_mp4"), Profile("MkvOne", "av_mkv") });
 
-        var extension = service.GetOutputExtension(presetName, path, out var warning);
+        var extension = service.GetOutputExtension(presetName, out var warning);
 
         Assert.Equal(expectedExtension, extension);
         Assert.Null(warning);
@@ -88,10 +61,9 @@ public class HandBrakePresetServiceTests : IDisposable
     [Fact]
     public void GetOutputExtension_UnknownPreset_DefaultsToMp4WithWarning()
     {
-        var service = new HandBrakePresetService();
-        var path = WritePresetsFile(FixtureTree);
+        var (service, _) = Make();
 
-        var extension = service.GetOutputExtension("Nonexistent", path, out var warning);
+        var extension = service.GetOutputExtension("Nonexistent", out var warning);
 
         Assert.Equal(".mp4", extension);
         Assert.NotNull(warning);
@@ -100,26 +72,35 @@ public class HandBrakePresetServiceTests : IDisposable
     [Fact]
     public void GetOutputExtension_UnrecognizedFileFormat_DefaultsToMp4WithWarning()
     {
-        var service = new HandBrakePresetService();
-        var path = WritePresetsFile("""{"PresetList":[{"PresetName":"Weird","FileFormat":"av_avi"}]}""");
+        var (service, store) = Make();
+        store.AddUserProfiles(new[] { Profile("Weird", "av_avi") });
 
-        var extension = service.GetOutputExtension("Weird", path, out var warning);
+        var extension = service.GetOutputExtension("Weird", out var warning);
 
         Assert.Equal(".mp4", extension);
         Assert.NotNull(warning);
     }
 
     [Fact]
-    public void InvalidateCache_ForcesReReadFromDisk()
+    public void PreparePresetSource_ReturnsTheGeneratedFile_AndItExists()
     {
-        var service = new HandBrakePresetService();
-        var path = WritePresetsFile("""{"PresetList":[{"PresetName":"One","FileFormat":"mp4"}]}""");
+        var (service, _) = Make();
 
-        Assert.Single(service.GetPresets(path));
+        var source = service.PreparePresetSource();
 
-        File.WriteAllText(path, """{"PresetList":[{"PresetName":"One","FileFormat":"mp4"},{"PresetName":"Two","FileFormat":"mkv"}]}""");
-        service.InvalidateCache(path);
+        Assert.Equal(AppPaths.GetHandBrakeActivePresetsFilePath(), source);
+        Assert.True(File.Exists(source));
+    }
 
-        Assert.Equal(2, service.GetPresets(path).Count);
+    [Fact]
+    public void PreparePresetSource_PicksUpAProfileChange()
+    {
+        var (service, store) = Make();
+        var first = File.ReadAllText(service.PreparePresetSource());
+
+        store.AddUserProfiles(new[] { Profile("Mine", "av_mkv") });
+
+        Assert.DoesNotContain("Mine", first);
+        Assert.Contains("Mine", File.ReadAllText(service.PreparePresetSource()));
     }
 }

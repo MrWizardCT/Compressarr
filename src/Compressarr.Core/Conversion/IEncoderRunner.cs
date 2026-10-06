@@ -7,7 +7,7 @@ namespace Compressarr.Core.Conversion;
 /// <param name="ToolPath">The encoder's executable, already path-expanded.</param>
 /// <param name="SourcePath">The file to encode.</param>
 /// <param name="OutputPath">Where to write the result (the engine's own collision-safe temp name).</param>
-/// <param name="PresetSource">Where the preset catalog lives (HandBrake: the presets.json path).</param>
+/// <param name="PresetSource">Where the preset catalog lives (HandBrake: the generated presets file).</param>
 /// <param name="PresetName">The preset to encode with.</param>
 /// <param name="ExtraOptions">Free-form extra command-line options, or null.</param>
 /// <param name="DetailLogFile">Where the runner writes the encoder's own detail log.</param>

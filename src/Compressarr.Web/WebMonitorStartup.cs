@@ -14,6 +14,7 @@ public static class WebMonitorStartup
         app.MapScheduleEndpoints();
         app.MapLaneEndpoints();
         app.MapPresetEndpoints();
+        app.MapEncoderEndpoints();
         app.MapHandBrakeEndpoints();
         app.MapRunEndpoints();
         app.MapHistoryEndpoints();

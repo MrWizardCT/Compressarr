@@ -26,7 +26,6 @@ public sealed class LaneProcessingContext
     public required string TvShowBasePath { get; set; }
     public required string MovieBasePath { get; set; }
     public required string HbLoc { get; set; }
-    public required string PresetsPath { get; set; }
 
     /// <summary>"File i of N" and log-filename zero-padding - a point-in-time estimate from this
     /// lane's own prep, cosmetic only (a queue-control edit mid-run can make the real count drift
@@ -212,7 +211,6 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         }
 
         var hbloc = _pathExpander.Expand(config.HandBrake.CliPath);
-        var presetsPath = _pathExpander.Expand(config.HandBrake.PresetsPath);
 
         // LaneValidator is the single source of truth for "does this lane have an Output folder
         // configured" - shared with RunOrchestrator's own lane-prep loop and the Lanes page's own
@@ -221,7 +219,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         // RunOrchestrator right before it called PrepareLane; re-deriving them here would just be
         // redundant, not wrong, but there's nothing useful to do with a second copy of the same
         // warning.
-        if (LaneValidator.Validate(lane, config, presetsPath, _pathExpander, _presets).Any(i => i.Field == "output"))
+        if (LaneValidator.Validate(lane, config, _pathExpander, _presets).Any(i => i.Field == "output"))
         {
             _logger.LogProblem($"lane-no-output:{lane.Id}", $"Lane '{lane.DisplayName}' has no Output folder configured and 'write output to same folder as input' is off - skipping.");
             reportProblems?.Add(ReportErrorCode.LaneNoOutputConfigured);
@@ -328,7 +326,6 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             TvShowBasePath = tvShowBasePath,
             MovieBasePath = movieBasePath,
             HbLoc = hbloc,
-            PresetsPath = presetsPath,
             FileIndex = 0,
             FileTotal = fileCount,
             PadSize = padSize,
@@ -357,7 +354,6 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         var tvShowBasePath = context.TvShowBasePath;
         var movieBasePath = context.MovieBasePath;
         var hbloc = context.HbLoc;
-        var presetsPath = context.PresetsPath;
 
         var file = new FileInfo(resumeEntry.FullName);
 
@@ -400,7 +396,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             };
         }
 
-        var extension = _presets.GetOutputExtension(presetName, presetsPath, out var extensionWarning);
+        var extension = _presets.GetOutputExtension(presetName, out var extensionWarning);
         if (extensionWarning is not null) _logger.Log(extensionWarning, LogSeverity.Error);
 
         var destFolder = config.Processing.OutSameAsIn ? file.DirectoryName! : outputBase;
@@ -439,8 +435,12 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             }
         }
 
+        // Brings the generated profile file up to date (a no-op unless a profile changed since it
+        // was last written) right before the encoder is started.
+        var presetSource = _presets.PreparePresetSource();
+
         var runResult = await _processRunner.RunAsync(
-            new EncodeRequest(hbloc, file.FullName, tempFileName, presetsPath, presetName, config.HandBrake.Options, detailLogFile),
+            new EncodeRequest(hbloc, file.FullName, tempFileName, presetSource, presetName, config.HandBrake.Options, detailLogFile),
             OnProgress,
             cancellationToken);
         var endTime = DateTime.Now;
@@ -459,7 +459,6 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         tvShowBasePath = _pathExpander.Expand(lane.TvShowBasePath);
         movieBasePath = _pathExpander.Expand(lane.MovieBasePath);
         hbloc = _pathExpander.Expand(config.HandBrake.CliPath);
-        presetsPath = _pathExpander.Expand(config.HandBrake.PresetsPath);
         _metadata.Enabled = config.Processing.ClearTitleMetadata;
         context.Lane = lane;
         context.Config = config;
@@ -467,7 +466,6 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         context.TvShowBasePath = tvShowBasePath;
         context.MovieBasePath = movieBasePath;
         context.HbLoc = hbloc;
-        context.PresetsPath = presetsPath;
 
         // Same reasoning as the config reload just above, for resume state: pull in whatever a
         // queue-control request changed on OTHER entries while this file was encoding, so the save

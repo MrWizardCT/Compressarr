@@ -30,8 +30,9 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IConfigStore, JsonConfigStore>();
         services.AddSingleton<IPathExpander, PathExpander>();
+        services.AddSingleton<IHandBrakeProfileStore, HandBrakeProfileStore>();
         services.AddSingleton<IEncoderPresetService, HandBrakePresetService>();
-        services.AddSingleton<IPresetInstaller, PresetInstaller>();
+        services.AddSingleton<IHandBrakeProfileMigration, HandBrakeProfileMigration>();
         services.AddSingleton<IHandBrakeInstaller, HandBrakeInstaller>();
 
         services.AddSingleton<IVideoFileScanner, VideoFileScanner>();

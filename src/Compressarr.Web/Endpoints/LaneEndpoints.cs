@@ -12,8 +12,7 @@ public static class LaneEndpoints
 {
     private static List<ValidationIssueDto> Validate(LaneConfig lane, CompressarrConfig config, IPathExpander pathExpander, IEncoderPresetService presets)
     {
-        var presetsPath = pathExpander.Expand(config.HandBrake.PresetsPath);
-        return LaneValidator.Validate(lane, config, presetsPath, pathExpander, presets)
+        return LaneValidator.Validate(lane, config, pathExpander, presets)
             .Select(i => new ValidationIssueDto(i.Field, i.Message)).ToList();
     }
 

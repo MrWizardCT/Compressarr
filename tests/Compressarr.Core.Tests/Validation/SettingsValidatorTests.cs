@@ -13,20 +13,11 @@ public class SettingsValidatorTests : IDisposable
     private readonly string _tempDir = Directory.CreateTempSubdirectory("compressarr-settings-validator-tests-").FullName;
     public void Dispose() => Directory.Delete(_tempDir, recursive: true);
 
-    private CompressarrConfig MakeHealthyConfig()
+    private static CompressarrConfig MakeHealthyConfig() => new()
     {
-        var hbCli = Path.Combine(_tempDir, "HandBrakeCLI.exe");
-        var presets = Path.Combine(_tempDir, "presets.json");
-        File.WriteAllText(hbCli, "");
-        File.WriteAllText(presets, "{}");
-
-        return new CompressarrConfig
-        {
-            HandBrake = new HandBrakeSettings { CliPath = hbCli, PresetsPath = presets },
-            FileBot = new FileBotSettings { Enabled = false },
-            Processing = new ProcessingSettings { VidTypes = new() { "mkv" } }
-        };
-    }
+        FileBot = new FileBotSettings { Enabled = false },
+        Processing = new ProcessingSettings { VidTypes = new() { "mkv" } }
+    };
 
     [Fact]
     public void Validate_HealthyConfig_ReturnsNoIssues()
@@ -38,37 +29,17 @@ public class SettingsValidatorTests : IDisposable
         Assert.Empty(issues);
     }
 
+    // The HandBrake path/options checks moved to EncoderValidator (the Encoder page) in 2.2 - a
+    // missing HandBrakeCLI must no longer show up as a Settings-page issue.
     [Fact]
-    public void Validate_MissingHandBrakeCliPath_FlagsField()
+    public void Validate_MissingHandBrakeCli_IsNoLongerASettingsIssue()
     {
         var config = MakeHealthyConfig();
         config.HandBrake.CliPath = Path.Combine(_tempDir, "DoesNotExist.exe");
 
         var issues = SettingsValidator.Validate(config, new PassThroughPathExpander());
 
-        Assert.Contains(issues, i => i.Field == "handBrakeCliPath");
-    }
-
-    [Fact]
-    public void Validate_EmptyHandBrakeCliPath_FlagsField()
-    {
-        var config = MakeHealthyConfig();
-        config.HandBrake.CliPath = "";
-
-        var issues = SettingsValidator.Validate(config, new PassThroughPathExpander());
-
-        Assert.Contains(issues, i => i.Field == "handBrakeCliPath");
-    }
-
-    [Fact]
-    public void Validate_MissingPresetsPath_FlagsField()
-    {
-        var config = MakeHealthyConfig();
-        config.HandBrake.PresetsPath = Path.Combine(_tempDir, "DoesNotExist.json");
-
-        var issues = SettingsValidator.Validate(config, new PassThroughPathExpander());
-
-        Assert.Contains(issues, i => i.Field == "presetsPath");
+        Assert.Empty(issues);
     }
 
     [Fact]
@@ -120,58 +91,17 @@ public class SettingsValidatorTests : IDisposable
         Assert.Contains(issues, i => i.Field == "vidTypes");
     }
 
-    // Code-review finding (v2.1.4 review, #5 LOW-MED): a malformed Extra CLI Options value (an
-    // unterminated quote) used to just silently mis-tokenize at encode time with no warning
-    // anywhere. Surfaced here instead, on the Settings page, the same way every other base-
-    // configuration problem already is.
-
-    [Fact]
-    public void Validate_UnbalancedQuotesInHandBrakeOptions_FlagsField()
-    {
-        var config = MakeHealthyConfig();
-        config.HandBrake.Options = "--custom-anamorphic \"16:9 --two-pass";
-
-        var issues = SettingsValidator.Validate(config, new PassThroughPathExpander());
-
-        Assert.Contains(issues, i => i.Field == "handBrakeOptions");
-    }
-
-    [Fact]
-    public void Validate_BalancedQuotesInHandBrakeOptions_DoesNotFlag()
-    {
-        var config = MakeHealthyConfig();
-        config.HandBrake.Options = "--custom-anamorphic \"16:9\" --two-pass";
-
-        var issues = SettingsValidator.Validate(config, new PassThroughPathExpander());
-
-        Assert.DoesNotContain(issues, i => i.Field == "handBrakeOptions");
-    }
-
-    [Fact]
-    public void Validate_EmptyHandBrakeOptions_DoesNotFlag()
-    {
-        var config = MakeHealthyConfig();
-        config.HandBrake.Options = "";
-
-        var issues = SettingsValidator.Validate(config, new PassThroughPathExpander());
-
-        Assert.DoesNotContain(issues, i => i.Field == "handBrakeOptions");
-    }
-
     [Fact]
     public void Validate_MultipleSimultaneousProblems_AllAppear()
     {
         var config = new CompressarrConfig
         {
-            HandBrake = new HandBrakeSettings { CliPath = "", PresetsPath = "" },
             FileBot = new FileBotSettings { Enabled = true, CliPath = "" },
             Processing = new ProcessingSettings { VidTypes = new() }
         };
 
         var issues = SettingsValidator.Validate(config, new PassThroughPathExpander());
 
-        Assert.Contains(issues, i => i.Field == "handBrakeCliPath");
-        Assert.Contains(issues, i => i.Field == "presetsPath");
         Assert.Contains(issues, i => i.Field == "fileBotCliPath");
         Assert.Contains(issues, i => i.Field == "vidTypes");
     }

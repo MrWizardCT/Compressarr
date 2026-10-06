@@ -165,11 +165,7 @@ async function removeLane(node) {
 }
 
 async function populatePresetList() {
-  const settingsRes = await fetch('/api/settings');
-  const settings = await settingsRes.json();
-  if (!settings.presetsPath) return;
-
-  const presetsRes = await fetch(`/api/presets?path=${encodeURIComponent(settings.presetsPath)}`);
+  const presetsRes = await fetch('/api/presets');
   presetNames = await presetsRes.json();
 }
 

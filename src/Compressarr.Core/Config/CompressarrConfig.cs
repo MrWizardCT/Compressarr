@@ -60,7 +60,13 @@ public sealed class UiStateSettings
 public sealed class HandBrakeSettings
 {
     public string CliPath { get; set; } = "%ProgramFiles%\\HandBrake\\HandBrakeCLI.exe";
+
+    /// <summary>Retired in 2.2: Compressarr always uses its own profiles now (see
+    /// IHandBrakeProfileStore), so this is no longer shown or validated. Kept in the settings file
+    /// (a 2.1.x install reads the same file) and used only to find the old presets.json when
+    /// migrating the presets a lane used, and as Import's default location.</summary>
     public string PresetsPath { get; set; } = "%appdata%\\HandBrake\\presets.json";
+
     public string Options { get; set; } = "";
 }
 
