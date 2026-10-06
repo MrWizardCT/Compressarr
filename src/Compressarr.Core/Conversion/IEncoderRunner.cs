@@ -11,6 +11,8 @@ namespace Compressarr.Core.Conversion;
 /// <param name="PresetName">The preset to encode with.</param>
 /// <param name="ExtraOptions">Free-form extra command-line options, or null.</param>
 /// <param name="DetailLogFile">Where the runner writes the encoder's own detail log.</param>
+/// <param name="ProbePath">A second tool some engines need (ffmpeg: ffprobe, to read the source and verify
+/// the result); HandBrake ignores it.</param>
 public sealed record EncodeRequest(
     string ToolPath,
     string SourcePath,
@@ -18,12 +20,27 @@ public sealed record EncodeRequest(
     string PresetSource,
     string PresetName,
     string? ExtraOptions,
-    string DetailLogFile);
+    string DetailLogFile,
+    string? ProbePath = null);
 
 /// <summary>One live progress reading, already parsed from the encoder's own output.</summary>
 public sealed record EncodeProgress(double Percent, double? Fps, string? Eta);
 
-public sealed record EncodeResult(bool Success, string DetailLogFile, bool Cancelled = false);
+/// <summary>Why an encode failed, when the runner can say more than "it failed".</summary>
+public enum EncodeFailureKind
+{
+    /// <summary>Not a failure, or no more specific reason than the encoder itself failing.</summary>
+    None,
+
+    /// <summary>The encoder exited normally but the file it wrote is much shorter/longer than the source
+    /// (a corrupt source, a full disk): caught before the original is touched.</summary>
+    LengthMismatch,
+
+    /// <summary>The encode could not even start (profile missing, source unreadable, no video stream).</summary>
+    NotStarted
+}
+
+public sealed record EncodeResult(bool Success, string DetailLogFile, bool Cancelled = false, EncodeFailureKind Failure = EncodeFailureKind.None, string? FailureMessage = null);
 
 public interface IEncoderRunner
 {

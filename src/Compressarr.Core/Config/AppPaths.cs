@@ -62,4 +62,11 @@ public static class AppPaths
     /// passes to HandBrakeCLI with one --preset-import-file. Derived data: never backed up, always
     /// rebuilt from the two sources above.</summary>
     public static string GetHandBrakeActivePresetsFilePath() => Path.Combine(GetProfilesDirectory(), "handbrake-active.json");
+
+    /// <summary>The user's own ffmpeg profiles. The built-ins ship inside the app.</summary>
+    public static string GetFFmpegProfilesFilePath() => Path.Combine(GetProfilesDirectory(), "ffmpeg-profiles.json");
+
+    /// <summary>Where Check/Install puts a managed copy of ffmpeg (and ffprobe) - per user, inside
+    /// Compressarr's own folder, so no administrator rights are needed.</summary>
+    public static string GetToolsDirectory() => Path.Combine(GetAppDataDirectory(), "tools");
 }

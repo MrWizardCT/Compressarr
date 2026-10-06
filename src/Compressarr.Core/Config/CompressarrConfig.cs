@@ -29,6 +29,10 @@ public enum DestinationCollisionMode
 public sealed class CompressarrConfig
 {
     public HandBrakeSettings HandBrake { get; set; } = new();
+
+    /// <summary>The optional ffmpeg encoder's tool paths and extra options (2.2). Additive: a 2.1.x
+    /// install ignores it.</summary>
+    public FFmpegSettings FFmpeg { get; set; } = new();
     public List<LaneConfig> Lanes { get; set; } = new();
     public ProcessingSettings Processing { get; set; } = new();
     public LoggingSettings Logging { get; set; } = new();
@@ -55,6 +59,15 @@ public sealed class UiStateSettings
     /// newer than this. 0 before the History page has ever been visited, in which case the badges
     /// count every run in the retention window (same as before this field existed).</summary>
     public int HistoryViewedThroughRunNumber { get; set; }
+}
+
+/// <summary>The ffmpeg encoder's settings. Paths default to where the Encoder page's Check/Install
+/// puts a managed copy, inside Compressarr's own folder.</summary>
+public sealed class FFmpegSettings
+{
+    public string Path { get; set; } = "%CompressarrAppData%\\tools\\ffmpeg\\ffmpeg.exe";
+    public string ProbePath { get; set; } = "%CompressarrAppData%\\tools\\ffmpeg\\ffprobe.exe";
+    public string Options { get; set; } = "";
 }
 
 public sealed class HandBrakeSettings
@@ -116,6 +129,19 @@ public sealed class LaneConfig
     public string MoviePreset { get; set; } = "";
     public string TvShowBasePath { get; set; } = "";
     public string MovieBasePath { get; set; } = "";
+
+    /// <summary>Which encoder this lane uses (2.2). HandBrake unless chosen otherwise. A 2.1.x install
+    /// ignores the field; it would then look for a HandBrake preset by an ffmpeg profile's name, find
+    /// none, and skip the lane with the usual "preset not found" message - never encoding with the
+    /// wrong tool.</summary>
+    public EncoderEngine Engine { get; set; } = EncoderEngine.HandBrake;
+}
+
+/// <summary>The encoders a lane can use.</summary>
+public enum EncoderEngine
+{
+    HandBrake,
+    FFmpeg
 }
 
 public sealed class ProcessingSettings
