@@ -20,6 +20,7 @@ public class EndpointSmokeTests
     [InlineData("/api/lanes")]
     [InlineData("/api/settings")]
     [InlineData("/api/settings/export")]
+    [InlineData("/api/schedule")]
     [InlineData("/api/notifications/settings")]
     [InlineData("/api/notifications/channels")]
     [InlineData("/api/notifications/types")]

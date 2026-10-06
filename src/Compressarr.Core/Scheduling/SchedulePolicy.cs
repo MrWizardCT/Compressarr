@@ -103,6 +103,23 @@ public static class SchedulePolicy
         return null;
     }
 
+    /// <summary>The configured window (start, end text) for a day starting on <paramref name="day"/>,
+    /// according to the layout in use. EachDay with a missing entry (a hand-edited settings file with
+    /// fewer than seven) yields nothing, i.e. that day has no window.</summary>
+    internal static (string? Start, string? End) WindowTextFor(ScheduleSettings settings, DayOfWeek day)
+    {
+        switch (settings.Mode)
+        {
+            case ScheduleMode.WeekdaysAndWeekends when day is DayOfWeek.Saturday or DayOfWeek.Sunday:
+                return (settings.WeekendDayStart, settings.WeekendDayEnd);
+            case ScheduleMode.EachDay:
+                var index = (int)day;
+                return index < settings.Days.Count ? (settings.Days[index].Start, settings.Days[index].End) : (null, null);
+            default:
+                return (settings.DayStart, settings.DayEnd);
+        }
+    }
+
     /// <summary>The daytime windows starting on or after <paramref name="firstDate"/>, as local
     /// [Start, End) pairs, with overlapping/touching ones merged (Friday's late window running into
     /// Saturday's early one is one window). A window belongs to the day it starts on, which is also
@@ -113,9 +130,7 @@ public static class SchedulePolicy
         for (var i = 0; i < days; i++)
         {
             var date = firstDate.AddDays(i);
-            var weekend = settings.WeekendDifferent && date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
-            var startText = weekend ? settings.WeekendDayStart : settings.DayStart;
-            var endText = weekend ? settings.WeekendDayEnd : settings.DayEnd;
+            var (startText, endText) = WindowTextFor(settings, date.DayOfWeek);
             if (!TryParseTime(startText, out var start) || !TryParseTime(endText, out var end)) continue;
             if (start == end) continue; // "no daytime window" - always night
 

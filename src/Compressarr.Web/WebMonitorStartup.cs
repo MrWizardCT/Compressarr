@@ -11,6 +11,7 @@ public static class WebMonitorStartup
     public static void MapCompressarrEndpoints(this WebApplication app)
     {
         app.MapSettingsEndpoints();
+        app.MapScheduleEndpoints();
         app.MapLaneEndpoints();
         app.MapPresetEndpoints();
         app.MapHandBrakeEndpoints();

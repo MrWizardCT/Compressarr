@@ -14,11 +14,7 @@ const SETTINGS_FIELD_MAP = {
   presetsPath: '#presetsPath',
   fileBotCliPath: '#fileBotCliPath',
   vidTypes: '#vidTypes',
-  handBrakeOptions: '#hbOptions',
-  scheduleDayStart: '#scheduleDayStart',
-  scheduleDayEnd: '#scheduleDayEnd',
-  scheduleWeekendDayStart: '#scheduleWeekendDayStart',
-  scheduleWeekendDayEnd: '#scheduleWeekendDayEnd'
+  handBrakeOptions: '#hbOptions'
 };
 
 function applySettingsValidation(issues) {
@@ -61,58 +57,6 @@ document.getElementById('fileBotTvEpisodeFormat').addEventListener('change', e =
     argsEl.value = argsEl.value.split(otherFormat).join(newFormat);
   }
 });
-
-// The day/night schedule card: everything inside is greyed out while the master switch is off, the
-// weekend window only shows when it's in use, and the "mid-encode" choice only matters when the queue
-// is held in the daytime. Purely presentational - the saved values are always whatever is in the fields.
-function updateScheduleVisibility() {
-  const enabled = document.getElementById('scheduleEnabled').checked;
-  const body = document.getElementById('scheduleBody');
-  body.style.opacity = enabled ? '' : '0.5';
-  for (const el of body.querySelectorAll('input, select')) el.disabled = !enabled;
-  document.getElementById('scheduleWeekendRow').style.display =
-    document.getElementById('scheduleWeekendDifferent').checked ? '' : 'none';
-  document.getElementById('scheduleWhenDayStartsRow').style.display =
-    document.getElementById('scheduleOnlyOffHours').checked ? '' : 'none';
-  const risky = p => p === 'High' || p === 'Realtime';
-  document.getElementById('schedulePriorityWarning').style.display =
-    enabled && (risky(document.getElementById('scheduleDayPriority').value) || risky(document.getElementById('scheduleNightPriority').value)) ? '' : 'none';
-}
-for (const id of ['scheduleEnabled', 'scheduleWeekendDifferent', 'scheduleOnlyOffHours', 'scheduleDayPriority', 'scheduleNightPriority']) {
-  document.getElementById(id).addEventListener('change', updateScheduleVisibility);
-}
-
-function fillSchedule(schedule) {
-  // An older server (or a partial response) may send no schedule at all - leave the card's defaults.
-  if (schedule) {
-    document.getElementById('scheduleEnabled').checked = schedule.enabled;
-    document.getElementById('scheduleDayStart').value = schedule.dayStart;
-    document.getElementById('scheduleDayEnd').value = schedule.dayEnd;
-    document.getElementById('scheduleWeekendDifferent').checked = schedule.weekendDifferent;
-    document.getElementById('scheduleWeekendDayStart').value = schedule.weekendDayStart;
-    document.getElementById('scheduleWeekendDayEnd').value = schedule.weekendDayEnd;
-    document.getElementById('scheduleDayPriority').value = schedule.dayPriority;
-    document.getElementById('scheduleNightPriority').value = schedule.nightPriority;
-    document.getElementById('scheduleOnlyOffHours').checked = schedule.onlyEncodeOffHours;
-    document.getElementById('scheduleWhenDayStarts').value = schedule.whenDayStarts;
-  }
-  updateScheduleVisibility();
-}
-
-function readSchedule() {
-  return {
-    enabled: document.getElementById('scheduleEnabled').checked,
-    dayStart: document.getElementById('scheduleDayStart').value || '08:00',
-    dayEnd: document.getElementById('scheduleDayEnd').value || '22:00',
-    weekendDifferent: document.getElementById('scheduleWeekendDifferent').checked,
-    weekendDayStart: document.getElementById('scheduleWeekendDayStart').value || '10:00',
-    weekendDayEnd: document.getElementById('scheduleWeekendDayEnd').value || '20:00',
-    dayPriority: document.getElementById('scheduleDayPriority').value,
-    nightPriority: document.getElementById('scheduleNightPriority').value,
-    onlyEncodeOffHours: document.getElementById('scheduleOnlyOffHours').checked,
-    whenDayStarts: document.getElementById('scheduleWhenDayStarts').value
-  };
-}
 
 function fillForm(dto) {
   document.getElementById('hbCliPath').value = dto.handBrakeCliPath;
@@ -162,7 +106,6 @@ function fillForm(dto) {
   document.getElementById('backupIntervalDays').value = dto.backupIntervalDays;
   document.getElementById('backupRetentionDays').value = dto.backupRetentionDays;
   setLastBackupLabel(formatLastBackup(dto.backupLastRunUtc));
-  fillSchedule(dto.schedule);
   loadBackupList();
 }
 
@@ -221,8 +164,7 @@ function readForm() {
     // Read-only from the client - ConfigMapping.ApplySettingsDto never reads this field back in
     // (only BackupService itself sets it, after a real backup runs), so what's sent here doesn't
     // matter; the DTO record just requires a value.
-    backupLastRunUtc: null,
-    schedule: readSchedule()
+    backupLastRunUtc: null
   };
 }
 

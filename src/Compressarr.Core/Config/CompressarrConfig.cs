@@ -366,6 +366,21 @@ public enum DayHoldBehavior
     SuspendEncode
 }
 
+/// <summary>How the daytime window is laid out across the week.</summary>
+public enum ScheduleMode
+{
+    Everyday,
+    WeekdaysAndWeekends,
+    EachDay
+}
+
+/// <summary>One day's daytime window (HH:mm local time). Start equal to end means no daytime window that day.</summary>
+public sealed class ScheduleDayWindow
+{
+    public string Start { get; set; } = "08:00";
+    public string End { get; set; } = "22:00";
+}
+
 /// <summary>Optional day/night encoding schedule - OFF by default, so an install that never touches
 /// it behaves exactly as before. Inside the daytime window encodes run at DayPriority (and, with
 /// OnlyEncodeOffHours, don't run at all); outside it they run at NightPriority. All times are the
@@ -376,14 +391,21 @@ public sealed class ScheduleSettings
 {
     public bool Enabled { get; set; } = false;
 
-    /// <summary>HH:mm. Monday-Friday window (every day, unless WeekendDifferent).</summary>
+    /// <summary>Which of the three window layouts is in use: one window for every day, one for weekdays and
+    /// one for weekends, or a window for each day of the week.</summary>
+    public ScheduleMode Mode { get; set; } = ScheduleMode.Everyday;
+
+    /// <summary>HH:mm. The window for Everyday mode, and the Monday-Friday window in
+    /// WeekdaysAndWeekends mode.</summary>
     public string DayStart { get; set; } = "08:00";
     public string DayEnd { get; set; } = "22:00";
 
-    /// <summary>When true, Saturday and Sunday use the weekend window below instead.</summary>
-    public bool WeekendDifferent { get; set; } = false;
+    /// <summary>The Saturday-Sunday window in WeekdaysAndWeekends mode.</summary>
     public string WeekendDayStart { get; set; } = "10:00";
     public string WeekendDayEnd { get; set; } = "20:00";
+
+    /// <summary>EachDay mode: seven windows, indexed by DayOfWeek (0 = Sunday ... 6 = Saturday).</summary>
+    public List<ScheduleDayWindow> Days { get; set; } = Enumerable.Range(0, 7).Select(_ => new ScheduleDayWindow()).ToList();
 
     public EncodePriority DayPriority { get; set; } = EncodePriority.BelowNormal;
     public EncodePriority NightPriority { get; set; } = EncodePriority.Normal;

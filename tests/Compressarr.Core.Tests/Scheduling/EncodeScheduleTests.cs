@@ -117,7 +117,7 @@ public class SchedulePolicyTests
     [Fact]
     public void WeekendWindow_AppliesToSaturdayAndSunday_Only()
     {
-        var settings = new ScheduleSettings { Enabled = true, DayStart = "08:00", DayEnd = "22:00", WeekendDifferent = true, WeekendDayStart = "10:00", WeekendDayEnd = "20:00" };
+        var settings = new ScheduleSettings { Enabled = true, DayStart = "08:00", DayEnd = "22:00", Mode = ScheduleMode.WeekdaysAndWeekends, WeekendDayStart = "10:00", WeekendDayEnd = "20:00" };
 
         Assert.True(SchedulePolicy.Evaluate(settings, At(9, 9)).IsDaytime);    // Friday 9:00 - weekday window
         Assert.False(SchedulePolicy.Evaluate(settings, At(10, 9)).IsDaytime);  // Saturday 9:00 - weekend window not open yet
@@ -129,7 +129,7 @@ public class SchedulePolicyTests
     [Fact]
     public void WeekendWithNoWindow_IsNightAllWeekend()
     {
-        var settings = new ScheduleSettings { Enabled = true, DayStart = "08:00", DayEnd = "22:00", WeekendDifferent = true, WeekendDayStart = "00:00", WeekendDayEnd = "00:00" };
+        var settings = new ScheduleSettings { Enabled = true, DayStart = "08:00", DayEnd = "22:00", Mode = ScheduleMode.WeekdaysAndWeekends, WeekendDayStart = "00:00", WeekendDayEnd = "00:00" };
 
         var friday = SchedulePolicy.Evaluate(settings, At(9, 23));
         Assert.False(friday.IsDaytime);
@@ -139,11 +139,79 @@ public class SchedulePolicyTests
     [Fact]
     public void FridayWindowRunningIntoSaturdaysWindow_IsOneContinuousDaytime()
     {
-        var settings = new ScheduleSettings { Enabled = true, DayStart = "22:00", DayEnd = "06:00", WeekendDifferent = true, WeekendDayStart = "04:00", WeekendDayEnd = "20:00" };
+        var settings = new ScheduleSettings { Enabled = true, DayStart = "22:00", DayEnd = "06:00", Mode = ScheduleMode.WeekdaysAndWeekends, WeekendDayStart = "04:00", WeekendDayEnd = "20:00" };
 
         var state = SchedulePolicy.Evaluate(settings, At(10, 5)); // Saturday 05:00
         Assert.True(state.IsDaytime);
         Assert.Equal(At(10, 20), state.NextChangeLocal); // not 06:00 - Saturday's own window carries on
+    }
+
+    // ---- "Each day" layout ----
+
+    private static ScheduleSettings EachDay(params (DayOfWeek Day, string Start, string End)[] windows)
+    {
+        var settings = new ScheduleSettings { Enabled = true, Mode = ScheduleMode.EachDay };
+        // Every day starts with no window; the test turns on only the days it names.
+        foreach (var w in settings.Days) { w.Start = "00:00"; w.End = "00:00"; }
+        foreach (var (day, start, end) in windows)
+        {
+            settings.Days[(int)day].Start = start;
+            settings.Days[(int)day].End = end;
+        }
+        return settings;
+    }
+
+    [Fact]
+    public void EachDay_UsesTheWindowOfTheDay_AndNoneForTheRest()
+    {
+        var settings = EachDay((DayOfWeek.Monday, "09:00", "17:00"), (DayOfWeek.Wednesday, "13:00", "15:00"));
+
+        Assert.True(SchedulePolicy.Evaluate(settings, At(5, 10)).IsDaytime);   // Monday 10:00
+        Assert.False(SchedulePolicy.Evaluate(settings, At(5, 18)).IsDaytime);  // Monday 18:00
+        Assert.False(SchedulePolicy.Evaluate(settings, At(6, 10)).IsDaytime);  // Tuesday: no window
+        Assert.False(SchedulePolicy.Evaluate(settings, At(7, 10)).IsDaytime);  // Wednesday 10:00 - before its window
+        Assert.True(SchedulePolicy.Evaluate(settings, At(7, 14)).IsDaytime);   // Wednesday 14:00
+    }
+
+    [Fact]
+    public void EachDay_NextChangeSkipsDaysWithNoWindow()
+    {
+        var settings = EachDay((DayOfWeek.Monday, "09:00", "17:00"), (DayOfWeek.Friday, "09:00", "17:00"));
+
+        var mondayEvening = SchedulePolicy.Evaluate(settings, At(5, 18));
+        Assert.False(mondayEvening.IsDaytime);
+        Assert.Equal(At(9, 9), mondayEvening.NextChangeLocal); // straight to Friday 09:00
+    }
+
+    [Fact]
+    public void EachDay_AWindowCrossingMidnightRunsIntoTheNextDay()
+    {
+        var settings = EachDay((DayOfWeek.Friday, "22:00", "06:00")); // Saturday has no window of its own
+
+        var saturdayEarly = SchedulePolicy.Evaluate(settings, At(10, 3));
+        Assert.True(saturdayEarly.IsDaytime);
+        Assert.Equal(At(10, 6), saturdayEarly.NextChangeLocal);
+        Assert.False(SchedulePolicy.Evaluate(settings, At(10, 7)).IsDaytime);
+    }
+
+    [Fact]
+    public void EachDay_AMissingEntryMeansNoWindowThatDay()
+    {
+        var settings = EachDay((DayOfWeek.Monday, "09:00", "17:00"));
+        settings.Days.RemoveRange(2, 5); // only Sunday and Monday left (a hand-edited file)
+
+        Assert.True(SchedulePolicy.Evaluate(settings, At(5, 10)).IsDaytime);
+        Assert.False(SchedulePolicy.Evaluate(settings, At(9, 10)).IsDaytime); // Friday: entry missing
+    }
+
+    [Fact]
+    public void Everyday_IgnoresTheWeekendAndEachDayFields()
+    {
+        var settings = new ScheduleSettings { Enabled = true, Mode = ScheduleMode.Everyday, DayStart = "08:00", DayEnd = "22:00", WeekendDayStart = "00:00", WeekendDayEnd = "00:00" };
+        settings.Days[6].Start = "00:00";
+        settings.Days[6].End = "00:00";
+
+        Assert.True(SchedulePolicy.Evaluate(settings, At(10, 12)).IsDaytime); // Saturday noon
     }
 
     // ---- ProjectCompletion ----
@@ -488,5 +556,62 @@ public class ActiveEncodeProcessPriorityTests
     public void SetPriority_WithNothingRunning_DoesNotThrow()
     {
         new ActiveEncodeProcess().SetPriority(EncodePriority.AboveNormal);
+    }
+}
+
+public class ScheduleValidatorTests
+{
+    [Fact]
+    public void ADisabledSchedule_IsNeverFlagged()
+    {
+        var schedule = new ScheduleSettings { Enabled = false, DayStart = "garbage" };
+        Assert.Empty(ScheduleValidator.Validate(schedule));
+    }
+
+    [Fact]
+    public void Everyday_ChecksOnlyTheEverydayWindow()
+    {
+        var schedule = new ScheduleSettings { Enabled = true, Mode = ScheduleMode.Everyday, DayStart = "8am", DayEnd = "22:00", WeekendDayStart = "bad" };
+
+        var fields = ScheduleValidator.Validate(schedule).Select(i => i.Field).ToList();
+
+        Assert.Equal(new[] { "dayStart" }, fields);
+    }
+
+    [Fact]
+    public void WeekdaysAndWeekends_ChecksBothWindows()
+    {
+        var schedule = new ScheduleSettings { Enabled = true, Mode = ScheduleMode.WeekdaysAndWeekends, DayEnd = "x", WeekendDayStart = "y" };
+
+        var fields = ScheduleValidator.Validate(schedule).Select(i => i.Field).ToList();
+
+        Assert.Equal(new[] { "dayEnd", "weekendDayStart" }, fields);
+    }
+
+    [Fact]
+    public void EachDay_NamesTheDayThatIsWrong()
+    {
+        var schedule = new ScheduleSettings { Enabled = true, Mode = ScheduleMode.EachDay };
+        schedule.Days[3].End = "nope";
+
+        var issue = Assert.Single(ScheduleValidator.Validate(schedule));
+
+        Assert.Equal("day3End", issue.Field);
+        Assert.Contains("Wednesday", issue.Message);
+    }
+
+    [Fact]
+    public void EachDay_AShortListIsReported()
+    {
+        var schedule = new ScheduleSettings { Enabled = true, Mode = ScheduleMode.EachDay };
+        schedule.Days.RemoveRange(4, 3);
+
+        Assert.Contains(ScheduleValidator.Validate(schedule), i => i.Field == "days");
+    }
+
+    [Fact]
+    public void ValidTimesProduceNoIssues()
+    {
+        Assert.Empty(ScheduleValidator.Validate(new ScheduleSettings { Enabled = true, Mode = ScheduleMode.EachDay }));
     }
 }

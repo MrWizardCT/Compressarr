@@ -20,25 +20,24 @@ public class ScheduleEndpointTests
         return (now.AddHours(-2).ToString("HH:mm"), now.AddHours(2).ToString("HH:mm"));
     }
 
-    private static async Task<JsonObject> GetSettingsAsync(QueueHost host) =>
-        (await host.Client.GetFromJsonAsync<JsonObject>("/api/settings"))!;
+    private static async Task<JsonObject> GetScheduleAsync(QueueHost host) =>
+        (await host.Client.GetFromJsonAsync<JsonObject>("/api/schedule"))!;
 
-    private static async Task PutSettingsAsync(QueueHost host, JsonObject settings)
+    private static async Task PutScheduleAsync(QueueHost host, JsonObject schedule)
     {
-        using var response = await host.Client.PutAsJsonAsync("/api/settings", settings);
+        using var response = await host.Client.PutAsJsonAsync("/api/schedule", schedule);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     private static async Task EnableOffHoursOnlyAsync(QueueHost host)
     {
         var (start, end) = WindowAroundNow();
-        var settings = await GetSettingsAsync(host);
-        var schedule = settings["schedule"]!.AsObject();
+        var schedule = await GetScheduleAsync(host);
         schedule["enabled"] = true;
         schedule["dayStart"] = start;
         schedule["dayEnd"] = end;
         schedule["onlyEncodeOffHours"] = true;
-        await PutSettingsAsync(host, settings);
+        await PutScheduleAsync(host, schedule);
     }
 
     [Fact]
@@ -46,78 +45,94 @@ public class ScheduleEndpointTests
     {
         await using var host = await QueueHost.StartAsync(Lane1);
 
-        var schedule = (await GetSettingsAsync(host))["schedule"]!.AsObject();
+        var schedule = await GetScheduleAsync(host);
 
         Assert.False(schedule["enabled"]!.GetValue<bool>());
         Assert.False(schedule["onlyEncodeOffHours"]!.GetValue<bool>());
+        Assert.Equal("Everyday", schedule["mode"]!.GetValue<string>());
         Assert.Equal("BelowNormal", schedule["dayPriority"]!.GetValue<string>());
         Assert.Equal("Normal", schedule["nightPriority"]!.GetValue<string>());
         Assert.Equal("FinishCurrentFile", schedule["whenDayStarts"]!.GetValue<string>());
+        Assert.Equal(7, schedule["days"]!.AsArray().Count);
+        Assert.Equal("Sunday", schedule["days"]![0]!["day"]!.GetValue<string>());
     }
 
     [Fact]
-    public async Task ScheduleSettings_SurviveASaveAndReload()
+    public async Task ScheduleSettings_SurviveASaveAndReload_IncludingEachDaysOwnWindow()
     {
         await using var host = await QueueHost.StartAsync(Lane1);
-        var settings = await GetSettingsAsync(host);
-        var schedule = settings["schedule"]!.AsObject();
+        var schedule = await GetScheduleAsync(host);
         schedule["enabled"] = true;
+        schedule["mode"] = "EachDay";
         schedule["dayStart"] = "07:30";
         schedule["dayEnd"] = "23:15";
-        schedule["weekendDifferent"] = true;
         schedule["weekendDayStart"] = "11:00";
         schedule["weekendDayEnd"] = "11:00";
+        schedule["days"]![3]!["start"] = "13:00"; // Wednesday
+        schedule["days"]![3]!["end"] = "15:30";
         schedule["dayPriority"] = "Low";
-        schedule["nightPriority"] = "High";
+        schedule["nightPriority"] = "Realtime";
         schedule["onlyEncodeOffHours"] = true;
         schedule["whenDayStarts"] = "SuspendEncode";
 
-        await PutSettingsAsync(host, settings);
-        var saved = (await GetSettingsAsync(host))["schedule"]!.AsObject();
+        await PutScheduleAsync(host, schedule);
+        var saved = await GetScheduleAsync(host);
 
         Assert.True(saved["enabled"]!.GetValue<bool>());
+        Assert.Equal("EachDay", saved["mode"]!.GetValue<string>());
         Assert.Equal("07:30", saved["dayStart"]!.GetValue<string>());
         Assert.Equal("23:15", saved["dayEnd"]!.GetValue<string>());
-        Assert.True(saved["weekendDifferent"]!.GetValue<bool>());
         Assert.Equal("11:00", saved["weekendDayStart"]!.GetValue<string>());
+        Assert.Equal("Wednesday", saved["days"]![3]!["day"]!.GetValue<string>());
+        Assert.Equal("13:00", saved["days"]![3]!["start"]!.GetValue<string>());
+        Assert.Equal("15:30", saved["days"]![3]!["end"]!.GetValue<string>());
         Assert.Equal("Low", saved["dayPriority"]!.GetValue<string>());
-        Assert.Equal("High", saved["nightPriority"]!.GetValue<string>());
+        Assert.Equal("Realtime", saved["nightPriority"]!.GetValue<string>());
         Assert.True(saved["onlyEncodeOffHours"]!.GetValue<bool>());
         Assert.Equal("SuspendEncode", saved["whenDayStarts"]!.GetValue<string>());
     }
 
     [Fact]
-    public async Task ASettingsSaveWithNoScheduleAtAll_LeavesTheSavedScheduleAlone()
+    public async Task SavingSettings_NeverTouchesTheSchedule_AndSavingTheScheduleNeverTouchesSettings()
     {
         await using var host = await QueueHost.StartAsync(Lane1);
-        var settings = await GetSettingsAsync(host);
-        settings["schedule"]!["enabled"] = true;
-        settings["schedule"]!["dayStart"] = "06:00";
-        await PutSettingsAsync(host, settings);
+        var schedule = await GetScheduleAsync(host);
+        schedule["enabled"] = true;
+        schedule["dayStart"] = "06:00";
+        await PutScheduleAsync(host, schedule);
 
-        // What a client that predates the schedule would send.
-        var legacy = await GetSettingsAsync(host);
-        legacy.Remove("schedule");
-        await PutSettingsAsync(host, legacy);
+        // A normal Settings-page save (which carries no schedule at all).
+        var settings = (await host.Client.GetFromJsonAsync<JsonObject>("/api/settings"))!;
+        Assert.False(settings.ContainsKey("schedule"));
+        settings["pollIntervalSeconds"] = 123;
+        using (var put = await host.Client.PutAsJsonAsync("/api/settings", settings)) Assert.Equal(HttpStatusCode.OK, put.StatusCode);
 
-        var after = (await GetSettingsAsync(host))["schedule"]!.AsObject();
+        var after = await GetScheduleAsync(host);
         Assert.True(after["enabled"]!.GetValue<bool>());
         Assert.Equal("06:00", after["dayStart"]!.GetValue<string>());
+
+        // ...and the other way round.
+        after["dayStart"] = "07:00";
+        await PutScheduleAsync(host, after);
+        var settingsAfter = (await host.Client.GetFromJsonAsync<JsonObject>("/api/settings"))!;
+        Assert.Equal(123, settingsAfter["pollIntervalSeconds"]!.GetValue<int>());
     }
 
     [Fact]
-    public async Task AnUnreadableTime_IsFlaggedOnTheSettingsPage()
+    public async Task AnUnreadableTime_IsFlaggedForTheWindowInUse_AndIgnoredForOthers()
     {
         await using var host = await QueueHost.StartAsync(Lane1);
-        var settings = await GetSettingsAsync(host);
-        settings["schedule"]!["enabled"] = true;
-        settings["schedule"]!["dayStart"] = "later";
+        var schedule = await GetScheduleAsync(host);
+        schedule["enabled"] = true;
+        schedule["mode"] = "Everyday";
+        schedule["dayStart"] = "later";
+        schedule["weekendDayStart"] = "also bad"; // unused in this layout
 
-        using var response = await host.Client.PutAsJsonAsync("/api/settings", settings);
+        using var response = await host.Client.PutAsJsonAsync("/api/schedule", schedule);
         var saved = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
 
         var fields = saved.GetProperty("validationIssues").EnumerateArray().Select(i => i.GetProperty("field").GetString()).ToList();
-        Assert.Contains("scheduleDayStart", fields);
+        Assert.Equal(new[] { "dayStart" }, fields);
     }
 
     [Fact]

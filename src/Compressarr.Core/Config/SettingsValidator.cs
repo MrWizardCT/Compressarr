@@ -45,25 +45,6 @@ public static class SettingsValidator
             issues.Add(new ValidationIssue("handBrakeOptions", "Extra CLI options has an unmatched quote (\") - everything after it will be folded into one argument instead of being split as intended. Check for a missing closing quote."));
         }
 
-        if (config.Schedule.Enabled)
-        {
-            ValidateScheduleTime(issues, "scheduleDayStart", "Daytime start", config.Schedule.DayStart);
-            ValidateScheduleTime(issues, "scheduleDayEnd", "Daytime end", config.Schedule.DayEnd);
-            if (config.Schedule.WeekendDifferent)
-            {
-                ValidateScheduleTime(issues, "scheduleWeekendDayStart", "Weekend daytime start", config.Schedule.WeekendDayStart);
-                ValidateScheduleTime(issues, "scheduleWeekendDayEnd", "Weekend daytime end", config.Schedule.WeekendDayEnd);
-            }
-        }
-
         return issues;
-    }
-
-    private static void ValidateScheduleTime(List<ValidationIssue> issues, string field, string label, string value)
-    {
-        if (!Scheduling.SchedulePolicy.TryParseTime(value, out _))
-        {
-            issues.Add(new ValidationIssue(field, $"{label} must be a time like 08:00 (24-hour) - until it is fixed this part of the schedule is ignored."));
-        }
     }
 }
