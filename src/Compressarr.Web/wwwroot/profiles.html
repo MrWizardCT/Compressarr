@@ -19,6 +19,10 @@
 <body>
   <main>
     <h2 class="page-title">Profiles</h2>
+    <div class="page-actions">
+      <button id="newHbBtn" class="primary">New HandBrake profile</button>
+      <button id="importBtn">Import&hellip;</button>
+    </div>
 
     <div class="card">
       <div class="card-head">
@@ -26,15 +30,14 @@
         <h2>Profiles</h2>
       </div>
       <div class="card-body">
-        <p class="enc-note" style="margin-top:0">These are all the encoding profiles Compressarr has - its own built-ins plus yours. A lane picks one on the <a href="/lanes.html">Lanes</a> page. Compressarr never reads HandBrake's own presets file while encoding.</p>
+        <p class="enc-note" style="margin-top:0">These are all the encoding profiles Compressarr has - its own built-ins plus yours. A lane picks one on the <a href="/lanes.html">Lanes</a> page. Compressarr never reads HandBrake's own presets file while encoding; <em>Import</em> is how presets get in from it.</p>
         <div id="profileError" class="banner err hidden"></div>
         <div class="table-wrap">
           <table class="prof-table">
-            <thead><tr><th>Profile</th><th>Encoder</th><th>Video</th><th>Audio</th><th>Used by</th></tr></thead>
-            <tbody id="profileRows"><tr><td colspan="5" class="prof-sub">Loading&hellip;</td></tr></tbody>
+            <thead><tr><th>Profile</th><th>Encoder</th><th>Video</th><th>Audio</th><th>Used by</th><th></th></tr></thead>
+            <tbody id="profileRows"><tr><td colspan="6" class="prof-sub">Loading&hellip;</td></tr></tbody>
           </table>
         </div>
-        <p class="enc-note">Creating, editing, duplicating and importing profiles arrives in the next pre-release.</p>
       </div>
     </div>
 
@@ -45,12 +48,51 @@
       </div>
       <div class="card-body">
         <div class="prof-where">
-          <div><b>Built-in</b> (locked)<br>Ship with Compressarr, so they are always the same and can't be changed or deleted.</div>
+          <div><b>Built-in</b> (locked)<br>Ship with Compressarr, so they are always the same and can't be changed or deleted. Duplicate one to make your own.</div>
           <div><b>Yours - HandBrake</b><br><code id="userFilePath">%AppData%\Compressarr\Profiles\handbrake-profiles.json</code><br>Everything you create, duplicate or import. It is included in Compressarr's automatic backups and in Export/Import config, with the rest of your settings. For every encode Compressarr hands HandBrake its own generated copy (built-ins plus yours), so the HandBrake app and Compressarr never touch each other's files.</div>
         </div>
       </div>
     </div>
   </main>
+
+  <div id="importOverlay" class="modal-overlay hidden">
+    <div class="modal prof-import-modal">
+      <h3>Import profiles</h3>
+      <div class="prof-tabs" id="importTabs">
+        <button class="on" data-t="installed">From installed HandBrake</button>
+        <button data-t="file">From a presets file</button>
+      </div>
+
+      <div id="tabInstalled">
+        <p class="enc-note" id="installedNote" style="margin-top:0">Looking for HandBrake's presets&hellip;</p>
+      </div>
+
+      <div id="tabFile" class="hidden">
+        <p class="enc-note" style="margin-top:0">Choose a standalone HandBrake presets file - the <code>.json</code> from HandBrake's <em>Presets &rarr; Export</em>, someone else's shared preset, or another copy of <code>presets.json</code>. Type or paste its full path on this computer.</p>
+        <div class="field-with-btn"><input type="text" id="importFilePath" placeholder="C:\Users\you\Downloads\my-presets.json" /><button id="readFileBtn" class="primary">Read file</button></div>
+      </div>
+
+      <div id="importPicker" class="hidden">
+        <div class="field-with-btn" style="margin:10px 0">
+          <input type="text" id="importSearch" placeholder="Search presets..." />
+          <button id="importSelectShown">Select all shown</button>
+          <button id="importClear">Clear</button>
+        </div>
+        <div class="modal-list prof-import-list"><table class="prof-table" id="importTable"><tbody></tbody></table></div>
+        <div class="enc-note">They are <strong>copied</strong> into Compressarr's own file, so later changes in the HandBrake app don't affect them, and HandBrake's file is only read. When a name is already used by one of yours:
+          <label class="prof-radio"><input type="radio" name="onConflict" value="keepBoth" checked /> keep both (add " (imported)")</label>
+          <label class="prof-radio"><input type="radio" name="onConflict" value="replace" /> replace mine</label>
+          <label class="prof-radio"><input type="radio" name="onConflict" value="skip" /> skip it</label>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <span class="enc-note" id="importCount" style="margin:auto auto auto 0"></span>
+        <button id="importGo" class="primary" disabled>Import</button>
+        <button id="importCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/nav.js"></script>
   <script src="/profiles.js"></script>

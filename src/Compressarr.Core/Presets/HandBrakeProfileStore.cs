@@ -39,6 +39,14 @@ public interface IHandBrakeProfileStore
     /// InvalidOperationException and nothing is written.</summary>
     void AddUserProfiles(IEnumerable<JsonObject> definitions);
 
+    /// <summary>Replaces one of the user's profiles with a new definition (which may carry a new name),
+    /// keeping its place in the list. Built-ins are locked: InvalidOperationException. The new name
+    /// must be unique among everything else (case changes of the profile's own name are fine).</summary>
+    void ReplaceUserProfile(string currentName, JsonObject definition);
+
+    /// <summary>Removes one of the user's profiles. Built-ins can't be removed.</summary>
+    void RemoveUserProfile(string name);
+
     /// <summary>Makes sure handbrake-active.json matches the built-ins plus the user's profiles
     /// and returns its path. Generated deterministically in memory and compared with what is on
     /// disk - the file is only rewritten (atomically: temp file, then rename) when it is missing or
@@ -119,6 +127,62 @@ public sealed class HandBrakeProfileStore : IHandBrakeProfileStore
             if (added.Count == 0) return;
 
             var all = existing.Select(p => (JsonNode)p.Definition.DeepClone()).Concat(added).ToList();
+            WriteUserFileLocked(all);
+            EnsureActiveFileLocked();
+        }
+    }
+
+    public void ReplaceUserProfile(string currentName, JsonObject definition)
+    {
+        lock (_gate)
+        {
+            var existing = LoadUserLocked();
+            if (_userError is not null)
+            {
+                throw new InvalidOperationException($"Your profile file could not be read, so nothing was changed: {_userError}");
+            }
+
+            var index = existing.FindIndex(p => string.Equals(p.Name, currentName, StringComparison.OrdinalIgnoreCase));
+            if (index < 0)
+            {
+                throw _bundled.Value.Profiles.Any(p => string.Equals(p.Name, currentName, StringComparison.OrdinalIgnoreCase))
+                    ? new InvalidOperationException($"'{currentName}' is a built-in profile and can't be changed. Duplicate it to make your own.")
+                    : new InvalidOperationException($"There is no profile named '{currentName}'.");
+            }
+
+            var newName = definition["PresetName"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(newName)) throw new InvalidOperationException("A profile needs a name.");
+
+            var clash = _bundled.Value.Profiles.Concat(existing.Where((_, i) => i != index))
+                .Any(p => string.Equals(p.Name, newName, StringComparison.OrdinalIgnoreCase));
+            if (clash) throw new InvalidOperationException($"A profile named '{newName}' already exists.");
+
+            var all = existing.Select(p => (JsonNode)p.Definition.DeepClone()).ToList();
+            all[index] = definition.DeepClone();
+            WriteUserFileLocked(all);
+            EnsureActiveFileLocked();
+        }
+    }
+
+    public void RemoveUserProfile(string name)
+    {
+        lock (_gate)
+        {
+            var existing = LoadUserLocked();
+            if (_userError is not null)
+            {
+                throw new InvalidOperationException($"Your profile file could not be read, so nothing was changed: {_userError}");
+            }
+
+            var index = existing.FindIndex(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (index < 0)
+            {
+                throw _bundled.Value.Profiles.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
+                    ? new InvalidOperationException($"'{name}' is a built-in profile and can't be deleted.")
+                    : new InvalidOperationException($"There is no profile named '{name}'.");
+            }
+
+            var all = existing.Where((_, i) => i != index).Select(p => (JsonNode)p.Definition.DeepClone()).ToList();
             WriteUserFileLocked(all);
             EnsureActiveFileLocked();
         }

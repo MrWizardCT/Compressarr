@@ -66,7 +66,7 @@ public static class EncoderEndpoints
                 Description: p.Definition["PresetDescription"]?.GetValue<string>() ?? "",
                 UsedBy: UsedBy(p.Name))).ToList();
 
-            return Results.Json(new ProfileListDto(rows, AppPaths.GetHandBrakeProfilesFilePath(), profiles.UserFileError));
+            return Results.Json(new ProfileListDto(rows, AppPaths.GetHandBrakeProfilesFilePath(), AppPaths.GetHandBrakeActivePresetsFilePath(), profiles.UserFileError));
         });
     }
 }

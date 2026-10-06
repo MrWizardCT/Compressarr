@@ -101,8 +101,14 @@ public static class HandBrakeProfileSummary
     private static string? Str(JsonObject o, string key) =>
         o[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;
 
-    private static double? Number(JsonObject o, string key) =>
-        o[key] is JsonValue v && v.TryGetValue<double>(out var d) ? d : null;
+    private static double? Number(JsonObject o, string key)
+    {
+        if (o[key] is not JsonValue v) return null;
+        if (v.TryGetValue<double>(out var d)) return d;
+        if (v.TryGetValue<int>(out var i)) return i;
+        if (v.TryGetValue<long>(out var l)) return l;
+        return null;
+    }
 
     private static int? Int(JsonObject o, string key) =>
         Number(o, key) is { } d ? (int)d : null;

@@ -33,6 +33,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IHandBrakeProfileStore, HandBrakeProfileStore>();
         services.AddSingleton<IEncoderPresetService, HandBrakePresetService>();
         services.AddSingleton<IHandBrakeProfileMigration, HandBrakeProfileMigration>();
+        services.AddSingleton<IHandBrakeProfileImporter, HandBrakeProfileImporter>();
         services.AddSingleton<IHandBrakeInstaller, HandBrakeInstaller>();
 
         services.AddSingleton<IVideoFileScanner, VideoFileScanner>();

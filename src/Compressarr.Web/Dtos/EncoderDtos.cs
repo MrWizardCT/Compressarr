@@ -25,4 +25,27 @@ public sealed record ProfileDto(
 public sealed record ProfileListDto(
     List<ProfileDto> Profiles,
     string UserFilePath,
+    string ActivePresetsPath,
     string? UserFileError);
+
+/// <summary>The editor's view of one HandBrake profile: the form fields, whether it is a locked
+/// built-in (the editor is then read-only), and which lanes use it.</summary>
+public sealed record ProfileEditDto(
+    Compressarr.Core.Presets.HandBrakeProfileForm Form,
+    bool BuiltIn,
+    List<string> UsedBy,
+    string ActivePresetsPath);
+
+/// <summary>Save request. BaseName (create only) names the profile whose settings the new one starts
+/// from - everything the form doesn't show is inherited from it.</summary>
+public sealed record SaveProfileRequest(Compressarr.Core.Presets.HandBrakeProfileForm Form, string? BaseName);
+
+public sealed record DuplicateProfileRequest(string? Name);
+
+public sealed record ImportReadRequest(string Path);
+
+public sealed record ImportRequest(string Path, List<string> Names, string OnConflict);
+
+public sealed record ImportCandidateDto(string Name, string? Group, string Video, string Container, string Status);
+
+public sealed record ImportListingDto(string Path, bool Found, string? Error, List<ImportCandidateDto> Candidates);

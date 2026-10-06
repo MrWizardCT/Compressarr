@@ -120,27 +120,7 @@ public sealed class HandBrakeProfileMigration : IHandBrakeProfileMigration
 
         if (toAdd.Count > 0) _profiles.AddUserProfiles(toAdd);
 
-        if (renamed.Count > 0)
-        {
-            _configStore.Update(configPath, c =>
-            {
-                foreach (var lane in c.Lanes)
-                {
-                    if (renamed.TryGetValue(lane.TvPreset, out var tv)) lane.TvPreset = tv;
-                    if (renamed.TryGetValue(lane.MoviePreset, out var movie)) lane.MoviePreset = movie;
-                }
-                return true;
-            });
-
-            _resumeStore.Update(resumePath, entries =>
-            {
-                foreach (var entry in entries)
-                {
-                    if (entry.PresetOverride is not null && renamed.TryGetValue(entry.PresetOverride, out var name)) entry.PresetOverride = name;
-                }
-                return true;
-            });
-        }
+        ProfileReferences.Repoint(_configStore, _resumeStore, renamed);
 
         var result = new HandBrakeProfileMigrationResult(imported, renamed.ToList(), missing);
         WriteMarker(markerPath, result);
