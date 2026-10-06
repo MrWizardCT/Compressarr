@@ -36,6 +36,7 @@
           <div class="sched-now-line" id="schedNowQueue"></div>
           <button id="runAnywayBtn" class="hidden">Run anyway</button>
         </div>
+        <p class="sched-note">New files are still found and added to the queue in real time, even while encoding is held - the queue's order is never affected.</p>
         <p class="sched-note">Reflects the saved schedule - changes you have not saved yet are not included.</p>
       </div>
     </div>
@@ -46,7 +47,17 @@
         <h2>Schedule</h2>
       </div>
       <div class="card-body">
-        <div class="check-row"><input type="checkbox" id="schedEnabled" /><label for="schedEnabled">Enable the day/night schedule</label></div>
+        <div class="sched-toprow">
+          <div class="check-row"><input type="checkbox" id="schedEnabled" /><label for="schedEnabled">Enable the day/night schedule</label></div>
+          <div class="check-row"><input type="checkbox" id="schedOnlyOffHours" /><label for="schedOnlyOffHours">Only encode during off-hours</label></div>
+        </div>
+        <div class="field-block" style="max-width: 360px;" id="schedWhenDayStartsRow">
+          <label for="schedWhenDayStarts">If the daytime starts mid-encode</label>
+          <select id="schedWhenDayStarts">
+            <option value="FinishCurrentFile">Finish the current file, then hold</option>
+            <option value="SuspendEncode">Suspend it until off-hours</option>
+          </select>
+        </div>
         <div id="schedBody">
           <div class="field-block" style="max-width: 360px;">
             <label for="schedMode">Daytime window</label>
@@ -70,6 +81,7 @@
                 <option value="High">High</option>
                 <option value="Realtime">Realtime</option>
               </select>
+              <div class="sched-hint" id="schedDayPriorityHint"></div>
             </div>
             <div class="field-block">
               <label for="schedNightPriority">Off-hours priority</label>
@@ -81,16 +93,8 @@
                 <option value="High">High</option>
                 <option value="Realtime">Realtime</option>
               </select>
+              <div class="sched-hint" id="schedNightPriorityHint"></div>
             </div>
-          </div>
-
-          <div class="check-row"><input type="checkbox" id="schedOnlyOffHours" /><label for="schedOnlyOffHours">Only encode during off-hours</label></div>
-          <div class="field-block" style="max-width: 360px;" id="schedWhenDayStartsRow">
-            <label for="schedWhenDayStarts">If the daytime starts mid-encode</label>
-            <select id="schedWhenDayStarts">
-              <option value="FinishCurrentFile">Finish the current file, then hold</option>
-              <option value="SuspendEncode">Suspend it until off-hours</option>
-            </select>
           </div>
         </div>
       </div>
@@ -110,13 +114,26 @@
           <dd>The hours you want the PC kept responsive for whoever is using it. Everything outside the window is "off-hours". <strong>Same every day</strong> uses one window for all seven days. <strong>Weekdays and weekends</strong> uses one window for Monday to Friday and another for Saturday and Sunday. <strong>Each day of the week</strong> gives every day its own window.</dd>
 
           <dt>Start and end times</dt>
-          <dd>24-hour local time. The window may cross midnight (for example 22:00 to 06:00); it belongs to the day it starts on. Tick <em>No daytime window</em> to make a day all off-hours.</dd>
+          <dd>24-hour local time. The window may cross midnight (for example 22:00 to 06:00); it belongs to the day it starts on. Tick <em>Run Off-hours Priority All Day</em> on a window to give that day no daytime window at all: it runs at the off-hours priority for the whole day and is never held.</dd>
 
           <dt>Daytime priority</dt>
-          <dd>How strongly the encoder competes with everything else on this PC during the daytime window. Low and Below Normal leave more of the CPU for other programs; the encode simply takes longer.</dd>
+          <dd>How strongly the encoder competes with everything else on this PC during the daytime window. Lower levels leave more of the CPU for other programs; the encode simply takes longer.</dd>
 
           <dt>Off-hours priority</dt>
-          <dd>The priority outside the daytime window. Normal is how encodes ran before this feature existed. An encode that is already running when the window changes switches priority immediately, without restarting. High and Realtime take CPU time from other programs and can make this PC sluggish or unresponsive while an encode runs; Realtime also needs administrator rights, and without them Windows treats it as High.</dd>
+          <dd>The priority outside the daytime window. Normal is how encodes ran before this feature existed. An encode that is already running when the window changes switches priority immediately, without restarting.</dd>
+
+          <dt>Priority levels and CPU use</dt>
+          <dd>
+            HandBrake spreads an encode across every CPU core whatever the priority, so an encode will try to use nearly all of the CPU. Priority doesn't change how much CPU an encode wants - it decides who wins when other programs want CPU time too.
+            <ul class="sched-levels">
+              <li><strong>Low</strong> - the encode only gets CPU time nothing else wants. Other programs run as if it weren't there, but the encode can crawl, or nearly stall, while the PC is busy.</li>
+              <li><strong>Below Normal</strong> - the encode yields to ordinary programs. Everyday use stays smooth and the encode takes whatever is left; the usual choice for the daytime.</li>
+              <li><strong>Normal</strong> - the encode and other programs share the CPU equally. CPU use sits near 100% and a busy PC can feel slower. This is how encodes ran before this feature existed.</li>
+              <li><strong>Above Normal</strong> - the encode wins most contests with ordinary programs. Encodes finish sooner, but other programs may stutter while it runs.</li>
+              <li><strong>High</strong> - the encode is strongly favored over ordinary programs. Expect a noticeably sluggish PC while it runs; best when nobody is using the computer.</li>
+              <li><strong>Realtime</strong> - the encode outranks nearly everything, including parts of Windows itself, and can make the PC freeze or become unresponsive. Needs administrator rights; without them Windows treats it as High.</li>
+            </ul>
+          </dd>
 
           <dt>Only encode during off-hours</dt>
           <dd>Holds the queue during the daytime window: no new file starts until off-hours begin. Files are still found and queued in arrival order while they wait, and the queue's order is untouched. The queue completion estimate on the Monitor page includes the time spent waiting.</dd>

@@ -1619,3 +1619,9 @@ td { font-variant-numeric: tabular-nums; }
 .sched-help dt { font-weight: 700; font-size: 13px; margin-top: 14px; }
 .sched-help dt:first-child { margin-top: 0; }
 .sched-help dd { margin: 3px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--text-dim); }
+
+/* Scheduler: Enable and "Only encode during off-hours" share the top line; wraps on narrow screens. */
+.sched-toprow { display: flex; flex-wrap: wrap; align-items: center; column-gap: 32px; row-gap: 0; }
+.sched-hint { margin-top: 5px; font-size: 12px; line-height: 1.45; color: var(--text-dim); }
+.sched-levels { margin: 8px 0 0; padding-left: 18px; }
+.sched-levels li { margin: 4px 0; }

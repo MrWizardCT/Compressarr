@@ -10,7 +10,7 @@ const modeSelect = document.getElementById('schedMode');
 const windowsEl = document.getElementById('schedWindows');
 
 // ---- window rows ---------------------------------------------------------------------------------
-// One row = a label, a start time, an end time, and a "No daytime window" box. A day with no window is
+// One row = a label, a start time, an end time, and a "Run Off-hours Priority All Day" box. A day with no window is
 // stored as start == end, so that box simply writes the same time twice.
 
 const rows = {}; // key -> { start, end, none, el }
@@ -24,7 +24,7 @@ function makeRow(key, label) {
     <input type="time" id="w-${key}-start" value="08:00" aria-label="${label} starts" />
     <span class="sched-window-to">to</span>
     <input type="time" id="w-${key}-end" value="22:00" aria-label="${label} ends" />
-    <label class="sched-window-none"><input type="checkbox" id="w-${key}-none" />No daytime window</label>
+    <label class="sched-window-none"><input type="checkbox" id="w-${key}-none" />Run Off-hours Priority All Day</label>
   `;
   const row = {
     el,
@@ -125,9 +125,36 @@ function updateVisibility() {
   for (const el of body.querySelectorAll('input, select')) {
     el.disabled = !enabled || (el.type === 'time' && rows[el.id.split('-')[1]]?.none.checked);
   }
-  document.getElementById('schedWhenDayStartsRow').style.display =
-    document.getElementById('schedOnlyOffHours').checked ? '' : 'none';
+  // These two sit above the body (beside the master switch) so they are dimmed and disabled by hand.
+  const onlyOffHours = document.getElementById('schedOnlyOffHours');
+  onlyOffHours.disabled = !enabled;
+  onlyOffHours.closest('.check-row').style.opacity = enabled ? '' : '0.5';
+  const whenRow = document.getElementById('schedWhenDayStartsRow');
+  document.getElementById('schedWhenDayStarts').disabled = !enabled;
+  whenRow.style.display = onlyOffHours.checked ? '' : 'none';
+  whenRow.style.opacity = enabled ? '' : '0.5';
+  updatePriorityHints();
 }
+
+// One line under each priority dropdown saying what the chosen level does to CPU use - the longer
+// explanation is in "What each setting does" at the bottom of the page.
+const PRIORITY_HINTS = {
+  Low: 'Only uses CPU nothing else wants. Other programs are unaffected; the encode can crawl while the PC is busy.',
+  BelowNormal: 'Yields to ordinary programs. Everyday use stays smooth; the encode takes what is left.',
+  Normal: 'Shares the CPU equally with other programs. Near 100% CPU use; a busy PC can feel slower.',
+  AboveNormal: 'Wins most CPU contests with ordinary programs. Faster encodes; other programs may stutter.',
+  High: 'Strongly favored over ordinary programs. Expect a sluggish PC while it runs.',
+  Realtime: 'Outranks nearly everything and can freeze the PC. Needs administrator rights, otherwise treated as High.'
+};
+
+function updatePriorityHints() {
+  document.getElementById('schedDayPriorityHint').textContent = PRIORITY_HINTS[document.getElementById('schedDayPriority').value] || '';
+  document.getElementById('schedNightPriorityHint').textContent = PRIORITY_HINTS[document.getElementById('schedNightPriority').value] || '';
+}
+for (const id of ['schedDayPriority', 'schedNightPriority']) {
+  document.getElementById(id).addEventListener('change', updatePriorityHints);
+}
+
 for (const id of ['schedEnabled', 'schedOnlyOffHours']) {
   document.getElementById(id).addEventListener('change', updateVisibility);
 }
