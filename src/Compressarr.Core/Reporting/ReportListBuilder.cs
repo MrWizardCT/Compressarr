@@ -11,7 +11,8 @@ public sealed record ReportListEntry(
     double SavedPercent,
     DateTime Date,
     int ErrorCount,
-    int WarningCount);
+    int WarningCount,
+    int RedirectCount = 0);
 
 /// <summary>
 /// Builds the "Reports" table for the web UI's History page: history rows within the configured
@@ -47,7 +48,8 @@ public static class ReportListBuilder
                     : 0,
                 Date: x.Date,
                 ErrorCount: x.Record.ErrorCount,
-                WarningCount: x.Record.WarningCount))
+                WarningCount: x.Record.WarningCount,
+                RedirectCount: x.Record.RedirectCount))
             .ToList();
     }
 }

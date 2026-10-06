@@ -12,7 +12,7 @@ public sealed class CsvRunHistoryStore : IRunHistoryStore
     private static readonly string[] Header =
     {
         "yyyy", "mm", "dd", "BegSize", "EndSize", "FileCount", "ProcessHours", "ProcessMinutes", "ProcessSeconds",
-        "RunNumber", "ReportFileName", "ErrorCount", "WarningCount"
+        "RunNumber", "ReportFileName", "ErrorCount", "WarningCount", "RedirectCount"
     };
 
     public void AppendRun(string logFilePath, RunHistoryRecord record)
@@ -41,7 +41,8 @@ public sealed class CsvRunHistoryStore : IRunHistoryStore
             record.RunNumber.ToString(CultureInfo.InvariantCulture),
             record.ReportFileName,
             record.ErrorCount.ToString(CultureInfo.InvariantCulture),
-            record.WarningCount.ToString(CultureInfo.InvariantCulture)
+            record.WarningCount.ToString(CultureInfo.InvariantCulture),
+            record.RedirectCount.ToString(CultureInfo.InvariantCulture)
         };
         writer.WriteLine(string.Join(",", fields));
     }
@@ -67,6 +68,8 @@ public sealed class CsvRunHistoryStore : IRunHistoryStore
             var reportFileName = parts.Length > 10 ? parts[10] : "";
             var errorCount = parts.Length > 11 && int.TryParse(parts[11], NumberStyles.Integer, CultureInfo.InvariantCulture, out var ec) ? ec : 0;
             var warningCount = parts.Length > 12 && int.TryParse(parts[12], NumberStyles.Integer, CultureInfo.InvariantCulture, out var wc) ? wc : 0;
+            // Appended at the END (never inserted) so older builds keep reading every earlier column.
+            var redirectCount = parts.Length > 13 && int.TryParse(parts[13], NumberStyles.Integer, CultureInfo.InvariantCulture, out var rc) ? rc : 0;
 
             results.Add(new RunHistoryRecord(
                 Year: int.Parse(parts[0], CultureInfo.InvariantCulture),
@@ -81,7 +84,8 @@ public sealed class CsvRunHistoryStore : IRunHistoryStore
                 RunNumber: runNumber,
                 ReportFileName: reportFileName,
                 ErrorCount: errorCount,
-                WarningCount: warningCount));
+                WarningCount: warningCount,
+                RedirectCount: redirectCount));
         }
 
         return results;

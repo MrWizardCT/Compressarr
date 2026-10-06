@@ -57,8 +57,19 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
             ? $"<div class=\"banner info\">{model.RetriesSucceeded} previously deferred/stranded file(s) (a failed move, a failed companion-file move, or a deferred Sonarr/Radarr rescan or source-folder cleanup) were retried successfully this pass.</div>"
             : "";
 
+        // A deliberate lane redirect is neither an error nor a warning, so it gets its own banner and its own
+        // colour (never the red/yellow of a problem): which files, and from which lane to which.
+        var redirected = model.RedirectedResults;
+        var redirectBanner = redirected.Count == 0
+            ? ""
+            : "<div class=\"banner redirect\">" + redirected.Count + " file(s) redirected to a different lane" +
+              "<ul class=\"redirect-list\">" +
+              string.Concat(redirected.Select(r => "<li>" + WebUtility.HtmlEncode(r.FileName) + ": " + WebUtility.HtmlEncode(r.HomeLaneName ?? r.LaneId) + " &rarr; " + WebUtility.HtmlEncode(r.RedirectedToLaneName ?? r.RedirectedToLaneId ?? "")  + "</li>")) +
+              "</ul></div>";
+
         var sb = new StringBuilder();
         sb.Append($@"<!DOCTYPE html>
+
 <html>
 <head>
 <meta charset=""utf-8"" />
@@ -75,12 +86,16 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
   .banner.ok {{ background: #e3f7e8; color: #16693a; }}
   .banner.err {{ background: #fdeaea; color: #a1231e; }}
   .banner.info {{ background: #e8f1fb; color: #205081; }}
+  .banner.redirect {{ background: #efeafc; color: #3f3399; }}
+  .redirect-list {{ margin: 0.4rem 0 0; padding-left: 1.2rem; font-weight: 400; }}
   .table-wrap {{ overflow-x: auto; margin: 0.5rem 0 1.5rem 0; }}
   table {{ border-collapse: collapse; width: 100%; min-width: 640px; margin: 0; background: #fff; }}
   th, td {{ border: 1px solid #ddd; padding: 6px 10px; text-align: left; font-size: 0.9em; }}
   th {{ background: #2c3e50; color: #fff; }}
   tr.err {{ background: #fdeaea; }}
   tr.warn {{ background: #fdf6e3; }}
+  tr.redir {{ background: #f3effd; }}
+  .redir-text {{ color: #4a3fa8; }}
   .warn-text {{ color: #8a6414; }}
   .err-code {{ border-bottom: 1px dotted #a1231e; cursor: help; }}
   .lane-problem {{ background: #fdeaea; color: #a1231e; padding: 0.4rem 0.75rem; border-radius: 6px; margin: 0.25rem 0; }}
@@ -111,6 +126,7 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
 <p class=""muted"">{WebUtility.HtmlEncode(runLabel)} {WebUtility.HtmlEncode(timestamp)} &nbsp;|&nbsp; Duration: {model.RunTime.Hours}h {model.RunTime.Minutes}m {model.RunTime.Seconds}s</p>
 {statusBanner}
 {retryBanner}
+{redirectBanner}
 <div class=""summary-grid"">
   <div class=""stat""><div class=""label"">Files processed</div><div class=""value"">{totalFiles}</div></div>
   <div class=""stat""><div class=""label"">Before</div><div class=""value"">{totalBeg} GB</div></div>
@@ -172,7 +188,8 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
         foreach (var r in lane.Results)
         {
             var hasWarning = r.Success && !string.IsNullOrEmpty(r.PostProcessWarning);
-            var rowClass = !r.Success ? " class=\"err\"" : hasWarning ? " class=\"warn\"" : "";
+            var wasRedirected = r.RedirectedToLaneId is not null;
+            var rowClass = !r.Success ? " class=\"err\"" : hasWarning ? " class=\"warn\"" : wasRedirected ? " class=\"redir\"" : "";
             var savings = Math.Round(r.BeginSizeGb - r.EndSizeGb, 3);
             // EndTime can land a hair before StartTime on some systems (clock adjustment mid-encode) -
             // same negate-if-negative clamp RunOrchestrator already uses for the run-level duration.
@@ -227,7 +244,14 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
                 // get missed, without overstating what actually went wrong.
                 statusHtml += $"<br><span class=\"warn-text\">&#9888; {WebUtility.HtmlEncode(r.PostProcessWarning)}</span>";
             }
+            if (wasRedirected)
+            {
+                // A lane change the user chose, so it is stated plainly rather than hidden: where it landed
+                // and where it came from.
+                statusHtml += $"<br><span class=\"redir-text\">&#8618; Landed in {WebUtility.HtmlEncode(r.RedirectedToLaneName ?? r.RedirectedToLaneId ?? "")} - redirected from {WebUtility.HtmlEncode(r.HomeLaneName ?? r.LaneId)}</span>";
+            }
             // Em dash, matching v1.1: blank whenever Sonarr/Radarr integration wasn't attempted
+
             // for this file - either the conversion failed, or neither service is enabled for
             // this content type - not just when it succeeded/failed.
             var arrStatus = string.IsNullOrEmpty(r.ArrStatus) ? "—" : r.ArrStatus;

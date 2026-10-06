@@ -420,7 +420,8 @@ public sealed class RunOrchestrator : IRunOrchestrator
                 endTime.Year, endTime.Month, endTime.Day, totalBeg, totalEnd, totalFiles,
                 runTime.Hours, runTime.Minutes, runTime.Seconds,
                 RunNumber: runNumber, ReportFileName: reportFileName,
-                ErrorCount: errorCount, WarningCount: warningCount));
+                ErrorCount: errorCount, WarningCount: warningCount,
+                RedirectCount: allResults.Count(r => r.RedirectedToLaneId is not null)));
 
             // Only a pass that actually processed files counts as a "run" - an empty scan
             // (including every quiet monitor-mode poll) never moves this counter.

@@ -25,7 +25,13 @@ public sealed record RunHistoryRecord(
     int ErrorCount = 0,
     /// <summary>How many files succeeded but had a secondary post-process problem
     /// (ReportModel.WarningCount at record time - see ConversionResult.PostProcessWarning).</summary>
-    int WarningCount = 0);
+    int WarningCount = 0,
+    /// <summary>How many files in this run landed in a different lane's library than their own
+    /// (see ResumeEntry.DestinationLaneId) - a deliberate user redirect, not a problem. The History
+    /// page highlights such a run so a lane change is visible after the fact. 0 for rows written
+    /// before this field existed (a 2.1.x build also ignores this extra trailing column).</summary>
+    int RedirectCount = 0);
+
 
 /// <summary>
 /// Narrow history/run-count interface — deliberately not the final schema. Phase 4 (web-based

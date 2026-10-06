@@ -9,7 +9,24 @@ public class ReportListBuilderTests
         new(date.Year, date.Month, date.Day, beforeGb, afterGb, fileCount, 0, 0, 0, RunNumber: runNumber, ReportFileName: reportFileName);
 
     [Fact]
+    public void Build_CarriesTheRedirectCountThrough()
+    {
+        var now = new DateTime(2026, 3, 15);
+        var history = new List<RunHistoryRecord>
+        {
+            new(now.Year, now.Month, now.Day, 10, 4, 2, 0, 0, 0, RunNumber: 2, ReportFileName: "r2.html", RedirectCount: 3),
+            RecordOn(now, 1, "r1.html")
+        };
+
+        var result = ReportListBuilder.Build(history, retentionDays: 30, now, _ => true);
+
+        Assert.Equal(3, result.Single(r => r.RunNumber == 2).RedirectCount);
+        Assert.Equal(0, result.Single(r => r.RunNumber == 1).RedirectCount);
+    }
+
+    [Fact]
     public void Build_RecordWithinRetention_Included()
+
     {
         var now = new DateTime(2026, 3, 15);
         var history = new List<RunHistoryRecord> { RecordOn(now.AddDays(-5), 1, "report1.html") };

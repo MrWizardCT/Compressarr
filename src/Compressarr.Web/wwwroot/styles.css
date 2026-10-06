@@ -11,6 +11,9 @@
   --ok-bg: #e7f7ed;
   --err: #d63c3c;
   --err-bg: #fdeaea;
+  --notice-bg: #efeafc;
+  --notice-text: #4a3fa8;
+  --notice-border: #cfc6f3;
   --warn: #c97a12;
   --warn-bg: #fdf1e0;
 }
@@ -27,6 +30,9 @@
   --ok-bg: #163b28;
   --err: #ff8a8a;
   --err-bg: #45211f;
+  --notice-bg: #2e2850;
+  --notice-text: #bdb2f5;
+  --notice-border: #4d4488;
   --warn: #f0aa4d;
   --warn-bg: #46330f;
 }
@@ -1086,6 +1092,9 @@ tr:last-child td { border-bottom: none; }
    using the app's theme-aware tokens instead of that report's hardcoded light-mode colors. */
 tr.err { background: var(--err-bg); }
 tr.warn { background: var(--warn-bg); }
+/* A run that redirected files to another lane: its own notice colour, deliberately not the red/yellow of a problem. */
+tr.redir { background: var(--notice-bg); }
+.redirect-tag { margin-left: 8px; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; background: var(--notice-bg); color: var(--notice-text); border: 1px solid var(--notice-border); white-space: nowrap; }
 
 th {
   background: var(--bg);

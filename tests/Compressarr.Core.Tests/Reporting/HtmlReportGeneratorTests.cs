@@ -33,8 +33,101 @@ public class HtmlReportGeneratorTests
         SummaryLogFilePath = summaryLogFilePath
     };
 
+    private static ConversionResult Redirected(string fileName, string from = "SD-HD", string to = "Kids", bool success = true) => new()
+    {
+        LaneId = "lane1",
+        FileName = fileName,
+        FullName = $@"C:\videos\{fileName}",
+        ContentType = "TV Show",
+        PresetName = "Compressarr SD-HD",
+        BeginSizeGb = 1,
+        EndSizeGb = 0.5,
+        Success = success,
+        ErrorCode = success ? null : ReportErrorCode.MoveFailedOther,
+        StartTime = DateTime.Now,
+        EndTime = DateTime.Now,
+        HomeLaneName = from,
+        RedirectedToLaneId = "kids",
+        RedirectedToLaneName = to
+    };
+
+    [Fact]
+    public void Generate_RedirectedFile_IsTaggedWithWhereItLandedAndWhereItCameFrom()
+    {
+        var model = BaseModel(new List<LaneReportSection>
+        {
+            new() { LaneDisplayName = "SD-HD", Results = new[] { Redirected("Sesame Street - S01E01.mkv") } }
+        });
+
+        var html = new HtmlReportGenerator().Generate(model);
+
+        Assert.Contains("Landed in Kids - redirected from SD-HD", html);
+        Assert.Contains("class=\"redir\"", html); // its own row colour, not the red/yellow ones
+    }
+
+    [Fact]
+    public void Generate_RedirectedFiles_GetABannerListingEachFromAndTo_InTheirOwnNoticeStyle()
+    {
+        var model = BaseModel(new List<LaneReportSection>
+        {
+            new() { LaneDisplayName = "SD-HD", Results = new[] { Redirected("a.mkv"), Redirected("b.mkv", from: "SD-HD", to: "Movies"), Result("c.mkv") } }
+        });
+
+        var html = new HtmlReportGenerator().Generate(model);
+
+        Assert.Contains("class=\"banner redirect\"", html);
+        Assert.Contains("2 file(s) redirected to a different lane", html);
+        Assert.Contains("a.mkv: SD-HD &rarr; Kids", html);
+        Assert.Contains("b.mkv: SD-HD &rarr; Movies", html);
+        Assert.DoesNotContain("c.mkv: ", html); // an ordinary file is not listed
+    }
+
+    [Fact]
+    public void Generate_NoRedirectedFiles_HasNoRedirectBannerOrTag()
+    {
+        var model = BaseModel(new List<LaneReportSection>
+        {
+            new() { LaneDisplayName = "SD-HD", Results = new[] { Result("a.mkv") } }
+        });
+
+        var html = new HtmlReportGenerator().Generate(model);
+
+        Assert.DoesNotContain("<div class=\"banner redirect\"", html);
+        Assert.DoesNotContain("redirected from", html);
+        Assert.DoesNotContain("class=\"redir\"", html);
+    }
+
+    [Fact]
+    public void Generate_ARedirectedFileThatFailed_StaysAnErrorRow_AndIsNotCountedAsRedirected()
+    {
+        // A failed move landed nowhere, so the engine never marks it redirected; and even if a result carried
+        // the marker, an error row keeps its red colour.
+        var model = BaseModel(new List<LaneReportSection>
+        {
+            new() { LaneDisplayName = "SD-HD", Results = new[] { Redirected("a.mkv", success: false) } }
+        });
+
+        var html = new HtmlReportGenerator().Generate(model);
+
+        Assert.Contains("<tr class=\"err\">", html);
+        Assert.DoesNotContain("<tr class=\"redir\">", html);
+    }
+
+    [Fact]
+    public void ReportModel_RedirectedCount_CountsOnlyRedirectedFilesAcrossLanes()
+    {
+        var model = BaseModel(new List<LaneReportSection>
+        {
+            new() { LaneDisplayName = "A", Results = new[] { Redirected("a.mkv"), Result("b.mkv") } },
+            new() { LaneDisplayName = "B", Results = new[] { Redirected("c.mkv") } }
+        });
+
+        Assert.Equal(2, model.RedirectedCount);
+    }
+
     [Fact]
     public void Generate_EmbedsLogoAndFavicon_AsBase64()
+
     {
         var model = BaseModel(new List<LaneReportSection>());
 

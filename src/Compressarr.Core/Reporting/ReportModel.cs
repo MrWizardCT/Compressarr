@@ -59,6 +59,15 @@ public sealed class ReportModel
     /// <see cref="ErrorCount"/>: these files did convert and get filed correctly.</summary>
     public int WarningCount => Lanes.Sum(l => l.Results.Count(r => r.Success && !string.IsNullOrEmpty(r.PostProcessWarning)));
 
-    public double TotalBeforeGb => Lanes.Sum(l => l.Results.Sum(r => r.BeginSizeGb));
+    /// <summary>Files that really landed in a different lane's library than their own - a deliberate
+    /// user redirect (see ResumeEntry.DestinationLaneId), shown on the report as its own notice and
+    /// counted in the run history so the History page can highlight the run.</summary>
+    public IReadOnlyList<ConversionResult> RedirectedResults =>
+        Lanes.SelectMany(l => l.Results).Where(r => r.RedirectedToLaneId is not null).ToList();
+
+    public int RedirectedCount => RedirectedResults.Count;
+
+    public double TotalBeforeGb =>
+ Lanes.Sum(l => l.Results.Sum(r => r.BeginSizeGb));
     public double TotalAfterGb => Lanes.Sum(l => l.Results.Sum(r => r.EndSizeGb));
 }

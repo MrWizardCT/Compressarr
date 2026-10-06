@@ -140,7 +140,8 @@ file sealed class NoOpProgressReporter : IRunProgressReporter
 
 file sealed class NoOpHistoryStore : IRunHistoryStore
 {
-    public void AppendRun(string logFilePath, RunHistoryRecord record) { }
+    public List<RunHistoryRecord> Appended { get; } = new();
+    public void AppendRun(string logFilePath, RunHistoryRecord record) => Appended.Add(record);
     public IReadOnlyList<RunHistoryRecord> GetHistory(string logFilePath) => Array.Empty<RunHistoryRecord>();
     public int GetRunCount(string runCountPath) => 0;
     public void IncrementRunCount(string runCountPath) { }
@@ -222,7 +223,7 @@ public class RunOrchestratorTests : IDisposable
     // even a private one, so the caller constructs it and passes it in instead of getting it back.
     private (RunOrchestrator Orchestrator, string ResumeFilePath) BuildOrchestrator(
         CompressarrConfig config, IEncoderRunner processRunner, IResumeStateStore? resumeStore = null,
-        IRunLogger? logger = null, TimeSpan? postExecTimeout = null, IEncodeSchedule? schedule = null)
+        IRunLogger? logger = null, TimeSpan? postExecTimeout = null, IEncodeSchedule? schedule = null, IRunHistoryStore? historyStore = null)
     {
         // HandBrakeCLI/presets "paths" just need to exist on disk for PathExists to pass -
         // PassThroughPathExpander does no real expansion, and FixedExtensionPresetService never
@@ -241,6 +242,7 @@ public class RunOrchestratorTests : IDisposable
         // singleton) - RunOrchestrator's own HasLoggedError check needs to see errors logged
         // from deep inside ConversionOrchestrator too, the same as it does in production.
         var effectiveLogger = logger ?? new NoOpRunLogger();
+        var effectiveHistory = historyStore ?? new NoOpHistoryStore();
         var effectiveSchedule = schedule ?? new EncodeSchedule(new StaticConfigStore(config), new ActiveEncodeProcess());
 
         var conversionOrchestrator = new ConversionOrchestrator(
@@ -255,12 +257,12 @@ public class RunOrchestratorTests : IDisposable
         var runOrchestrator = postExecTimeout is { } timeout
             ? new RunOrchestrator(
                 new PassThroughPathExpander(), new FixedExtensionPresetService(), conversionOrchestrator, new MetadataService(),
-                effectiveResumeStore, effectiveLogger, new NoOpHistoryStore(), new NoOpHistoryRollupCalculator(),
+                effectiveResumeStore, effectiveLogger, effectiveHistory, new NoOpHistoryRollupCalculator(),
                 new Compressarr.Core.Reporting.HtmlReportGenerator(), new NoOpReportLauncher(), new NoOpNotificationService(), new NoOpNotificationDispatcher(),
                 new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController(), effectiveSchedule, timeout)
             : new RunOrchestrator(
                 new PassThroughPathExpander(), new FixedExtensionPresetService(), conversionOrchestrator, new MetadataService(),
-                effectiveResumeStore, effectiveLogger, new NoOpHistoryStore(), new NoOpHistoryRollupCalculator(),
+                effectiveResumeStore, effectiveLogger, effectiveHistory, new NoOpHistoryRollupCalculator(),
                 new Compressarr.Core.Reporting.HtmlReportGenerator(), new NoOpReportLauncher(), new NoOpNotificationService(), new NoOpNotificationDispatcher(),
                 new NoOpTrashService(), new NoOpProgressReporter(), new ActiveRunController(), effectiveSchedule);
 
@@ -402,6 +404,60 @@ public class RunOrchestratorTests : IDisposable
 
         Assert.Equal(new[] { "a.mkv", "b.mkv" }, processRunner.ProcessedInOrder);
         Assert.Equal(2, result!.TotalFiles);
+    }
+
+    [Fact]
+    public async Task RunOnceAsync_AFileAssignedToAnotherLane_LandsThere_AndTheRunRecordsAndReportsTheRedirect()
+    {
+        var homeInput = Path.Combine(_tempDir, "HomeInput");
+        var homeLibrary = Path.Combine(_tempDir, "HomeLibrary");
+        var kidsLibrary = Path.Combine(_tempDir, "KidsLibrary");
+        var folder = Path.Combine(homeInput, "Sesame Street (1969)");
+        foreach (var d in new[] { folder, homeLibrary, kidsLibrary, Path.Combine(_tempDir, "HomeOutput"), Path.Combine(_tempDir, "KidsInput"), Path.Combine(_tempDir, "KidsOutput") }) Directory.CreateDirectory(d);
+        var source = Path.Combine(folder, "Sesame Street (1969).mkv");
+        File.WriteAllText(source, "video");
+
+        var home = MakeLane("hdsd", "SD-HD", homeInput, Path.Combine(_tempDir, "HomeOutput"));
+        home.MovieBasePath = homeLibrary;
+        var kids = MakeLane("kids", "Kids", Path.Combine(_tempDir, "KidsInput"), Path.Combine(_tempDir, "KidsOutput"));
+        kids.MovieBasePath = kidsLibrary;
+        var config = new CompressarrConfig { Processing = new ProcessingSettings { MoveFiles = true, ClearTitleMetadata = false, DeleteAfterConvert = DeleteAfterConvertMode.Delete } };
+        config.HandBrake.CliPath = Path.Combine(_tempDir, "HandBrakeCLI.exe");
+        config.HandBrake.PresetsPath = Path.Combine(_tempDir, "presets.json");
+        config.Logging.LogFilePath = Path.Combine(_tempDir, "Logs");
+        config.Report.ReportPath = Path.Combine(_tempDir, "Reports");
+        config.Lanes.Add(home);
+        config.Lanes.Add(kids);
+
+        var history = new NoOpHistoryStore();
+        var (orchestrator, resumeFilePath) = BuildOrchestrator(config, new RecordingProcessRunner(), historyStore: history);
+        new JsonResumeStateStore().Save(new List<ResumeEntry>
+        {
+            new() { LaneId = "hdsd", FullName = source, Status = ResumeStatus.Pending, Order = 0, DestinationLaneId = "kids" }
+        }, resumeFilePath);
+
+        var result = await orchestrator.RunOnceAsync(config);
+
+        Assert.Equal(1, result!.TotalFiles);
+        Assert.True(File.Exists(Path.Combine(kidsLibrary, "Sesame Street (1969)", "Sesame Street (1969).mkv")));
+        Assert.Empty(Directory.GetFileSystemEntries(homeLibrary));
+        Assert.Equal(1, Assert.Single(history.Appended).RedirectCount);
+
+        var reportHtml = File.ReadAllText(Assert.Single(Directory.GetFiles(config.Report.ReportPath, "*.html")));
+        Assert.Contains("Landed in Kids - redirected from SD-HD", reportHtml);
+        Assert.Contains("1 file(s) redirected to a different lane", reportHtml);
+    }
+
+    [Fact]
+    public async Task RunOnceAsync_WithNoRedirects_RecordsAZeroRedirectCount()
+    {
+        var (config, _) = MakeSingleLaneConfig("a.mkv");
+        var history = new NoOpHistoryStore();
+        var (orchestrator, _) = BuildOrchestrator(config, new RecordingProcessRunner(), historyStore: history);
+
+        await orchestrator.RunOnceAsync(config);
+
+        Assert.Equal(0, Assert.Single(history.Appended).RedirectCount);
     }
 
     [Fact]

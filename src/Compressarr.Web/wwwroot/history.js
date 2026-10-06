@@ -66,10 +66,18 @@ function reportRow(entry) {
   // sidebar's error/warning count badges - a run with any failed file is an error row even if it
   // also has warnings, matching how the sidebar badges count them as separate, non-overlapping
   // buckets.
-  const rowClass = entry.errorCount > 0 ? ' class="err"' : entry.warningCount > 0 ? ' class="warn"' : '';
+  //
+  // A run that sent any file to a different lane than its own gets its own notice colour (neither red nor
+  // yellow - a redirect is a deliberate choice, not a failure), shown when nothing worse applies, plus a
+  // small tag beside the report link either way so it is never lost under an error/warning colour.
+  const redirectCount = entry.redirectCount || 0;
+  const rowClass = entry.errorCount > 0 ? ' class="err"' : entry.warningCount > 0 ? ' class="warn"' : redirectCount > 0 ? ' class="redir"' : '';
+  const redirectTag = redirectCount > 0
+    ? ` <span class="redirect-tag" title="${redirectCount} file(s) in this run landed in a different lane than the one they were found in">&#8618; ${redirectCount} redirected</span>`
+    : '';
   return `<tr${rowClass}>
     <td>${entry.runNumber}</td>
-    <td><a href="${url}" target="_blank" rel="noopener">${date} report</a></td>
+    <td><a href="${url}" target="_blank" rel="noopener">${date} report</a>${redirectTag}</td>
     <td>${entry.fileCount}</td>
     <td>${entry.beforeGb.toFixed(2)} GB</td>
     <td>${entry.afterGb.toFixed(2)} GB</td>
