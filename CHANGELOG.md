@@ -9,6 +9,22 @@ for that full history.
 > and renaming all run on plain, inspectable regex pattern matching - the same deterministic
 > logic every time, nothing generative involved.
 
+## [2.2.0-beta.3] - 2026-10-07
+
+> [!NOTE]
+> Changes since [2.2.0-beta.2](https://github.com/MrWizardCT/Compressarr/releases/tag/v2.2.0-beta.2)
+> only - everything else is in the entries below.
+
+### Fixed
+- **Uninstalling (or upgrading) while Compressarr was running left it installed.** The tray app has no
+  window to close, so it kept its program file locked: the uninstaller reported success but the
+  install folder stayed behind. Setup and the uninstaller now stop a running Compressarr first (its
+  settings are saved as they change), and the install folder is removed as a backstop.
+- **"Launch Compressarr" at the end of Setup now opens the Monitor page** as well as starting the app.
+- **A downloaded HandBrakeCLI now goes under `%AppData%\Compressarr\tools\HandBrakeCLI`**, next to
+  ffmpeg, instead of directly in `%AppData%\Compressarr`. An existing install keeps working from
+  wherever its saved path points.
+
 ## [2.2.0-beta.2] - 2026-10-06
 
 > [!WARNING]
