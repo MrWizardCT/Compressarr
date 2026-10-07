@@ -48,7 +48,7 @@ public static class HandBrakeEndpoints
                 return Results.BadRequest(new { message = "No downloadable HandBrakeCLI build was found for this platform. On Linux, install it via your distro's package manager or Flatpak." });
             }
 
-            var installDir = Path.Combine(AppPaths.GetAppDataDirectory(), "HandBrakeCLI");
+            var installDir = Path.Combine(AppPaths.GetToolsDirectory(), "HandBrakeCLI");
             var installedPath = await installer.InstallAsync(release, installDir);
 
             configStore.Update(AppPaths.GetConfigFilePath(), config =>

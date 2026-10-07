@@ -135,7 +135,9 @@ public partial class App : Application
         // shell-launch code needed. Waits on webStartTask first - Kestrel hasn't necessarily
         // finished binding yet at this point (StartAsync above is fire-and-forget), and opening
         // the browser before it has would just show a connection-refused page.
-        if (earlyConfig.Repeat.LaunchMonitorAtStartup)
+        // The installer's "Launch Compressarr" passes --open-ui so a fresh install lands on the Monitor page.
+        var openUiRequested = ApplicationLifetime is IClassicDesktopStyleApplicationLifetime launchArgs && launchArgs.Args?.Contains("--open-ui") == true;
+        if (earlyConfig.Repeat.LaunchMonitorAtStartup || openUiRequested)
         {
             var reportLauncher = Services.GetRequiredService<Compressarr.Core.Reporting.IReportLauncher>();
             _ = webStartTask.ContinueWith(_ => reportLauncher.Open($"{webUrl}monitor.html"), TaskScheduler.Default);

@@ -112,7 +112,13 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Run]
 ; Compressarr has no window of its own - it's a tray icon whose only UI is the browser, so
 ; "launch after install" is the equivalent of a normal app opening its main window on first run.
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+; --open-ui makes the app open the Monitor page in the browser as well.
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--open-ui"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; Backstop: if anything was left in the install folder (a locked file the uninstaller couldn't remove
+; the first time), take the folder with it.
+Type: filesandordirs; Name: "{app}"
 
 [Code]
 function InitializeSetup(): Boolean;
@@ -121,6 +127,9 @@ var
   ResultCode: Integer;
 begin
   Result := True;
+  // Close a running Compressarr BEFORE the old version's uninstaller runs below - that uninstaller is
+  // the previous release's own and can't be taught to do it, and a running exe can't be deleted.
+  Exec('taskkill.exe', '/IM "{#MyAppExeName}" /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   // If any previous version is already installed, silently run ITS OWN registered uninstaller
   // before this version's files ever get laid down. Confirmed necessary 2026-09-05: switching
   // from a self-contained build to this framework-dependent one left coreclr.dll/hostfxr.dll
@@ -135,6 +144,17 @@ begin
     UninstallString := RemoveQuotes(UninstallString);
     Exec(UninstallString, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
+end;
+
+// A running Compressarr (a tray app with no window to close) kept its exe locked, so the uninstaller
+// reported success while leaving the install folder behind. Stop it first; its settings are saved
+// to disk as they change, so nothing is lost.
+function InitializeUninstall(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  Exec('taskkill.exe', '/IM "{#MyAppExeName}" /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
