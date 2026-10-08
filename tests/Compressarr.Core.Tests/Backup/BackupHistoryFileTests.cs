@@ -66,6 +66,22 @@ public class BackupHistoryFileTests : AppDataTestBase
     }
 
     [Fact]
+    public async Task GetBackupPath_OnlyHandsOutBackupsInTheBackupFolder()
+    {
+        var (service, backupFolder, _) = Build();
+        var backup = await service.RunBackupAsync();
+        File.WriteAllText(Path.Combine(backupFolder, "other.zip"), "x");           // a zip that is not one of ours
+        var outside = Path.Combine(AppData, "Compressarr_Backup_outside.zip");     // ours by name, but not in the folder
+        File.WriteAllText(outside, "x");
+
+        Assert.Equal(Path.Combine(backupFolder, backup.FileName!), service.GetBackupPath(backup.FileName!, backupFolder));
+        Assert.Null(service.GetBackupPath("other.zip", backupFolder));
+        Assert.Null(service.GetBackupPath(@"..\Compressarr_Backup_outside.zip", backupFolder));
+        Assert.Null(service.GetBackupPath("Compressarr_Backup_missing.zip", backupFolder));
+        Assert.Null(service.GetBackupPath("", backupFolder));
+    }
+
+    [Fact]
     public async Task AnUnmigrated21HistoryInTheLogsFolder_IsStillBackedUp()
     {
         var (service, backupFolder, logFolder) = Build();

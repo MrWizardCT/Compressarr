@@ -24,6 +24,7 @@ file sealed class FakeBackupService : IBackupService
 
     public IReadOnlyList<BackupFileInfo> ListBackups(string? folderOverride = null) => Array.Empty<BackupFileInfo>();
     public Task<BackupResult> RestoreBackupAsync(string fileName, string? folderOverride = null) => Task.FromResult(new BackupResult(true, fileName, null));
+    public string? GetBackupPath(string fileName, string? folderOverride = null) => null;
 }
 
 public class BackupSchedulerTests

@@ -33,6 +33,12 @@ public interface IBackupService
     /// actually contains - anything the backup doesn't include (e.g. no resume.json because none
     /// existed at backup time) is left untouched rather than deleted.</summary>
     Task<BackupResult> RestoreBackupAsync(string fileName, string? folderOverride = null);
+
+    /// <summary>The full path of a backup zip that can be handed to the user as a download, or null if there is no such
+    /// backup. Only a file named like the ones Compressarr writes (Compressarr_Backup_*.zip) sitting directly in the
+    /// resolved backup folder qualifies: Path.GetFileName strips any folder the caller sent, and the name pattern
+    /// keeps this from serving other zip files that happen to share the folder.</summary>
+    string? GetBackupPath(string fileName, string? folderOverride = null);
 }
 
 public sealed class BackupService : IBackupService
@@ -111,6 +117,17 @@ public sealed class BackupService : IBackupService
             .OrderByDescending(f => f.CreationTimeUtc)
             .Select(f => new BackupFileInfo(f.Name, f.Length, f.CreationTimeUtc))
             .ToList();
+    }
+
+    public string? GetBackupPath(string fileName, string? folderOverride = null)
+    {
+        var safeName = Path.GetFileName(fileName ?? "");
+        if (!safeName.StartsWith("Compressarr_Backup_", StringComparison.OrdinalIgnoreCase)
+            || !safeName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return null;
+
+        var folder = ResolveFolder(folderOverride, _configStore.Load(AppPaths.GetConfigFilePath()));
+        var path = Path.Combine(folder, safeName);
+        return File.Exists(path) ? path : null;
     }
 
     public async Task<BackupResult> RestoreBackupAsync(string fileName, string? folderOverride = null)

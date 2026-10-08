@@ -287,6 +287,28 @@ public class EncoderEndpointTests
         Assert.False(File.Exists(leftover));
     }
 
+    [Fact]
+    public async Task BackupDownload_ServesTheZip_AndRefusesAnythingElse()
+    {
+        await using var host = await QueueHost.StartAsync(Lane1);
+        using var made = await host.Client.PostAsync("/api/backups/run", null);
+        made.EnsureSuccessStatusCode();
+        var name = JsonNode.Parse(await made.Content.ReadAsStringAsync())!["fileName"]!.GetValue<string>();
+
+        using var ok = await host.Client.GetAsync($"/api/backups/download?fileName={Uri.EscapeDataString(name)}");
+        var bytes = await ok.Content.ReadAsByteArrayAsync();
+        using var traversal = await host.Client.GetAsync($"/api/backups/download?fileName={Uri.EscapeDataString(@"..\" + name)}&folder={Uri.EscapeDataString(Path.GetTempPath())}");
+        using var notABackup = await host.Client.GetAsync("/api/backups/download?fileName=anything.zip");
+
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        Assert.Equal("application/zip", ok.Content.Headers.ContentType!.MediaType);
+        Assert.Equal(name, ok.Content.Headers.ContentDisposition!.FileName!.Trim('"'));
+        Assert.Equal((byte)'P', bytes[0]); // a zip starts "PK"
+        Assert.Equal((byte)'K', bytes[1]);
+        Assert.Equal(HttpStatusCode.NotFound, traversal.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, notABackup.StatusCode);
+    }
+
     [Theory]
     [InlineData("/api/encoder")]
     [InlineData("/api/profiles")]

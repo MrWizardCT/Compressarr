@@ -16,6 +16,7 @@ for that full history.
 > only - everything else is in the entries below.
 
 ### Added
+- **Backups can be downloaded.** Each backup in the list on the Settings page now has a Download button, so a copy can be kept on another computer. The Backups card also suggests keeping a copy somewhere other than this machine, since backups are saved there by default.
 - **"Create a desktop shortcut" is now ticked by default** in the installer, and an upgrade keeps the choice you made before instead of resetting it every time.
 - **Browse... buttons on the Encoder page** for the HandBrakeCLI, ffmpeg and ffprobe paths. It opens Compressarr's own folder browser, which lists the programs (.exe files on Windows) in each folder and starts in the folder the path already points to.
 
@@ -31,7 +32,6 @@ for that full history.
 - **Custom HandBrake presets used by a lane are no longer missed.** The one-time migration only ran on the very first start, so lanes that arrived afterwards (a restored backup, imported settings, or a first start on a clean install) still named presets that only lived in HandBrake's `presets.json`. Compressarr now copies any such preset into its own profiles at every startup, after Import settings and after Restoring a backup. Nothing is renamed or repointed by this.
 
 ### Changed
-- **Backups card: a hint to keep a copy elsewhere.** Backups are saved on the same computer by default, so the Settings page now suggests copying them to another drive or a share now and then.
 - **The run history now lives in Compressarr's own data folder** (`%AppData%\Compressarr\Compressarr_History.csv`) instead of the Logs folder, so clearing out the logs can't delete it and changing the log folder can't leave it behind. A history file already in the Logs folder is copied across the first time 2.2 needs it, and the old copy is removed. Backup, Restore, Clear History and Purge all use the new location.
 
 ### Compatibility

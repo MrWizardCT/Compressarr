@@ -405,6 +405,11 @@ async function loadBackupList() {
     restoreBtn.textContent = 'Restore';
     restoreBtn.addEventListener('click', () => restoreBackup(b.fileName));
 
+    const downloadBtn = document.createElement('button');
+    downloadBtn.textContent = 'Download';
+    downloadBtn.title = 'Save a copy of this backup to the computer you are using.';
+    downloadBtn.addEventListener('click', () => downloadBackup(b.fileName));
+
     const fileCell = document.createElement('td');
     fileCell.textContent = b.fileName;
     const sizeCell = document.createElement('td');
@@ -412,11 +417,22 @@ async function loadBackupList() {
     const createdCell = document.createElement('td');
     createdCell.textContent = new Date(b.createdUtc).toLocaleString();
     const actionCell = document.createElement('td');
-    actionCell.appendChild(restoreBtn);
+    actionCell.append(restoreBtn, ' ', downloadBtn);
 
     row.append(fileCell, sizeCell, createdCell, actionCell);
     body.appendChild(row);
   }
+}
+
+// A plain link click: the server answers with an attachment, so the browser saves it and this page stays put.
+function downloadBackup(fileName) {
+  const folder = document.getElementById('backupFolderPath').value;
+  const link = document.createElement('a');
+  link.href = `/api/backups/download?fileName=${encodeURIComponent(fileName)}&folder=${encodeURIComponent(folder || '')}`;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 async function restoreBackup(fileName) {

@@ -129,6 +129,15 @@ public static class BackupEndpoints
             return Results.Json(backupService.ListBackups(folder));
         });
 
+        // Hands a backup zip to the browser as a download, so a copy can be kept somewhere other than this computer.
+        app.MapGet("/api/backups/download", (string fileName, string? folder, IBackupService backupService) =>
+        {
+            var path = backupService.GetBackupPath(fileName, folder);
+            return path is null
+                ? Results.NotFound()
+                : Results.File(File.OpenRead(path), "application/zip", Path.GetFileName(path));
+        });
+
         app.MapPost("/api/backups/restore", async (RestoreBackupRequest request, IBackupService backupService, IHandBrakeProfileMigration migration, IConfigStore configStore, Compressarr.Core.Startup.IStartupRegistrationService startupRegistration) =>
         {
             var result = await backupService.RestoreBackupAsync(request.FileName, request.Folder);
