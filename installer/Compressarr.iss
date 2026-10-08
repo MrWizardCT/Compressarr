@@ -121,12 +121,23 @@ Filename: "{app}\{#MyAppExeName}"; Parameters: "--open-ui"; Description: "Launch
 Type: filesandordirs; Name: "{app}"
 
 [Code]
+var
+  // Whether an earlier install existed, and whether it had a desktop shortcut - read BEFORE its uninstaller
+  // runs (that removes the shortcut and the installer's memory of which tasks were ticked), so the
+  // "Create a desktop shortcut" box can be set to match what the user had instead of resetting to the default.
+  HadPreviousInstall: Boolean;
+  HadDesktopShortcut: Boolean;
+
 function InitializeSetup(): Boolean;
 var
   UninstallString: String;
   ResultCode: Integer;
 begin
   Result := True;
+  HadPreviousInstall := RegKeyExists(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6884601A-BC28-4492-BD25-354A350A5114}_is1')
+    or RegKeyExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6884601A-BC28-4492-BD25-354A350A5114}_is1');
+  HadDesktopShortcut := FileExists(ExpandConstant('{commondesktop}\{#MyAppName}.lnk'))
+    or FileExists(ExpandConstant('{userdesktop}\{#MyAppName}.lnk'));
   // Close a running Compressarr BEFORE the old version's uninstaller runs below - that uninstaller is
   // the previous release's own and can't be taught to do it, and a running exe can't be deleted.
   Exec('taskkill.exe', '/IM "{#MyAppExeName}" /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
@@ -168,4 +179,17 @@ begin
   // Manager's WM_QUERYENDSESSION handshake entirely, which is what used to leave the app running
   // with a wedged message loop that couldn't even be closed via its own tray Exit command.
   Exec('taskkill.exe', '/IM "{#MyAppExeName}" /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+// Upgrading over an existing install: keep the desktop-shortcut choice the user already had (ticked by default
+// for a first install, per [Tasks]).
+procedure InitializeWizard();
+begin
+  if HadPreviousInstall then
+  begin
+    if HadDesktopShortcut then
+      WizardSelectTasks('desktopicon')
+    else
+      WizardSelectTasks('!desktopicon');
+  end;
 end;
