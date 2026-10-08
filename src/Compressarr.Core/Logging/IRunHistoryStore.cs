@@ -48,9 +48,11 @@ public interface IRunHistoryStore
 {
     /// <summary>Appends one row for a run that processed at least one file — an empty pass is
     /// never recorded, mirroring v1's Invoke-CompressarrRun gating.</summary>
-    void AppendRun(string logFilePath, RunHistoryRecord record);
+    /// <param name="legacyLogFolder">Where 2.1.x kept the history file (the Logs folder). Only used to find and carry
+    /// over an existing file - the history now lives in the app data folder.</param>
+    void AppendRun(string legacyLogFolder, RunHistoryRecord record);
 
-    IReadOnlyList<RunHistoryRecord> GetHistory(string logFilePath);
+    IReadOnlyList<RunHistoryRecord> GetHistory(string legacyLogFolder);
 
     /// <summary>Persistent, cumulative count of runs that processed at least one file. Returns 0
     /// if never run before — also how the app recognizes "first launch ever" to decide which UI

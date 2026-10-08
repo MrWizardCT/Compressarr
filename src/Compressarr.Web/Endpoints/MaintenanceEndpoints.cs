@@ -12,6 +12,14 @@ namespace Compressarr.Web.Endpoints;
 
 public static class MaintenanceEndpoints
 {
+    /// <summary>The run-history file(s) to remove when history is cleared: the live one in the app data folder, plus a
+    /// leftover 2.1.x copy still in the Logs folder (if it stayed, the next start would copy it back).</summary>
+    private static IEnumerable<string> HistoryFiles(string logPath)
+    {
+        yield return AppPaths.GetHistoryFilePath();
+        if (!string.IsNullOrWhiteSpace(logPath)) yield return Path.Combine(logPath, "Compressarr_History.csv");
+    }
+
     public static void MapMaintenanceEndpoints(this IEndpointRouteBuilder app)
     {
         // Every handler here just writes a file (or deletes old ones already past retention) -
@@ -84,7 +92,7 @@ public static class MaintenanceEndpoints
         });
 
         // Everything the History page shows: every HTML report, plus the run-history CSV rollup
-        // (lives in the Logs folder, not Reports - CsvRunHistoryStore's own "Compressarr_History.csv").
+        // (kept in the app data folder - see AppPaths.GetHistoryFilePath - so clearing Logs never touches it).
         // Deliberately leaves the run counter alone - a separate lifetime stat, not "history."
         app.MapPost("/api/maintenance/clear-history", (IConfigStore configStore, IPathExpander pathExpander, ITrashService trash) =>
         {
@@ -99,8 +107,7 @@ public static class MaintenanceEndpoints
             }
 
             var logPath = pathExpander.Expand(config.Logging.LogFilePath);
-            var historyFile = Path.Combine(logPath, "Compressarr_History.csv");
-            if (File.Exists(historyFile))
+            foreach (var historyFile in HistoryFiles(logPath).Where(File.Exists))
             {
                 trash.DeleteFile(historyFile, DeleteAfterConvertMode.Recycle);
             }
@@ -139,6 +146,12 @@ public static class MaintenanceEndpoints
                 }
             }
 
+            foreach (var historyFile in HistoryFiles(logPath).Where(File.Exists))
+            {
+                try { File.Delete(historyFile); }
+                catch (Exception ex) { logger.Log($"Purge Logs & Reports: unable to remove '{historyFile}': {ex.Message}", LogSeverity.Error); }
+            }
+
             return Results.Ok();
         });
 
@@ -168,6 +181,13 @@ public static class MaintenanceEndpoints
                 {
                     trash.DeleteFile(file, DeleteAfterConvertMode.Recycle);
                 }
+            }
+
+            // The run history is no longer one of the files in the Logs folder, but "everything except settings
+            // and lanes" still means it.
+            foreach (var historyFile in HistoryFiles(logPath).Where(File.Exists).Where(f => !f.StartsWith(logPath, StringComparison.OrdinalIgnoreCase)))
+            {
+                trash.DeleteFile(historyFile, DeleteAfterConvertMode.Recycle);
             }
 
             resumeStore.Update(AppPaths.GetResumeFilePath(), state =>

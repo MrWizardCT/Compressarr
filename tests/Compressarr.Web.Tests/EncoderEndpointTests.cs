@@ -267,6 +267,26 @@ public class EncoderEndpointTests
         return JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsArray().Select(i => i!["field"]!.GetValue<string>()).ToList();
     }
 
+    [Fact]
+    public async Task PurgeLogsAndReports_AlsoRemovesTheRunHistory_WhereverItIs_ButClearLogsDoesNot()
+    {
+        await using var host = await QueueHost.StartAsync(Lane1);
+        var logs = Path.Combine(Compressarr.Core.Config.AppPaths.GetAppDataDirectory(), "Logs");
+        Directory.CreateDirectory(logs);
+        var live = Compressarr.Core.Config.AppPaths.GetHistoryFilePath();
+        var leftover = Path.Combine(logs, "Compressarr_History.csv");
+        await File.WriteAllTextAsync(live, "x");
+        await File.WriteAllTextAsync(leftover, "x");
+        await File.WriteAllTextAsync(Path.Combine(logs, "run.log"), "x");
+
+        (await host.Client.PostAsync("/api/maintenance/clear-logs", null)).EnsureSuccessStatusCode();
+        Assert.True(File.Exists(live)); // clearing logs no longer reaches the history
+
+        (await host.Client.PostAsync("/api/maintenance/purge-logs-reports", null)).EnsureSuccessStatusCode();
+        Assert.False(File.Exists(live));
+        Assert.False(File.Exists(leftover));
+    }
+
     [Theory]
     [InlineData("/api/encoder")]
     [InlineData("/api/profiles")]

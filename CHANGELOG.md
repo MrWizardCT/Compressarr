@@ -28,6 +28,12 @@ for that full history.
 - **Check/Install no longer calls any file "ffmpeg".** It now asks the program at the configured path and says so when it does not answer like ffmpeg (a wrong .exe such as notepad.exe), and that check gives up after 8 seconds instead of 30.
 - **Custom HandBrake presets used by a lane are no longer missed.** The one-time migration only ran on the very first start, so lanes that arrived afterwards (a restored backup, imported settings, or a first start on a clean install) still named presets that only lived in HandBrake's `presets.json`. Compressarr now copies any such preset into its own profiles at every startup, after Import settings and after Restoring a backup. Nothing is renamed or repointed by this.
 
+### Changed
+- **The run history now lives in Compressarr's own data folder** (`%AppData%\Compressarr\Compressarr_History.csv`) instead of the Logs folder, so clearing out the logs can't delete it and changing the log folder can't leave it behind. A history file already in the Logs folder is copied across the first time 2.2 needs it, and the old copy is removed. Backup, Restore, Clear History and Purge all use the new location.
+
+### Compatibility
+- **Going back to 2.1.x needs one manual step.** 2.1.x reads the history from the Logs folder, not from the new place. After downgrading, copy `%AppData%\Compressarr\Compressarr_History.csv` into your Logs folder (by default `%AppData%\Compressarr\Logs`, or whichever folder Settings → Logging points to); without that, the History page starts empty and 2.1.x begins a new file. If you used 2.1.x for a while and then come back to 2.2, copy the file the other way (replacing the one in the app data folder), because 2.2 keeps using its own copy once it exists. A backup made by either version restores into the other.
+
 ## [2.2.0-beta.3] - 2026-10-07
 
 > [!NOTE]

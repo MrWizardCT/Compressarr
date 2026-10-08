@@ -50,6 +50,11 @@ public static class AppPaths
 
     public static string GetResumeFilePath() => Path.Combine(GetAppDataDirectory(), "compressarr.resume.json");
 
+    /// <summary>The run-history file behind the History page's totals. It lives with the other permanent data, not in
+    /// the Logs folder (a place people clear out, and one that moves when the log path is changed). The file keeps its
+    /// 2.1.x name, so a 2.2 backup restores into a 2.1.x install's expectations and vice versa.</summary>
+    public static string GetHistoryFilePath() => Path.Combine(GetAppDataDirectory(), "Compressarr_History.csv");
+
     /// <summary>Compressarr's own encoder profiles live here: the user's HandBrake profiles (backed
     /// up with the rest of the settings) and the generated file HandBrake is actually handed.</summary>
     public static string GetProfilesDirectory() => Path.Combine(GetAppDataDirectory(), "Profiles");

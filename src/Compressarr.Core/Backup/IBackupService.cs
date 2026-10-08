@@ -67,7 +67,11 @@ public sealed class BackupService : IBackupService
             // encoder profiles (HandBrake and ffmpeg). Deliberately excludes the generated handbrake-active.json (derived from
             // the profiles, rebuilt before every encode) and the Reports folder (regenerable HTML dumps,
             // already retention-pruned).
-            var historyFile = Path.Combine(_pathExpander.Expand(config.Logging.LogFilePath), "Compressarr_History.csv");
+            // A 2.1.x install's history is still in the Logs folder until 2.2 first starts; pick it up from there too so a
+            // backup taken before that point doesn't silently leave it out.
+            var historyFile = AppPaths.GetHistoryFilePath();
+            var legacyHistoryFile = Path.Combine(_pathExpander.Expand(config.Logging.LogFilePath), "Compressarr_History.csv");
+            if (!File.Exists(historyFile) && File.Exists(legacyHistoryFile)) historyFile = legacyHistoryFile;
             var sources = new[]
             {
                 AppPaths.GetConfigFilePath(),
@@ -150,11 +154,9 @@ public sealed class BackupService : IBackupService
                 RestoreEntry(tempDir, "handbrake-profiles.json", AppPaths.GetHandBrakeProfilesFilePath());
                 RestoreEntry(tempDir, "ffmpeg-profiles.json", AppPaths.GetFFmpegProfilesFilePath());
 
-                // Lands wherever the just-restored config's Log folder points - falls back to the
-                // pre-restore config if this particular backup didn't include settings at all.
-                var effectiveConfig = restoredConfig ?? config;
-                var historyDest = Path.Combine(_pathExpander.Expand(effectiveConfig.Logging.LogFilePath), "Compressarr_History.csv");
-                RestoreEntry(tempDir, "Compressarr_History.csv", historyDest);
+                // The history goes back into the app data folder (also for a backup made by 2.1.x, where it was
+                // the Logs folder's file - the entry name is the same).
+                RestoreEntry(tempDir, "Compressarr_History.csv", AppPaths.GetHistoryFilePath());
 
                 return new BackupResult(true, safeName, null);
             }

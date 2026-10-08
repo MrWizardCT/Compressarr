@@ -1,4 +1,5 @@
 using System.Globalization;
+using Compressarr.Core.Config;
 
 namespace Compressarr.Core.Logging;
 
@@ -8,17 +9,45 @@ namespace Compressarr.Core.Logging;
 /// seam Phase 4 replaces with a structured store for the history-rollup/CPU/web-monitor features.</summary>
 public sealed class CsvRunHistoryStore : IRunHistoryStore
 {
-    private const string HistoryFileName = "Compressarr_History.csv";
+    // 2.1.x kept this file in the Logs folder (the legacyLogFolder every method is still handed). 2.2 keeps it in the
+    // app data folder (AppPaths.GetHistoryFilePath) and carries an existing one across the first time it is needed.
+    private const string LegacyFileName = "Compressarr_History.csv";
+    private static readonly object MigrationLock = new();
+
+    /// <summary>The history file to use. If there isn't one in the app data folder yet but 2.1.x left one in the old Logs
+    /// folder, it is copied across, then the old copy is removed so there is a single live file (a stale duplicate left
+    /// behind would otherwise come back after the history is cleared).</summary>
+    private static string ResolveHistoryFile(string legacyLogFolder)
+    {
+        var target = AppPaths.GetHistoryFilePath();
+        if (File.Exists(target) || string.IsNullOrWhiteSpace(legacyLogFolder)) return target;
+
+        lock (MigrationLock)
+        {
+            if (File.Exists(target)) return target;
+            var legacy = Path.Combine(legacyLogFolder, LegacyFileName);
+            if (!File.Exists(legacy)) return target;
+
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            // Copy to a temp name first so a half-copied file is never mistaken for the real one.
+            var staging = target + ".copying";
+            File.Copy(legacy, staging, overwrite: true);
+            File.Move(staging, target);
+            try { File.Delete(legacy); } catch { /* still readable there; nothing depends on it going */ }
+        }
+
+        return target;
+    }
     private static readonly string[] Header =
     {
         "yyyy", "mm", "dd", "BegSize", "EndSize", "FileCount", "ProcessHours", "ProcessMinutes", "ProcessSeconds",
         "RunNumber", "ReportFileName", "ErrorCount", "WarningCount", "RedirectCount"
     };
 
-    public void AppendRun(string logFilePath, RunHistoryRecord record)
+    public void AppendRun(string legacyLogFolder, RunHistoryRecord record)
     {
-        Directory.CreateDirectory(logFilePath);
-        var historyFile = Path.Combine(logFilePath, HistoryFileName);
+        var historyFile = ResolveHistoryFile(legacyLogFolder);
+        Directory.CreateDirectory(Path.GetDirectoryName(historyFile)!);
 
         var isNew = !File.Exists(historyFile);
         using var writer = new StreamWriter(historyFile, append: true);
@@ -47,9 +76,9 @@ public sealed class CsvRunHistoryStore : IRunHistoryStore
         writer.WriteLine(string.Join(",", fields));
     }
 
-    public IReadOnlyList<RunHistoryRecord> GetHistory(string logFilePath)
+    public IReadOnlyList<RunHistoryRecord> GetHistory(string legacyLogFolder)
     {
-        var historyFile = Path.Combine(logFilePath, HistoryFileName);
+        var historyFile = ResolveHistoryFile(legacyLogFolder);
         if (!File.Exists(historyFile)) return Array.Empty<RunHistoryRecord>();
 
         var lines = File.ReadAllLines(historyFile);

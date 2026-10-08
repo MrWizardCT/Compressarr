@@ -283,7 +283,7 @@ these pages has a small **?** next to it with a tooltip explaining what it does.
 | Companion file extensions | Which sibling file extensions (subtitles, `.nfo`, artwork, etc.) move along with a converted file |
 | Unmatched companion file handling | Maintain, Delete, or Recycle a companion file whose extension isn't on that list |
 | On destination collision | Overwrite (default), Skip, or Rename, when a file already exists at the destination |
-| Log folder / Report folder | Where run logs, the history CSV, and HTML reports are written |
+| Log folder / Report folder | Where run logs and HTML reports are written (the history CSV is kept in Compressarr's own data folder, so clearing the logs can't delete it) |
 | Log/report retention (days) | Logs and reports older than this are cleaned up automatically (0 = keep forever) |
 | Open report after run | Always, On Error, or Never |
 | Enable Monitoring at Startup | Start watching lanes automatically when Compressarr launches |
