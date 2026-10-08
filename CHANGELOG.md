@@ -16,6 +16,7 @@ for that full history.
 > only - everything else is in the entries below.
 
 ### Added
+- **"Create a desktop shortcut" is now ticked by default** in the installer.
 - **Browse... buttons on the Encoder page** for the HandBrakeCLI, ffmpeg and ffprobe paths. It opens Compressarr's own folder browser, which lists the programs (.exe files on Windows) in each folder and starts in the folder the path already points to.
 
 ### Fixed
