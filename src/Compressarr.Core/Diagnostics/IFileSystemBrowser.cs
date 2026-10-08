@@ -24,12 +24,14 @@ public interface IFileSystemBrowser
     /// roots (drive letters on Windows, "/" on Unix) instead of a single directory's contents.</summary>
     /// <param name="includeFiles">Also list the files in the folder (executables only on Windows) - used to
     /// pick HandBrakeCLI / ffmpeg. A path that is itself a file starts the listing in its folder.</param>
-    FileSystemBrowseResult Browse(string? path, bool includeFiles = false);
+    /// <param name="extension">With includeFiles, list only files with this extension (".json" for a presets file).
+    /// Without one, Windows lists executables only and other systems list every file.</param>
+    FileSystemBrowseResult Browse(string? path, bool includeFiles = false, string? extension = null);
 }
 
 public sealed class FileSystemBrowser : IFileSystemBrowser
 {
-    public FileSystemBrowseResult Browse(string? path, bool includeFiles = false)
+    public FileSystemBrowseResult Browse(string? path, bool includeFiles = false, string? extension = null)
     {
         if (includeFiles && !string.IsNullOrWhiteSpace(path) && File.Exists(path))
         {
@@ -80,8 +82,14 @@ public sealed class FileSystemBrowser : IFileSystemBrowser
                     {
                         var info = new FileInfo(file);
                         if (info.Attributes.HasFlag(FileAttributes.Hidden) || info.Attributes.HasFlag(FileAttributes.System)) continue;
-                        // Windows tools are .exe; elsewhere an executable has no telltale extension.
-                        if (OperatingSystem.IsWindows() && !string.Equals(info.Extension, ".exe", StringComparison.OrdinalIgnoreCase)) continue;
+                        // An explicit extension wins; otherwise Windows tools are .exe, and elsewhere an executable has
+                        // no telltale extension.
+                        if (!string.IsNullOrWhiteSpace(extension))
+                        {
+                            var wanted = extension.StartsWith('.') ? extension : "." + extension;
+                            if (!string.Equals(info.Extension, wanted, StringComparison.OrdinalIgnoreCase)) continue;
+                        }
+                        else if (OperatingSystem.IsWindows() && !string.Equals(info.Extension, ".exe", StringComparison.OrdinalIgnoreCase)) continue;
                         files.Add(new FileSystemBrowseEntry(info.Name, info.FullName));
                     }
                     catch { }

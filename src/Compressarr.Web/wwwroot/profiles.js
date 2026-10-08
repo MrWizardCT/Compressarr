@@ -252,6 +252,12 @@ document.getElementById('importTabs').addEventListener('click', e => {
   if (b) showTab(b.dataset.t);
 });
 document.getElementById('readFileBtn').addEventListener('click', readFile);
+// Browse... picks the presets file with the app's own file browser (a web page can't see the real path of a file
+// chosen with the system dialog), then reads it straight away.
+document.getElementById('browseFileBtn').addEventListener('click', () => {
+  const field = document.getElementById('importFilePath');
+  openFileBrowser(field.value, chosen => { field.value = chosen; readFile(); }, '.json');
+});
 document.getElementById('importFilePath').addEventListener('keydown', e => { if (e.key === 'Enter') readFile(); });
 document.getElementById('importSearch').addEventListener('input', renderCandidates);
 document.getElementById('importTable').addEventListener('change', e => {

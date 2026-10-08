@@ -242,6 +242,20 @@ public class EncoderEndpointTests
     }
 
     [Fact]
+    public async Task Browse_WithAnExtension_ListsOnlyThoseFiles()
+    {
+        await using var host = await QueueHost.StartAsync(Lane1);
+        var folder = Path.Combine(host.Root, "downloads");
+        Directory.CreateDirectory(folder);
+        await File.WriteAllTextAsync(Path.Combine(folder, "my-presets.json"), "{}");
+        await File.WriteAllTextAsync(Path.Combine(folder, "tool.exe"), "x");
+
+        var result = JsonNode.Parse(await host.Client.GetStringAsync($"/api/browse?path={Uri.EscapeDataString(folder)}&files=true&ext=.json"))!;
+
+        Assert.Equal(new[] { "my-presets.json" }, result["files"]!.AsArray().Select(f => f!["name"]!.GetValue<string>()));
+    }
+
+    [Fact]
     public async Task ValidateLane_ReportsWhatIsWrongWithoutSaving_AndNothingOnceItIsFixed()
     {
         await using var host = await QueueHost.StartAsync(Lane1);

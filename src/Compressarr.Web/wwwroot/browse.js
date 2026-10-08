@@ -6,6 +6,7 @@ let _browseModal = null;
 let _browseOnSelect = null;
 let _browseCurrentPath = null;
 let _browseFileMode = false;
+let _browseExtension = '';
 let _browseSelectedFile = null;
 
 function ensureBrowseModal() {
@@ -45,7 +46,7 @@ function closeBrowseModal() {
 }
 
 async function loadBrowsePath(path) {
-  const res = await fetch(`/api/browse?path=${encodeURIComponent(path || '')}${_browseFileMode ? '&files=true' : ''}`);
+  const res = await fetch(`/api/browse?path=${encodeURIComponent(path || '')}${_browseFileMode ? '&files=true' + (_browseExtension ? '&ext=' + encodeURIComponent(_browseExtension) : '') : ''}`);
   const result = await res.json();
 
   _browseCurrentPath = result.currentPath;
@@ -97,9 +98,10 @@ async function loadBrowsePath(path) {
   }
 }
 
-function openBrowser(fileMode, startPath, onSelect) {
+function openBrowser(fileMode, startPath, onSelect, extension) {
   ensureBrowseModal();
   _browseFileMode = fileMode;
+  _browseExtension = extension || '';
   document.getElementById('browseModalTitle').textContent = fileMode ? 'Choose a file' : 'Choose a folder';
   document.getElementById('browseModalSelect').textContent = fileMode ? 'Select This File' : 'Select This Folder';
   _browseOnSelect = onSelect;
@@ -108,4 +110,5 @@ function openBrowser(fileMode, startPath, onSelect) {
 }
 
 function openFolderBrowser(startPath, onSelect) { openBrowser(false, startPath, onSelect); }
-function openFileBrowser(startPath, onSelect) { openBrowser(true, startPath, onSelect); }
+// extension (e.g. '.json') limits the list to that kind of file; leave it out to list programs.
+function openFileBrowser(startPath, onSelect, extension) { openBrowser(true, startPath, onSelect, extension); }

@@ -18,7 +18,7 @@ for that full history.
 ### Added
 - **Backups can be downloaded.** Each backup in the list on the Settings page now has a Download button, so a copy can be kept on another computer. The Backups card also suggests keeping a copy somewhere other than this machine, since backups are saved there by default.
 - **"Create a desktop shortcut" is now ticked by default** in the installer, and an upgrade keeps the choice you made before instead of resetting it every time.
-- **Browse... buttons on the Encoder page** for the HandBrakeCLI, ffmpeg and ffprobe paths. It opens Compressarr's own folder browser, which lists the programs (.exe files on Windows) in each folder and starts in the folder the path already points to.
+- **Browse... buttons on the Encoder page** for the HandBrakeCLI, ffmpeg and ffprobe paths. The Profiles import-from-file box has one too, listing only .json files. It opens Compressarr's own folder browser, which lists the programs (.exe files on Windows) in each folder and starts in the folder the path already points to.
 
 ### Fixed
 - **"Run at login" now follows a restored backup or imported settings.** The login entry was only written when Settings was saved, so settings that arrived another way never started Compressarr at login. Compressarr now checks it at startup (without disturbing an entry that already works) and applies it after Import and Restore.

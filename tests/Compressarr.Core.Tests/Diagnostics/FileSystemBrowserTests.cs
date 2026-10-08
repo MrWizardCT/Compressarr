@@ -36,6 +36,21 @@ public class FileSystemBrowserTests : IDisposable
     }
 
     [Fact]
+    public void Browse_IncludeFiles_WithAnExtension_ListsOnlyThatKindOfFile()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "presets.json"), "{}");
+        File.WriteAllText(Path.Combine(_tempDir, "PRESETS2.JSON"), "{}");
+        File.WriteAllText(Path.Combine(_tempDir, "tool.exe"), "x");
+        File.WriteAllText(Path.Combine(_tempDir, "readme.txt"), "x");
+
+        var withDot = _browser.Browse(_tempDir, includeFiles: true, extension: ".json");
+        var withoutDot = _browser.Browse(_tempDir, includeFiles: true, extension: "json");
+
+        Assert.Equal(new[] { "presets.json", "PRESETS2.JSON" }.OrderBy(n => n), withDot.Files.Select(f => f.Name).OrderBy(n => n));
+        Assert.Equal(withDot.Files.Select(f => f.Name), withoutDot.Files.Select(f => f.Name));
+    }
+
+    [Fact]
     public void Browse_EmptyPath_ReturnsRoots()
     {
         var result = _browser.Browse("");
