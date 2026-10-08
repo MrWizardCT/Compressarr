@@ -16,6 +16,7 @@ for that full history.
 > only - everything else is in the entries below.
 
 ### Added
+- **The Monitor's status line says where the file will land.** It now reads, for example, "Compressing File in Lane UHD using ffmpeg profile Compressarr SD-HD and lands in Kids" - the lane you assigned the file to, or its own lane when you haven't.
 - **Backups can be downloaded.** Each backup in the list on the Settings page now has a Download button, so a copy can be kept on another computer. The Backups card also suggests keeping a copy somewhere other than this machine, since backups are saved there by default.
 - **"Create a desktop shortcut" is now ticked by default** in the installer, and an upgrade keeps the choice you made before instead of resetting it every time.
 - **Browse... buttons on the Encoder page** for the HandBrakeCLI, ffmpeg and ffprobe paths. The Profiles import-from-file box has one too, listing only .json files. It opens Compressarr's own folder browser, which lists the programs (.exe files on Windows) in each folder and starts in the folder the path already points to.

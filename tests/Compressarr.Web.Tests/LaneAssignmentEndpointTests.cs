@@ -34,6 +34,32 @@ public class LaneAssignmentEndpointTests
     }
 
     [Fact]
+    public async Task TheCurrentStatus_SaysWhereTheFileBeingEncodedWillLand()
+    {
+        await using var host = await QueueHost.StartAsync(Home, Kids);
+        var ordinary = host.Drop("hdsd", "a.mkv");
+        var assigned = host.Drop("hdsd", "Sesame Street (1969).mkv");
+        await host.SetDestinationAsync("hdsd", assigned, "kids");
+        var state = host.Services.GetRequiredService<Compressarr.Web.CurrentRunStateService>();
+        state.RunStarted("20260101_000000");
+        state.LaneStarted("hdsd", "SD-HD", false);
+
+        state.FileStarted("hdsd", 1, 2, "a.mkv", ordinary, "Some Preset", 1);
+        var own = await StatusLandsInAsync(host);
+        state.FileStarted("hdsd", 2, 2, "Sesame Street (1969).mkv", assigned, "Some Preset", 1);
+        var redirected = await StatusLandsInAsync(host);
+
+        Assert.Equal("SD-HD", own);        // no assignment: it lands in its own lane
+        Assert.Equal("Kids", redirected);  // assigned to Kids
+    }
+
+    private static async Task<string?> StatusLandsInAsync(QueueHost host)
+    {
+        var status = await host.Client.GetFromJsonAsync<System.Text.Json.Nodes.JsonObject>("/api/run/status");
+        return status!["landsInLaneName"]?.GetValue<string>();
+    }
+
+    [Fact]
     public async Task AnOrdinaryRow_HasNoDestination()
     {
         await using var host = await QueueHost.StartAsync(Home, Kids);

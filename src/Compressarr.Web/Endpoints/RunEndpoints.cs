@@ -138,7 +138,8 @@ public static class RunEndpoints
             IConfigStore configStore,
             IQueueService queue,
             IEncodeSchedule schedule,
-            IActiveEncodeProcess activeProcess) =>
+            IActiveEncodeProcess activeProcess,
+            IResumeStateStore resumeStore) =>
         {
             var snapshot = runState.GetSnapshot();
             var cpu = await cpuSampler.SampleAsync();
@@ -153,6 +154,17 @@ public static class RunEndpoints
             var scheduleStatus = schedule.GetStatus(config);
             var queueEtaText = ComputeQueueEtaText(upNext, runState, schedule, scheduleStatus);
 
+            // Where the file being encoded will end up: the lane it was assigned to land in, else its own lane.
+            string? landsInLaneName = null;
+            if (snapshot.IsRunning && snapshot.FileFullName is not null)
+            {
+                var homeLane = config.Lanes.FirstOrDefault(l => l.DisplayName == snapshot.LaneDisplayName);
+                var assigned = resumeStore.Load(AppPaths.GetResumeFilePath())
+                    .FirstOrDefault(e => string.Equals(e.FullName, snapshot.FileFullName, StringComparison.OrdinalIgnoreCase))?.DestinationLaneId;
+                var destination = string.IsNullOrWhiteSpace(assigned) ? null : config.Lanes.FirstOrDefault(l => l.Id == assigned);
+                landsInLaneName = (destination ?? homeLane)?.DisplayName;
+            }
+
             return Results.Json(new
             {
                 isMonitoring = loopController.IsRunning,
@@ -165,6 +177,7 @@ public static class RunEndpoints
                 engine = (config.Lanes.FirstOrDefault(l => l.DisplayName == snapshot.LaneDisplayName)?.Engine ?? EncoderEngine.HandBrake).ToString(),
                 fileName = snapshot.FileName,
                 presetName = snapshot.PresetName,
+                landsInLaneName,
                 fileIndex = snapshot.FileIndex,
                 fileTotal = snapshot.FileTotal,
                 progressPercent = snapshot.ProgressPercent,

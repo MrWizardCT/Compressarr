@@ -630,7 +630,7 @@ async function poll() {
   document.getElementById('fileLabel').textContent = s.isRenaming
     ? `Renaming files with FileBot in Lane ${s.laneDisplayName}`
     : (s.isRunning && s.laneDisplayName)
-      ? `Compressing File in Lane ${s.laneDisplayName}${s.presetName ? ` using ${s.engine === 'FFmpeg' ? 'ffmpeg profile' : 'preset'} ${s.presetName}` : ''}`
+      ? `Compressing File in Lane ${s.laneDisplayName}${s.presetName ? ` using ${s.engine === 'FFmpeg' ? 'ffmpeg profile' : 'preset'} ${s.presetName}` : ''}${s.landsInLaneName ? ` and lands in ${s.landsInLaneName}` : ''}`
       : 'Waiting for files';
   document.getElementById('fileValue').textContent = s.isRenaming ? '-' : (s.isRunning ? (s.fileName || '-') : '-');
 
