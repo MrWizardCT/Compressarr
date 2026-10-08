@@ -114,6 +114,12 @@ public sealed class ResumeEntry
     /// "stays until explicitly toggled back" reasoning as Skipped.</summary>
     public bool Removed { get; set; }
 
+    /// <summary>Set when the encode itself failed (ERROR 101). Such a file stays in the queue with its ERROR
+    /// badge and is NOT retried by later passes, so a file that fails the same way every time doesn't make
+    /// a new error report on every poll - the user investigates first, then uses Remove on the row to
+    /// queue it afresh. Other Error entries (an abort, a missing preset) are still retried by rescans.</summary>
+    public bool HeldAfterFailure { get; set; }
+
     /// <summary>Set when this entry was created purely as bookkeeping for a queue-control action
     /// (reorder/skip/preset-override/remove) on a file the current pass hadn't tracked yet, rather
     /// than by ConversionOrchestrator's own real resume-from-interrupted-run bookkeeping. Exists

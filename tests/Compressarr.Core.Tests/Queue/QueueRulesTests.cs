@@ -214,6 +214,24 @@ public sealed class QueueRulesTests : IDisposable
     }
 
     [Fact]
+    public void TrackScannedFiles_FileHeldAfterAnEncodeFailureIsNotRetriedByARescan()
+    {
+        var folder = Folder("a");
+        var failed = Touch(folder, "failed.mkv");
+        var aborted = Touch(folder, "aborted.mkv");
+        var state = new List<ResumeEntry>
+        {
+            new() { LaneId = "laneA", FullName = failed, Status = ResumeStatus.Error, HeldAfterFailure = true },
+            new() { LaneId = "laneA", FullName = aborted, Status = ResumeStatus.Error } // an abort or missing preset is still retried
+        };
+
+        QueueRules.TrackScannedFiles(state, "laneA", new[] { new FileInfo(failed), new FileInfo(aborted) }, new HashSet<string>(), laneHadPending: false);
+
+        Assert.Equal(ResumeStatus.Error, state.Single(e => e.FullName == failed).Status);
+        Assert.Equal(ResumeStatus.Pending, state.Single(e => e.FullName == aborted).Status);
+    }
+
+    [Fact]
     public void TrackScannedFiles_ReAddedFileIsLeftAloneWhileTheLaneHasABacklog()
     {
         var folder = Folder("a");

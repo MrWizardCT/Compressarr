@@ -316,7 +316,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         }
         else
         {
-            videoFiles = scanned;
+            // A file held after an encode failure is shown with its ERROR badge but is not work to do.
+            videoFiles = scanned.Where(f => !resumeState.Any(e => e.LaneId == lane.Id && e.HeldAfterFailure && string.Equals(e.FullName, f.FullName, StringComparison.OrdinalIgnoreCase))).ToList();
             _resumeStore.Save(resumeState, resumeFilePath);
         }
 
@@ -585,6 +586,9 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             errorCode = runResult.Failure == EncodeFailureKind.LengthMismatch
                 ? ReportErrorCode.EncodedLengthMismatch
                 : ReportErrorCode.EncodeFailed;
+
+            // A plain encode failure is held for the user to look at; see ResumeEntry.HeldAfterFailure.
+            resumeEntry.HeldAfterFailure = errorCode == ReportErrorCode.EncodeFailed;
             if (runResult.Failure != EncodeFailureKind.None && runResult.FailureMessage is not null)
             {
                 failureReason = runResult.FailureMessage;

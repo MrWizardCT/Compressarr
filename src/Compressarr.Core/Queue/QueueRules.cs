@@ -340,6 +340,7 @@ public static class QueueRules
                 addedUntracked = true;
             }
             else if (!laneHadPending
+                && !existing.HeldAfterFailure
                 && existing.Status is not ResumeStatus.Pending
                 && existing.Status is not ResumeStatus.MoveFailed and not ResumeStatus.CompanionMoveFailed and not ResumeStatus.CleanupPending)
             {

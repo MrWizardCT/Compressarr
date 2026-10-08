@@ -16,6 +16,7 @@ for that full history.
 > only - everything else is in the entries below.
 
 ### Fixed
+- **A file whose encode failed (ERROR 101) is no longer retried on every pass.** It stays in the queue with its ERROR badge and makes no new error report each time monitoring runs, so you can look into the cause first. Remove on its row queues it afresh once you have fixed the problem. Other errors (an abort, a missing preset) are retried as before.
 - **The Extra CLI options example no longer suggests `--two-pass`**, which current HandBrakeCLI rejects ("unknown option"). The placeholder and tooltip on the Encoder page now show `--verbose=1`.
 - **Check/Install no longer calls any file "ffmpeg".** It now asks the program at the configured path and says so when it does not answer like ffmpeg (a wrong .exe such as notepad.exe), and that check gives up after 8 seconds instead of 30.
 - **Custom HandBrake presets used by a lane are no longer missed.** The one-time migration only ran on the very first start, so lanes that arrived afterwards (a restored backup, imported settings, or a first start on a clean install) still named presets that only lived in HandBrake's `presets.json`. Compressarr now copies any such preset into its own profiles at every startup, after Import settings and after Restoring a backup. Nothing is renamed or repointed by this.

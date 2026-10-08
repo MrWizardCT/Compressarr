@@ -628,6 +628,36 @@ public class ConversionOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task FailedEncode_IsHeldInTheQueue_AndNotRetriedOnTheNextPass()
+    {
+        var inputDir = Path.Combine(_tempDir, "Input");
+        var outputDir = Path.Combine(_tempDir, "Output");
+        Directory.CreateDirectory(inputDir);
+        Directory.CreateDirectory(outputDir);
+        File.WriteAllText(Path.Combine(inputDir, "file1.mkv"), "source");
+
+        var lane = new LaneConfig { Id = "lane1", DisplayName = "Test Lane", Enabled = true, Input = inputDir, Output = outputDir, MoviePreset = "Any Preset" };
+        var config = BuildConfig(DeleteAfterConvertMode.Maintain);
+        config.Lanes.Add(lane);
+        var configStore = new SwitchingConfigStore(config, config, switchOnCall: int.MaxValue);
+        var orchestrator = new ConversionOrchestrator(
+            new PassThroughPathExpander(), new RealFolderScanner(), new NoOpFileBotRunner(), new FixedExtensionPresetService(), new MetadataService(),
+            new FailingProcessRunner(), new FileRouter(), new NoOpCompanionFileService(), new NoOpArrUnmonitorService(),
+            new RecordingTrashService(), new NoOpRunLogger(), new NoOpResumeStateStore(), new NoOpProgressReporter(), configStore);
+        var state = new List<ResumeEntry>();
+        var resumePath = Path.Combine(_tempDir, "resume.json");
+
+        var first = await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000000", state, resumePath, CancellationToken.None);
+        var second = await RunLaneAsync(orchestrator, lane, config, _tempDir, "20260101_000100", state, resumePath, CancellationToken.None);
+
+        Assert.False(Assert.Single(first).Success);
+        Assert.Empty(second); // nothing re-attempted, so no new failure to report
+        var entry = Assert.Single(state);
+        Assert.Equal(ResumeStatus.Error, entry.Status);
+        Assert.True(entry.HeldAfterFailure);
+    }
+
+    [Fact]
     public async Task ProcessLaneAsync_RespectsOrder_NotScanOrder()
     {
         var inputDir = Path.Combine(_tempDir, "Input");
