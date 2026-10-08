@@ -25,8 +25,16 @@ public sealed class WebHistoryRollupCalculator : IWebHistoryRollupCalculator
     private readonly IRunHistoryStore _historyStore;
 
     /// <summary>Settable seam for tests to pin "now" instead of depending on the real clock -
-    /// production code never sets this.</summary>
-    internal DateTime Now { get; set; } = DateTime.Now;
+    /// production code never sets this. Unpinned, it reads the clock on every call: this calculator is a
+    /// singleton, and capturing the time once at construction anchored "Today" and "Last 7 Days" to the day
+    /// the app happened to start (a long-running install showed days-old figures).</summary>
+    internal DateTime Now
+    {
+        get => _pinnedNow ?? DateTime.Now;
+        set => _pinnedNow = value;
+    }
+
+    private DateTime? _pinnedNow;
 
     public WebHistoryRollupCalculator(IRunHistoryStore historyStore)
     {

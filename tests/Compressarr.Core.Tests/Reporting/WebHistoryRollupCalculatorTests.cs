@@ -18,6 +18,19 @@ public class WebHistoryRollupCalculatorTests
         new(date.Year, date.Month, date.Day, beforeGb, afterGb, fileCount, processHours, processMinutes, processSeconds);
 
     [Fact]
+    public void Now_IsReadFromTheClockEachTime_NotCapturedWhenTheCalculatorIsCreated()
+    {
+        // The calculator is a singleton for the life of the app - a clock read once at construction left
+        // "Today" showing the day the app started.
+        var before = DateTime.Now;
+        var calc = new WebHistoryRollupCalculator(new FakeRunHistoryStore());
+
+        System.Threading.Thread.Sleep(50);
+
+        Assert.True(calc.Now >= before.AddMilliseconds(40));
+    }
+
+    [Fact]
     public void Calculate_EmptyHistory_AllBucketsZero()
     {
         var store = new FakeRunHistoryStore();

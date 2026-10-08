@@ -20,6 +20,7 @@ for that full history.
 - **Browse... buttons on the Encoder page** for the HandBrakeCLI, ffmpeg and ffprobe paths. It opens Compressarr's own folder browser, which lists the programs (.exe files on Windows) in each folder and starts in the folder the path already points to.
 
 ### Fixed
+- **History: "Today" and "Last 7 Days" now follow the real date.** On a Compressarr that had been running for days they were stuck on the day it started (the figures at the top of the page no longer matched the reports below). This fix is also in 2.1.x.
 - **A Lanes field no longer stays red once it holds a valid value.** A lane showing a configuration problem now re-checks itself as you edit or Browse, so the red outline (and the warning at the top) clears as soon as the problem is fixed instead of waiting for the next Save.
 - **A file whose encode failed (ERROR 101) is no longer retried on every pass.** It stays in the queue with its ERROR badge and makes no new error report each time monitoring runs, so you can look into the cause first. Remove on its row queues it afresh once you have fixed the problem. Other errors (an abort, a missing preset) are retried as before.
 - **The Extra CLI options example no longer suggests `--two-pass`**, which current HandBrakeCLI rejects ("unknown option"). The placeholder and tooltip on the Encoder page now show `--verbose=1`.
