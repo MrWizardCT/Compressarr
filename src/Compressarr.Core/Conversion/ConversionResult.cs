@@ -32,6 +32,13 @@ public sealed class ConversionResult
     /// failure shows this code + a help-bubble description instead of that irrelevant link.</summary>
     public ReportErrorCode? ErrorCode { get; init; }
 
+    /// <summary>Whether this file belongs in the History totals (files, sizes, savings). A file whose encode
+    /// never produced output (an encode failure, no preset, ...) does not - counting it put its size in
+    /// "Before" with nothing in "After", so every failure showed as 100% saved. A file that DID encode but
+    /// could not be moved to its destination (ERROR 102-104) does count: its sizes are real.</summary>
+    public bool CountsTowardTotals => Success
+        || ErrorCode is ReportErrorCode.MoveDestinationUnavailable or ReportErrorCode.MoveDiskFull or ReportErrorCode.MoveFailedOther;
+
     /// <summary>Set when a successful conversion still had a problem in a secondary post-process
     /// step - moving companion files (subtitles, .nfo, artwork) or the Sonarr/Radarr unmonitor
     /// call. Deliberately doesn't flip <see cref="Success"/> or count toward the report's error

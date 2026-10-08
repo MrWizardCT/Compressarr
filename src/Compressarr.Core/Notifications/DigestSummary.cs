@@ -37,7 +37,7 @@ public static class DigestSummaryBuilder
 
     private static DigestSummary Build(IReadOnlyList<RunHistoryRecord> history, DateOnly start, DateOnly end)
     {
-        var matches = history.Where(r =>
+        var matches = history.Where(r => !r.IsAllFailed).Where(r =>
         {
             var d = new DateOnly(r.Year, r.Month, r.Day);
             return d >= start && d <= end;

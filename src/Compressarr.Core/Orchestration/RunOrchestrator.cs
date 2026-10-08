@@ -389,8 +389,11 @@ public sealed class RunOrchestrator : IRunOrchestrator
         var runNumber = 0;
         if (totalFiles > 0)
         {
-            var totalBeg = allResults.Sum(r => r.BeginSizeGb);
-            var totalEnd = allResults.Sum(r => r.EndSizeGb);
+            // History totals count only files that actually produced an encode (see CountsTowardTotals); a run
+            // in which every file failed is still recorded (it has a report and a run number) with 0 files.
+            var counted = allResults.Where(r => r.CountsTowardTotals).ToList();
+            var totalBeg = counted.Sum(r => r.BeginSizeGb);
+            var totalEnd = counted.Sum(r => r.EndSizeGb);
             // Mirrors ReportModel.ErrorCount/WarningCount - computed here too since the history
             // record is written before reportModel exists below.
             var errorCount = allResults.Count(r => !r.Success);
@@ -399,7 +402,7 @@ public sealed class RunOrchestrator : IRunOrchestrator
             // before IncrementRunCount below so the record and the counter agree on the same value.
             runNumber = _historyStore.GetRunCount(runCountPath) + 1;
             _historyStore.AppendRun(logFilePath, new RunHistoryRecord(
-                endTime.Year, endTime.Month, endTime.Day, totalBeg, totalEnd, totalFiles,
+                endTime.Year, endTime.Month, endTime.Day, totalBeg, totalEnd, counted.Count,
                 runTime.Hours, runTime.Minutes, runTime.Seconds,
                 RunNumber: runNumber, ReportFileName: reportFileName,
                 ErrorCount: errorCount, WarningCount: warningCount));

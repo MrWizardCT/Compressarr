@@ -19,7 +19,7 @@ public sealed class HistoryRollupCalculator : IHistoryRollupCalculator
 
     public (HistoryRollup Today, HistoryRollup ThisMonth, HistoryRollup ThisYear) Calculate(string logFilePath)
     {
-        var history = _historyStore.GetHistory(logFilePath);
+        var history = _historyStore.GetHistory(logFilePath).Where(r => !r.IsAllFailed).ToList();
         var now = DateTime.Now;
 
         HistoryRollup Rollup(IEnumerable<RunHistoryRecord> rows)

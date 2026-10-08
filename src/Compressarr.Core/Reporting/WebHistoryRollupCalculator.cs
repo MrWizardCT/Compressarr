@@ -43,7 +43,7 @@ public sealed class WebHistoryRollupCalculator : IWebHistoryRollupCalculator
 
     public WebHistoryRollups Calculate(string logFilePath)
     {
-        var history = _historyStore.GetHistory(logFilePath);
+        var history = _historyStore.GetHistory(logFilePath).Where(r => !r.IsAllFailed).ToList();
         var today = Now.Date;
 
         static DateTime RecordDate(RunHistoryRecord r) => new(r.Year, r.Month, r.Day);

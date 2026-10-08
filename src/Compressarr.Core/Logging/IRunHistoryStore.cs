@@ -25,7 +25,13 @@ public sealed record RunHistoryRecord(
     int ErrorCount = 0,
     /// <summary>How many files succeeded but had a secondary post-process problem
     /// (ReportModel.WarningCount at record time - see ConversionResult.PostProcessWarning).</summary>
-    int WarningCount = 0);
+    int WarningCount = 0)
+{
+    /// <summary>A row written before failed encodes were left out of the totals, for a run in which every file
+    /// failed and nothing was produced (it recorded the files and their size as "before" with 0 "after", i.e.
+    /// 100% saved). The rollups skip these so old failures stop inflating the figures.</summary>
+    public bool IsAllFailed => FileCount > 0 && ErrorCount >= FileCount && EndSizeGb <= 0;
+}
 
 /// <summary>
 /// Narrow history/run-count interface — deliberately not the final schema. Phase 4 (web-based
