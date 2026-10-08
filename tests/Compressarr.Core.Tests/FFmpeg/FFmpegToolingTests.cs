@@ -61,6 +61,24 @@ public class FFmpegToolingTests : IDisposable
         Assert.Equal(9, encoders.Count);
     }
 
+    [Fact]
+    public async Task Probe_RejectsAProgramThatIsNotFfmpeg_ButAcceptsOneThatSaysItIs()
+    {
+        if (!OperatingSystem.IsWindows()) return; // stand-ins are .cmd files
+
+        var notFfmpeg = Path.Combine(_dir, "notffmpeg.cmd");
+        File.WriteAllText(notFfmpeg, "@echo off\r\necho I am a text editor\r\n");
+        Assert.Null(await new FFmpegCapabilityProbe().DetectAsync(notFfmpeg, CancellationToken.None));
+
+        var fake = Path.Combine(_dir, "fakeffmpeg.cmd");
+        File.WriteAllText(fake, "@echo off\r\nif \"%2\"==\"-version\" (echo ffmpeg version 7.1 Copyright\r\n) else (echo Encoders:\r\necho  ------\r\necho  V....D libx264 libx264)\r\n");
+        var caps = await new FFmpegCapabilityProbe().DetectAsync(fake, CancellationToken.None);
+
+        Assert.NotNull(caps);
+        Assert.Equal("7.1", caps!.Version);
+        Assert.True(caps.Has("libx264"));
+    }
+
     private static FFmpegCapabilities Caps(bool? nvenc, params string[] encoders) =>
         new("7.1", new HashSet<string>(encoders, StringComparer.OrdinalIgnoreCase), nvenc, "GPL build");
 

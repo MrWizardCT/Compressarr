@@ -86,8 +86,10 @@ public sealed class FFmpegCapabilityProbe : IFFmpegCapabilityProbe
     {
         if (!File.Exists(ffmpegPath)) return null;
 
-        var version = await RunAsync(ffmpegPath, new[] { "-hide_banner", "-version" }, cancellationToken);
-        if (version is null) return null;
+        // Short timeout: a real ffmpeg answers at once, and a program that isn't ffmpeg (a GUI app, say) would
+        // otherwise sit there for the full 30 seconds.
+        var version = await RunAsync(ffmpegPath, new[] { "-hide_banner", "-version" }, cancellationToken, TimeSpan.FromSeconds(8));
+        if (version is null || FFmpegCapabilityParser.ParseVersion(version.Output) is null) return null;
         var encoders = await RunAsync(ffmpegPath, new[] { "-hide_banner", "-encoders" }, cancellationToken);
         if (encoders is null) return null;
 
@@ -114,7 +116,7 @@ public sealed class FFmpegCapabilityProbe : IFFmpegCapabilityProbe
 
     private sealed record Result(int ExitCode, string Output);
 
-    private static async Task<Result?> RunAsync(string path, IEnumerable<string> args, CancellationToken ct)
+    private static async Task<Result?> RunAsync(string path, IEnumerable<string> args, CancellationToken ct, TimeSpan? limit = null)
     {
         try
         {
@@ -134,7 +136,7 @@ public sealed class FFmpegCapabilityProbe : IFFmpegCapabilityProbe
             var stderr = process.StandardError.ReadToEndAsync(ct);
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            timeout.CancelAfter(limit ?? TimeSpan.FromSeconds(30));
             try
             {
                 await process.WaitForExitAsync(timeout.Token);

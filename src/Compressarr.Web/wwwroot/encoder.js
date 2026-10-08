@@ -94,7 +94,7 @@ async function loadFfmpegCapabilities(dto) {
       dot.classList.remove('ok');
       dot.classList.toggle('bad', (dto.ffmpegLanes || []).length > 0);
       line.textContent = `Not installed · ${profiles}`;
-      detected.textContent = 'ffmpeg was not found at the path above. It is optional - use Check/Install if you want to try it.';
+      detected.textContent = 'ffmpeg was not found at the path above, or the file there is not ffmpeg. It is optional - use Check/Install if you want to try it.';
       chips.innerHTML = '';
       return;
     }
@@ -198,7 +198,13 @@ document.getElementById('checkFfmpegBtn').addEventListener('click', async () => 
   setStatus('Checking ffmpeg...');
   const status = await (await fetch('/api/ffmpeg/status')).json();
   if (status.exists && status.probeExists) {
-    setStatus('ffmpeg already found at the configured path.', true);
+    // A file being there is not enough - ask it, so a wrong program (notepad.exe...) isn't called ffmpeg.
+    const caps = await (await fetch('/api/ffmpeg/capabilities')).json().catch(() => ({ found: false }));
+    if (caps.found) {
+      setStatus(`ffmpeg ${caps.version || ''} found at the configured path.`, true);
+    } else {
+      setStatus('There is a file at the configured ffmpeg path, but it did not answer like ffmpeg - check the path.');
+    }
     loadFfmpegCapabilities(lastDto || { ffmpegProfileCount: 0, ffmpegLanes: [] });
     return;
   }
