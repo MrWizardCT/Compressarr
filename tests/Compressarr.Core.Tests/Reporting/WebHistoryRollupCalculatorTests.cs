@@ -31,6 +31,45 @@ public class WebHistoryRollupCalculatorTests
     }
 
     [Fact]
+    public void Calculate_RunsInWhichEveryFileFailed_AreSkipped_ButMixedRunsAreKept()
+    {
+        var now = new DateTime(2026, 1, 2);
+        var store = new FakeRunHistoryStore
+        {
+            Records =
+            {
+                RecordOn(now, fileCount: 1, beforeGb: 0.5, afterGb: 0) with { ErrorCount = 1 }, // old-style failed row: 100% "saved"
+                RecordOn(now, fileCount: 3, beforeGb: 9, afterGb: 3) with { ErrorCount = 1 },    // mixed: the other files really encoded
+                RecordOn(now, fileCount: 2, beforeGb: 4, afterGb: 1)
+            }
+        };
+        var calc = new WebHistoryRollupCalculator(store) { Now = now };
+
+        var result = calc.Calculate("any-path");
+
+        Assert.Equal(5, result.Today.FileCount);
+        Assert.Equal(13, result.Today.BeforeGb);
+        Assert.Equal(4, result.AllTime.AfterGb);
+    }
+
+    [Theory]
+    [InlineData(true, null, true)]
+    [InlineData(false, Compressarr.Core.Conversion.ReportErrorCode.EncodeFailed, false)]
+    [InlineData(false, Compressarr.Core.Conversion.ReportErrorCode.NoPresetConfigured, false)]
+    [InlineData(false, Compressarr.Core.Conversion.ReportErrorCode.MoveDestinationUnavailable, true)]
+    [InlineData(false, Compressarr.Core.Conversion.ReportErrorCode.MoveDiskFull, true)]
+    [InlineData(false, Compressarr.Core.Conversion.ReportErrorCode.MoveFailedOther, true)]
+    public void ConversionResult_CountsTowardTotals_OnlyWhenAnEncodeWasProduced(bool success, Compressarr.Core.Conversion.ReportErrorCode? code, bool expected)
+    {
+        var result = new Compressarr.Core.Conversion.ConversionResult
+        {
+            LaneId = "l", FileName = "f.mkv", FullName = "f.mkv", ContentType = "Movie", Success = success, ErrorCode = code
+        };
+
+        Assert.Equal(expected, result.CountsTowardTotals);
+    }
+
+    [Fact]
     public void Calculate_EmptyHistory_AllBucketsZero()
     {
         var store = new FakeRunHistoryStore();

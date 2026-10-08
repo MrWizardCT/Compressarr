@@ -30,7 +30,13 @@ public sealed record RunHistoryRecord(
     /// (see ResumeEntry.DestinationLaneId) - a deliberate user redirect, not a problem. The History
     /// page highlights such a run so a lane change is visible after the fact. 0 for rows written
     /// before this field existed (a 2.1.x build also ignores this extra trailing column).</summary>
-    int RedirectCount = 0);
+    int RedirectCount = 0)
+{
+    /// <summary>A row written before failed encodes were left out of the totals, for a run in which every file
+    /// failed and nothing was produced (it recorded the files and their size as "before" with 0 "after", i.e.
+    /// 100% saved). The rollups skip these so old failures stop inflating the figures.</summary>
+    public bool IsAllFailed => FileCount > 0 && ErrorCount >= FileCount && EndSizeGb <= 0;
+}
 
 
 /// <summary>

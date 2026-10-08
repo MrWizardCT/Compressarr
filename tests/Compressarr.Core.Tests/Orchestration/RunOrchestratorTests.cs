@@ -461,6 +461,25 @@ public class RunOrchestratorTests : IDisposable
     }
 
     [Fact]
+    public async Task RunOnceAsync_AFailedEncode_IsLeftOutOfTheHistoryTotals_ButStillRecordedAsAnError()
+    {
+        // A failed encode used to be recorded as a file with its size "before" and nothing "after" - every
+        // failure showed as 100% saved and inflated the History totals (a file failing every pass piled up
+        // hundreds of them).
+        var (config, _) = MakeSingleLaneConfig("a.mkv");
+        var history = new NoOpHistoryStore();
+        var (orchestrator, _) = BuildOrchestrator(config, new FailingProcessRunner(), historyStore: history);
+
+        await orchestrator.RunOnceAsync(config);
+
+        var record = Assert.Single(history.Appended); // the run still has a report and a run number
+        Assert.Equal(0, record.FileCount);
+        Assert.Equal(0, record.BeginSizeGb);
+        Assert.Equal(0, record.EndSizeGb);
+        Assert.Equal(1, record.ErrorCount);
+    }
+
+    [Fact]
     public async Task RunOnceAsync_WhenEveryFileCompleted_DeletesTheWholeResumeFile()
     {
         // Characterization (2.1.8): resume.json is only kept while something is still outstanding.
