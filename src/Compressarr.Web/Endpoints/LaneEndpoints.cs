@@ -54,6 +54,16 @@ public static class LaneEndpoints
             return result is null ? Results.NotFound() : Results.Json(result);
         });
 
+        // Checks a lane as it is currently typed on the page, without saving it - so a field that was red can
+        // turn normal the moment it is fixed instead of waiting for the next Save.
+        app.MapPost("/api/lanes/validate", (LaneDto dto, IConfigStore configStore, IPathExpander pathExpander, IEncoderResolver encoders) =>
+        {
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+            var lane = new LaneConfig { Id = dto.Id };
+            ConfigMapping.ApplyLaneDto(lane, dto);
+            return Results.Json(Validate(lane, config, pathExpander, encoders));
+        });
+
         // How many queued files in OTHER lanes are set to land in this lane's library (see
         // ResumeEntry.DestinationLaneId) - asked before a lane is deleted so the warning can say what would
         // happen to them: each waits in Output until the user picks another destination.

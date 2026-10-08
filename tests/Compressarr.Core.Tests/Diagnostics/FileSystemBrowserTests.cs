@@ -20,6 +20,22 @@ public class FileSystemBrowserTests : IDisposable
     }
 
     [Fact]
+    public void Browse_IncludeFiles_ListsProgramsAndStartsInAFilesFolder()
+    {
+        var exe = Path.Combine(_tempDir, "tool.exe");
+        File.WriteAllText(exe, "x");
+        File.WriteAllText(Path.Combine(_tempDir, "readme.txt"), "x");
+
+        var byFile = _browser.Browse(exe, includeFiles: true);
+        var plain = _browser.Browse(_tempDir);
+
+        Assert.Equal(_tempDir, byFile.CurrentPath);
+        Assert.Contains(byFile.Files, f => f.Name == "tool.exe");
+        if (OperatingSystem.IsWindows()) Assert.DoesNotContain(byFile.Files, f => f.Name == "readme.txt");
+        Assert.Empty(plain.Files);
+    }
+
+    [Fact]
     public void Browse_EmptyPath_ReturnsRoots()
     {
         var result = _browser.Browse("");

@@ -1,8 +1,12 @@
 // Shared server-side folder browser modal. Call openFolderBrowser(startPath, onSelect) to open
-// it - onSelect(chosenPath) is called once the user clicks "Select This Folder".
+// it - onSelect(chosenPath) is called once the user clicks "Select This Folder". openFileBrowser(startPath,
+// onSelect) is the same dialog also listing files (executables on Windows), for picking a tool such as
+// HandBrakeCLI - onSelect gets the chosen file's full path.
 let _browseModal = null;
 let _browseOnSelect = null;
 let _browseCurrentPath = null;
+let _browseFileMode = false;
+let _browseSelectedFile = null;
 
 function ensureBrowseModal() {
   if (_browseModal) return _browseModal;
@@ -11,7 +15,7 @@ function ensureBrowseModal() {
   overlay.className = 'modal-overlay hidden';
   overlay.innerHTML = `
     <div class="modal">
-      <h3>Choose a folder</h3>
+      <h3 id="browseModalTitle">Choose a folder</h3>
       <div class="modal-path" id="browseModalPath">-</div>
       <div class="modal-list" id="browseModalList"></div>
       <div class="modal-actions">
@@ -27,7 +31,8 @@ function ensureBrowseModal() {
   });
   document.getElementById('browseModalCancel').addEventListener('click', closeBrowseModal);
   document.getElementById('browseModalSelect').addEventListener('click', () => {
-    if (_browseOnSelect && _browseCurrentPath) _browseOnSelect(_browseCurrentPath);
+    const chosen = _browseFileMode ? _browseSelectedFile : _browseCurrentPath;
+    if (_browseOnSelect && chosen) _browseOnSelect(chosen);
     closeBrowseModal();
   });
 
@@ -40,12 +45,13 @@ function closeBrowseModal() {
 }
 
 async function loadBrowsePath(path) {
-  const res = await fetch(`/api/browse?path=${encodeURIComponent(path || '')}`);
+  const res = await fetch(`/api/browse?path=${encodeURIComponent(path || '')}${_browseFileMode ? '&files=true' : ''}`);
   const result = await res.json();
 
   _browseCurrentPath = result.currentPath;
   document.getElementById('browseModalPath').textContent = result.currentPath || 'Select a drive/root to begin';
-  document.getElementById('browseModalSelect').disabled = !result.currentPath;
+  _browseSelectedFile = null;
+  document.getElementById('browseModalSelect').disabled = _browseFileMode || !result.currentPath;
 
   const list = document.getElementById('browseModalList');
   list.innerHTML = '';
@@ -58,10 +64,11 @@ async function loadBrowsePath(path) {
     list.appendChild(up);
   }
 
-  if (result.directories.length === 0) {
+  const files = _browseFileMode ? (result.files || []) : [];
+  if (result.directories.length === 0 && files.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'modal-list-empty';
-    empty.textContent = 'No subfolders here.';
+    empty.textContent = _browseFileMode ? 'No subfolders or programs here.' : 'No subfolders here.';
     list.appendChild(empty);
   } else {
     for (const dir of result.directories) {
@@ -71,12 +78,34 @@ async function loadBrowsePath(path) {
       item.addEventListener('click', () => loadBrowsePath(dir.fullPath));
       list.appendChild(item);
     }
+    for (const file of files) {
+      const item = document.createElement('div');
+      item.className = 'modal-list-item file';
+      item.textContent = file.name;
+      item.addEventListener('click', () => {
+        for (const other of list.querySelectorAll('.file.selected')) other.classList.remove('selected');
+        item.classList.add('selected');
+        _browseSelectedFile = file.fullPath;
+        document.getElementById('browseModalSelect').disabled = false;
+      });
+      item.addEventListener('dblclick', () => {
+        if (_browseOnSelect) _browseOnSelect(file.fullPath);
+        closeBrowseModal();
+      });
+      list.appendChild(item);
+    }
   }
 }
 
-function openFolderBrowser(startPath, onSelect) {
+function openBrowser(fileMode, startPath, onSelect) {
   ensureBrowseModal();
+  _browseFileMode = fileMode;
+  document.getElementById('browseModalTitle').textContent = fileMode ? 'Choose a file' : 'Choose a folder';
+  document.getElementById('browseModalSelect').textContent = fileMode ? 'Select This File' : 'Select This Folder';
   _browseOnSelect = onSelect;
   _browseModal.classList.remove('hidden');
   loadBrowsePath(startPath || '');
 }
+
+function openFolderBrowser(startPath, onSelect) { openBrowser(false, startPath, onSelect); }
+function openFileBrowser(startPath, onSelect) { openBrowser(true, startPath, onSelect); }

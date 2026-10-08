@@ -54,7 +54,7 @@
       <div class="card-body">
         <div class="field-block">
           <label for="hbCliPath">HandBrakeCLI path<span class="help-tag" tabindex="0" title="Full path to HandBrakeCLI.exe. Use Check/Install to find or download it automatically.">?<span class="help-tip">Full path to HandBrakeCLI.exe. Use Check/Install to find or download it automatically.</span></span></label>
-          <div class="field-with-btn"><input type="text" id="hbCliPath" /><button id="checkHandBrakeBtn">Check/Install</button></div>
+          <div class="field-with-btn"><input type="text" id="hbCliPath" /><button class="browse-btn" data-target="hbCliPath">Browse...</button><button id="checkHandBrakeBtn">Check/Install</button></div>
         </div>
         <p class="enc-note">HandBrake's presets are no longer set up here. Compressarr always uses its own profiles (built-ins plus yours), managed on the <a href="/profiles.html">Profiles</a> page - where you can also import presets from the HandBrake app or a presets file. There is no presets.json path or Install/Merge step any more.</p>
         <div class="field-block">
@@ -73,11 +73,11 @@
         <p class="enc-note" style="margin-top:0">An optional second encoder. A lane uses it only if you pick <em>ffmpeg</em> as that lane's encoder on the <a href="/lanes.html">Lanes</a> page - until then nothing changes. ffmpeg won't produce byte-identical output to HandBrake, and Dolby Vision / HDR10+ files are handed to HandBrake automatically (see the ffmpeg profile's fallback).</p>
         <div class="field-block">
           <label for="ffPath">ffmpeg path<span class="help-tag" tabindex="0" title="Full path to ffmpeg.exe. Check/Install uses one already on this computer, or downloads a managed copy into Compressarr's own folder after asking.">?<span class="help-tip">Full path to ffmpeg.exe. Check/Install uses one already on this computer, or downloads a managed copy into Compressarr's own folder after asking.</span></span></label>
-          <div class="field-with-btn"><input type="text" id="ffPath" /><button id="checkFfmpegBtn">Check/Install</button></div>
+          <div class="field-with-btn"><input type="text" id="ffPath" /><button class="browse-btn" data-target="ffPath">Browse...</button><button id="checkFfmpegBtn">Check/Install</button></div>
         </div>
         <div class="field-block">
           <label for="ffProbePath">ffprobe path<span class="help-tag" tabindex="0" title="Full path to ffprobe.exe - it reads each file's tracks, length and HDR information. It comes in the same download as ffmpeg.">?<span class="help-tip">Full path to ffprobe.exe - it reads each file's tracks, length and HDR information. It comes in the same download as ffmpeg.</span></span></label>
-          <input type="text" id="ffProbePath" />
+          <div class="field-with-btn"><input type="text" id="ffProbePath" /><button class="browse-btn" data-target="ffProbePath">Browse...</button></div>
         </div>
         <div class="field-block">
           <label>Detected</label>
@@ -94,6 +94,7 @@
   </main>
 
   <script src="/nav.js"></script>
+  <script src="/browse.js"></script>
   <script src="/encoder.js"></script>
 </body>
 </html>

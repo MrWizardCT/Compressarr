@@ -1434,6 +1434,7 @@ td { font-variant-numeric: tabular-nums; }
 .modal-list-item:last-child { border-bottom: none; }
 .modal-list-item:hover { background: var(--bg-alt); }
 .modal-list-item.up { color: var(--accent); font-weight: 600; }
+.modal-list-item.file.selected { background: var(--accent); color: #fff; }
 .modal-list-empty { padding: 16px; color: var(--text-dim); font-size: 13px; text-align: center; }
 
 .modal-actions {

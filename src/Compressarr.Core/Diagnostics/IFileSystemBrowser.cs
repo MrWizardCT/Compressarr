@@ -5,7 +5,11 @@ public sealed record FileSystemBrowseEntry(string Name, string FullPath);
 public sealed record FileSystemBrowseResult(
     string? CurrentPath,
     string? ParentPath,
-    IReadOnlyList<FileSystemBrowseEntry> Directories);
+    IReadOnlyList<FileSystemBrowseEntry> Directories)
+{
+    /// <summary>The files in CurrentPath - only filled when the caller asked for files (the tool-path pickers).</summary>
+    public IReadOnlyList<FileSystemBrowseEntry> Files { get; init; } = Array.Empty<FileSystemBrowseEntry>();
+}
 
 /// <summary>
 /// Server-side directory browser for the web UI's folder-picker fields. A browser's native file/
@@ -18,13 +22,20 @@ public interface IFileSystemBrowser
 {
     /// <summary>Lists subdirectories at path. A null/empty/whitespace path returns the top-level
     /// roots (drive letters on Windows, "/" on Unix) instead of a single directory's contents.</summary>
-    FileSystemBrowseResult Browse(string? path);
+    /// <param name="includeFiles">Also list the files in the folder (executables only on Windows) - used to
+    /// pick HandBrakeCLI / ffmpeg. A path that is itself a file starts the listing in its folder.</param>
+    FileSystemBrowseResult Browse(string? path, bool includeFiles = false);
 }
 
 public sealed class FileSystemBrowser : IFileSystemBrowser
 {
-    public FileSystemBrowseResult Browse(string? path)
+    public FileSystemBrowseResult Browse(string? path, bool includeFiles = false)
     {
+        if (includeFiles && !string.IsNullOrWhiteSpace(path) && File.Exists(path))
+        {
+            path = Path.GetDirectoryName(path);
+        }
+
         if (string.IsNullOrWhiteSpace(path))
         {
             return BrowseRoots();
@@ -58,8 +69,29 @@ public sealed class FileSystemBrowser : IFileSystemBrowser
             // instead of erroring out.
         }
 
+        var files = new List<FileSystemBrowseEntry>();
+        if (includeFiles)
+        {
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(path).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        var info = new FileInfo(file);
+                        if (info.Attributes.HasFlag(FileAttributes.Hidden) || info.Attributes.HasFlag(FileAttributes.System)) continue;
+                        // Windows tools are .exe; elsewhere an executable has no telltale extension.
+                        if (OperatingSystem.IsWindows() && !string.Equals(info.Extension, ".exe", StringComparison.OrdinalIgnoreCase)) continue;
+                        files.Add(new FileSystemBrowseEntry(info.Name, info.FullName));
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
         var parent = GetParentPath(path);
-        return new FileSystemBrowseResult(path, parent, directories);
+        return new FileSystemBrowseResult(path, parent, directories) { Files = files };
     }
 
     private static FileSystemBrowseResult BrowseRoots()

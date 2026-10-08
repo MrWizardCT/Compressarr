@@ -220,6 +220,53 @@ public class EncoderEndpointTests
         Assert.Contains("From Old File", (await host.Client.GetFromJsonAsync<string[]>("/api/presets"))!);
     }
 
+    [Fact]
+    public async Task Browse_WithFiles_ListsThePrograms_AndOpensAtAFilesFolder()
+    {
+        await using var host = await QueueHost.StartAsync(Lane1);
+        var folder = Path.Combine(host.Root, "tools");
+        Directory.CreateDirectory(Path.Combine(folder, "sub"));
+        var exe = Path.Combine(folder, "HandBrakeCLI.exe");
+        await File.WriteAllTextAsync(exe, "x");
+        await File.WriteAllTextAsync(Path.Combine(folder, "notes.txt"), "x");
+
+        var plain = JsonNode.Parse(await host.Client.GetStringAsync($"/api/browse?path={Uri.EscapeDataString(folder)}"))!;
+        var withFiles = JsonNode.Parse(await host.Client.GetStringAsync($"/api/browse?path={Uri.EscapeDataString(exe)}&files=true"))!;
+
+        Assert.Empty(plain["files"]!.AsArray());                   // the folder picker is unchanged
+        Assert.Equal(folder, withFiles["currentPath"]!.GetValue<string>()); // a file path starts in its folder
+        var names = withFiles["files"]!.AsArray().Select(f => f!["name"]!.GetValue<string>()).ToList();
+        Assert.Contains("HandBrakeCLI.exe", names);
+        if (OperatingSystem.IsWindows()) Assert.DoesNotContain("notes.txt", names);
+        Assert.Contains("sub", withFiles["directories"]!.AsArray().Select(d => d!["name"]!.GetValue<string>()));
+    }
+
+    [Fact]
+    public async Task ValidateLane_ReportsWhatIsWrongWithoutSaving_AndNothingOnceItIsFixed()
+    {
+        await using var host = await QueueHost.StartAsync(Lane1);
+        var lanes = JsonNode.Parse(await host.Client.GetStringAsync("/api/lanes"))!.AsArray();
+        var lane = lanes[0]!.AsObject();
+        lane["input"] = Path.Combine(host.Root, "does-not-exist");
+        lane["output"] = host.Root;
+
+        var bad = await PostValidate(host, lane);
+        lane["input"] = host.Root;
+        var good = await PostValidate(host, lane);
+
+        Assert.Contains("input", bad);
+        Assert.DoesNotContain("input", good);
+        // nothing was saved
+        Assert.NotEqual(host.Root, JsonNode.Parse(await host.Client.GetStringAsync("/api/lanes"))!.AsArray()[0]!["input"]!.GetValue<string>());
+    }
+
+    private static async Task<List<string>> PostValidate(QueueHost host, JsonObject lane)
+    {
+        using var response = await host.Client.PostAsync("/api/lanes/validate", new StringContent(lane.ToJsonString(), Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsArray().Select(i => i!["field"]!.GetValue<string>()).ToList();
+    }
+
     [Theory]
     [InlineData("/api/encoder")]
     [InlineData("/api/profiles")]

@@ -15,7 +15,11 @@ for that full history.
 > Changes since [2.2.0-beta.3](https://github.com/MrWizardCT/Compressarr/releases/tag/v2.2.0-beta.3)
 > only - everything else is in the entries below.
 
+### Added
+- **Browse... buttons on the Encoder page** for the HandBrakeCLI, ffmpeg and ffprobe paths. It opens Compressarr's own folder browser, which lists the programs (.exe files on Windows) in each folder and starts in the folder the path already points to.
+
 ### Fixed
+- **A Lanes field no longer stays red once it holds a valid value.** A lane showing a configuration problem now re-checks itself as you edit or Browse, so the red outline (and the warning at the top) clears as soon as the problem is fixed instead of waiting for the next Save.
 - **A file whose encode failed (ERROR 101) is no longer retried on every pass.** It stays in the queue with its ERROR badge and makes no new error report each time monitoring runs, so you can look into the cause first. Remove on its row queues it afresh once you have fixed the problem. Other errors (an abort, a missing preset) are retried as before.
 - **The Extra CLI options example no longer suggests `--two-pass`**, which current HandBrakeCLI rejects ("unknown option"). The placeholder and tooltip on the Encoder page now show `--verbose=1`.
 - **Check/Install no longer calls any file "ffmpeg".** It now asks the program at the configured path and says so when it does not answer like ffmpeg (a wrong .exe such as notepad.exe), and that check gives up after 8 seconds instead of 30.

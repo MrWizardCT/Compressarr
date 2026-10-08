@@ -78,11 +78,43 @@ function laneCardFromDto(dto) {
   for (const btn of node.querySelectorAll('.browse-btn')) {
     btn.addEventListener('click', () => {
       const targetField = node.querySelector(`.${btn.dataset.target}`);
-      openFolderBrowser(targetField.value, chosenPath => { targetField.value = chosenPath; });
+      openFolderBrowser(targetField.value, chosenPath => {
+        targetField.value = chosenPath;
+        targetField.dispatchEvent(new Event('input', { bubbles: true }));
+      });
     });
   }
 
+  // A card that is showing red fields re-checks itself as it is edited, so a field turns normal the moment
+  // it holds something valid instead of staying red until the next Save.
+  for (const eventName of ['input', 'change']) {
+    node.addEventListener(eventName, () => scheduleRevalidation(node));
+  }
+
   return node;
+}
+
+let revalidationSeq = 0;
+
+function scheduleRevalidation(node) {
+  if (!node.querySelector('.field-invalid')) return; // nothing red to clear - validation stays a Save-time thing
+  clearTimeout(node._revalidateTimer);
+  node._revalidateTimer = setTimeout(async () => {
+    const seq = ++revalidationSeq;
+    node._revalidateSeq = seq;
+    try {
+      const res = await fetch('/api/lanes/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(readLaneCard(node))
+      });
+      if (!res.ok || node._revalidateSeq !== seq) return; // failed, or a newer check is already on its way
+      applyLaneValidation(node, await res.json());
+      if (!lanesContainer.querySelector('.field-invalid') && /configuration issue/.test(toolbarStatusEl?.textContent || '')) {
+        setStatusMessage('', '');
+      }
+    } catch { /* leave the highlight as it was */ }
+  }, 400);
 }
 
 function readLaneCard(node) {

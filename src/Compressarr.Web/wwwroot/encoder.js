@@ -159,6 +159,18 @@ window.addEventListener('beforeunload', e => {
   e.returnValue = '';
 });
 
+// Browse... next to each tool path: pick the program from this computer's folders (the app's own folder
+// browser - a web page can't see the real path of a file chosen with the system dialog).
+for (const btn of document.querySelectorAll('.browse-btn')) {
+  btn.addEventListener('click', () => {
+    const field = document.getElementById(btn.dataset.target);
+    openFileBrowser(field.value, chosen => {
+      field.value = chosen;
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  });
+}
+
 document.getElementById('checkHandBrakeBtn').addEventListener('click', async () => {
   setStatus('Checking HandBrakeCLI...');
   const statusRes = await fetch('/api/handbrake/status');
