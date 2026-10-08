@@ -219,4 +219,76 @@ public class HandBrakeProfileMigrationTests : AppDataTestBase
         Assert.Single(_profiles.GetAll(), p => p.Name.StartsWith("Compressarr UHD AV1 (yours)"));
         Assert.Single(result.Renamed);
     }
+
+    // ---- RecoverMissing: settings that arrive after the one-time migration has already run ----------
+
+    [Fact]
+    public void Recover_AfterTheMigrationAlreadyRan_CopiesWhatLanesNowNeed()
+    {
+        // a fresh 2.2 install: the migration ran with no lanes and wrote its marker...
+        Assert.NotNull(NewMigration().RunIfNeeded());
+        // ...then a lane naming a custom preset arrives (restored backup, imported config, a lane added later)
+        WriteOldPresets(Leaf("My Test", rf: 21));
+        SaveConfig("My Test", "");
+
+        var recovered = NewMigration().RecoverMissing();
+
+        Assert.Equal(new[] { "My Test" }, recovered);
+        Assert.Equal(21, _profiles.Find("My Test")!.Definition["VideoQualitySlider"]!.GetValue<int>());
+        Assert.Contains(_logger.Logs, l => l.Message.Contains("My Test"));
+    }
+
+    [Fact]
+    public void Recover_NeverRenamesOrRepoints_AndLeavesBuiltInsAndExistingProfilesAlone()
+    {
+        var edited = BuiltInCopy("Compressarr SD-HD");
+        edited["VideoQualitySlider"] = 5;
+        WriteOldPresets(edited, Leaf("Mine", rf: 30));
+        _profiles.AddUserProfiles(new[] { Leaf("Mine", rf: 12) });
+        SaveConfig("Compressarr SD-HD", "Mine");
+
+        Assert.Empty(NewMigration().RecoverMissing());
+
+        Assert.Equal("Compressarr SD-HD", _configStore.Load(ConfigPath).Lanes[0].TvPreset);
+        Assert.Equal(12, _profiles.Find("Mine")!.Definition["VideoQualitySlider"]!.GetValue<int>());
+        Assert.Null(_profiles.Find("Compressarr SD-HD (yours)"));
+    }
+
+    [Fact]
+    public void Recover_AlsoCoversQueuedOverrides_ButNotFinishedOnesOrFfmpegLanes()
+    {
+        WriteOldPresets(Leaf("Queued", rf: 20), Leaf("Done", rf: 20), Leaf("FfmpegOnly", rf: 20));
+        _configStore.Update(ConfigPath, c =>
+        {
+            c.HandBrake.PresetsPath = OldPresetsPath;
+            c.Lanes.Clear();
+            c.Lanes.Add(new LaneConfig { Id = "hb", DisplayName = "HB", Engine = EncoderEngine.HandBrake });
+            c.Lanes.Add(new LaneConfig { Id = "ff", DisplayName = "FF", Engine = EncoderEngine.FFmpeg, TvPreset = "FfmpegOnly" });
+            return true;
+        });
+        _resumeStore.Save(new List<ResumeEntry>
+        {
+            new() { LaneId = "hb", FullName = @"C:\a.mkv", Status = ResumeStatus.Pending, PresetOverride = "Queued" },
+            new() { LaneId = "hb", FullName = @"C:\b.mkv", Status = ResumeStatus.Completed, PresetOverride = "Done" }
+        }, ResumePath);
+
+        var recovered = NewMigration().RecoverMissing();
+
+        Assert.Equal(new[] { "Queued" }, recovered);
+    }
+
+    [Fact]
+    public void Recover_WithNothingMissing_OrNoOldFile_DoesNothing_AndIsRepeatable()
+    {
+        SaveConfig("Compressarr SD-HD", ""); // present already
+        Assert.Empty(NewMigration().RecoverMissing());
+
+        SaveConfig("Ghost", "");             // missing, but there is no presets.json
+        Assert.Empty(NewMigration().RecoverMissing());
+
+        WriteOldPresets(Leaf("Ghost"));
+        Assert.Single(NewMigration().RecoverMissing());
+        Assert.Empty(NewMigration().RecoverMissing()); // second call: nothing left to do
+    }
+
 }

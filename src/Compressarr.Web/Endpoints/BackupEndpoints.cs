@@ -46,7 +46,7 @@ public static class BackupEndpoints
             return Results.File(bytes, "application/json", $"compressarr-config-{DateTime.Now:yyyy-MM-dd}.json");
         });
 
-        app.MapPost("/api/settings/import", async (HttpRequest request, IConfigStore configStore, IHandBrakeProfileStore profiles, IFFmpegProfileStore ffmpegProfiles) =>
+        app.MapPost("/api/settings/import", async (HttpRequest request, IConfigStore configStore, IHandBrakeProfileStore profiles, IFFmpegProfileStore ffmpegProfiles, IHandBrakeProfileMigration migration) =>
         {
             using var reader = new StreamReader(request.Body);
             var raw = await reader.ReadToEndAsync();
@@ -95,6 +95,9 @@ public static class BackupEndpoints
                     if (missingFFmpeg.Count > 0) ffmpegProfiles.AddUserProfiles(missingFFmpeg);
                 }
 
+                // Lanes that arrived with this config may name presets only the old presets.json has.
+                try { migration.RecoverMissing(); } catch (Exception) { /* a convenience - the import itself succeeded */ }
+
                 return Results.Ok();
             }
             finally
@@ -123,9 +126,11 @@ public static class BackupEndpoints
             return Results.Json(backupService.ListBackups(folder));
         });
 
-        app.MapPost("/api/backups/restore", async (RestoreBackupRequest request, IBackupService backupService) =>
+        app.MapPost("/api/backups/restore", async (RestoreBackupRequest request, IBackupService backupService, IHandBrakeProfileMigration migration) =>
         {
             var result = await backupService.RestoreBackupAsync(request.FileName, request.Folder);
+            // A backup from 2.1.x has lanes naming presets that only live in the old presets.json.
+            if (result.Success) { try { migration.RecoverMissing(); } catch (Exception) { /* a convenience */ } }
             return result.Success
                 ? Results.Ok(new { fileName = result.FileName })
                 : Results.Json(new { message = result.Error }, statusCode: 500);

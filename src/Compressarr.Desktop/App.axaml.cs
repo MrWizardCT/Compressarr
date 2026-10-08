@@ -101,7 +101,9 @@ public partial class App : Application
         // before every encode anyway.
         try
         {
-            Services.GetRequiredService<Compressarr.Core.Presets.IHandBrakeProfileMigration>().RunIfNeeded();
+            var migration = Services.GetRequiredService<Compressarr.Core.Presets.IHandBrakeProfileMigration>();
+            migration.RunIfNeeded();
+            migration.RecoverMissing(); // presets that arrived with settings after the first start (copied config, restored backup)
             Services.GetRequiredService<Compressarr.Core.Presets.IHandBrakeProfileStore>().EnsureActiveFile();
         }
         catch (Exception ex)

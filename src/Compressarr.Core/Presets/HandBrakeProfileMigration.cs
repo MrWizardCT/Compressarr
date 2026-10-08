@@ -18,6 +18,14 @@ public interface IHandBrakeProfileMigration
     /// override) was using over from the old HandBrake presets.json into Compressarr's own profiles,
     /// so nothing a user relied on changes behind their back. Returns null when it has already run.</summary>
     HandBrakeProfileMigrationResult? RunIfNeeded();
+
+    /// <summary>Safe to call any time (start-up, after a settings import or a backup restore): copies
+    /// into your own profiles any HandBrake preset a lane or queued file still names that Compressarr
+    /// doesn't have, from the old presets.json. Unlike the one-time migration it never renames or
+    /// repoints anything - it only fills in what is missing - so settings that arrive after the first
+    /// start (an imported config, a restored 2.1.x backup, lanes added later) still find their presets.
+    /// Returns the names it copied.</summary>
+    IReadOnlyList<string> RecoverMissing();
 }
 
 /// <summary>
@@ -126,6 +134,41 @@ public sealed class HandBrakeProfileMigration : IHandBrakeProfileMigration
         WriteMarker(markerPath, result);
         Log(result);
         return result;
+    }
+
+    public IReadOnlyList<string> RecoverMissing()
+    {
+        var config = _configStore.Load(AppPaths.GetConfigFilePath());
+        var resume = _resumeStore.Load(AppPaths.GetResumeFilePath());
+        var handBrakeLanes = config.Lanes.Where(l => l.Engine == EncoderEngine.HandBrake).ToList();
+        var laneIds = handBrakeLanes.Select(l => l.Id).ToHashSet();
+
+        var missing = handBrakeLanes
+            .SelectMany(l => new[] { l.TvPreset, l.MoviePreset })
+            .Concat(resume.Where(e => laneIds.Contains(e.LaneId) && e.Status != Conversion.ResumeStatus.Completed).Select(e => e.PresetOverride ?? ""))
+            .Where(n => !string.IsNullOrWhiteSpace(n) && _profiles.Find(n) is null)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (missing.Count == 0) return Array.Empty<string>();
+
+        var oldPath = _pathExpander.Expand(config.HandBrake.PresetsPath);
+        if (string.IsNullOrWhiteSpace(oldPath) || !File.Exists(oldPath) || !HandBrakePresetFile.TryRead(oldPath, out var root, out _))
+        {
+            return Array.Empty<string>();
+        }
+
+        var leaves = HandBrakePresetFile.GetLeaves(root);
+        var toAdd = missing
+            .Select(name => leaves.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase)))
+            .OfType<HandBrakePresetFile.Leaf>()
+            .Select(l => (JsonObject)l.Definition.DeepClone())
+            .ToList();
+        if (toAdd.Count == 0) return Array.Empty<string>();
+
+        _profiles.AddUserProfiles(toAdd);
+        var names = toAdd.Select(d => d["PresetName"]!.GetValue<string>()).ToList();
+        _logger.Log($"Profiles: copied {names.Count} preset(s) your lanes use from HandBrake's presets.json into Compressarr's own profiles: {string.Join(", ", names)}.");
+        return names;
     }
 
     private void Log(HandBrakeProfileMigrationResult result)

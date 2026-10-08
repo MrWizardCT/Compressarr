@@ -194,6 +194,32 @@ public class EncoderEndpointTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    [Fact]
+    public async Task ImportingSettings_CopiesLanePresetsThatOnlyTheOldHandBrakeFileHas()
+    {
+        await using var host = await QueueHost.StartAsync(Lane1);
+        var oldFile = Path.Combine(host.Root, "old-presets.json");
+        await File.WriteAllTextAsync(oldFile, new JsonObject
+        {
+            ["PresetList"] = new JsonArray(new JsonObject
+            {
+                ["PresetName"] = "Custom Presets",
+                ["Folder"] = true,
+                ["ChildrenArray"] = new JsonArray(UserProfile("From Old File"))
+            })
+        }.ToJsonString());
+
+        var export = JsonNode.Parse(await host.Client.GetStringAsync("/api/settings/export"))!.AsObject();
+        export["HandBrake"]!["PresetsPath"] = oldFile;
+        export["Lanes"]![0]!["TvPreset"] = "From Old File";
+        Assert.DoesNotContain("From Old File", (await host.Client.GetFromJsonAsync<string[]>("/api/presets"))!);
+
+        using var response = await host.Client.PostAsync("/api/settings/import", new StringContent(export.ToJsonString(), Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("From Old File", (await host.Client.GetFromJsonAsync<string[]>("/api/presets"))!);
+    }
+
     [Theory]
     [InlineData("/api/encoder")]
     [InlineData("/api/profiles")]
