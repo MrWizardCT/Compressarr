@@ -764,6 +764,7 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
                 addedUntracked = true;
             }
             else if (!laneHadPending
+                && !existing.HeldAfterFailure
                 && existing.Status is not ResumeStatus.Pending
                 && existing.Status is not ResumeStatus.MoveFailed and not ResumeStatus.CompanionMoveFailed and not ResumeStatus.CleanupPending)
             {
@@ -800,7 +801,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
         }
         else
         {
-            videoFiles = scanned;
+            // A file held after an encode failure is shown with its ERROR badge but is not work to do.
+            videoFiles = scanned.Where(f => !resumeState.Any(e => e.LaneId == lane.Id && e.HeldAfterFailure && string.Equals(e.FullName, f.FullName, StringComparison.OrdinalIgnoreCase))).ToList();
             _resumeStore.Save(resumeState, resumeFilePath);
         }
 
@@ -1259,6 +1261,8 @@ public sealed class ConversionOrchestrator : IConversionOrchestrator
             // failure (unlike a move failure, where it's irrelevant) - stays linked from the
             // report for this code.
             errorCode = ReportErrorCode.EncodeFailed;
+            // A plain encode failure is held for the user to look at; see ResumeEntry.HeldAfterFailure.
+            resumeEntry.HeldAfterFailure = true;
 
             // HandBrakeCLI still writes its own log even on a failed encode - confirmed live
             // against a genuinely full disk that its mux error names the cause explicitly ("No
