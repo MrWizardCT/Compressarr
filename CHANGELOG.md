@@ -20,6 +20,8 @@ for that full history.
 - **Browse... buttons on the Encoder page** for the HandBrakeCLI, ffmpeg and ffprobe paths. It opens Compressarr's own folder browser, which lists the programs (.exe files on Windows) in each folder and starts in the folder the path already points to.
 
 ### Fixed
+- **"Run at login" now follows a restored backup or imported settings.** The login entry was only written when Settings was saved, so settings that arrived another way never started Compressarr at login. Compressarr now checks it at startup (without disturbing an entry that already works) and applies it after Import and Restore.
+- **Uninstalling removes the "run at login" entry.** It used to stay behind pointing at a program that no longer existed. An upgrade keeps it.
 - **Failed encodes no longer count toward the History totals.** A file that failed to encode used to be added as "before" size with nothing "after", so every failure showed as 100% saved and inflated the files, before and savings figures (a file that failed on every pass piled up hundreds). Such files are now left out of the totals, the run's report and Errors count still show them. Earlier runs in which every file failed are skipped by the History rollups too. Files that encoded but could not be moved (ERROR 102-104) still count.
 - **History: "Today" and "Last 7 Days" now follow the real date.** On a Compressarr that had been running for days they were stuck on the day it started (the figures at the top of the page no longer matched the reports below). This fix is also in 2.1.x.
 - **A Lanes field no longer stays red once it holds a valid value.** A lane showing a configuration problem now re-checks itself as you edit or Browse, so the red outline (and the warning at the top) clears as soon as the problem is fixed instead of waiting for the next Save.
@@ -29,6 +31,7 @@ for that full history.
 - **Custom HandBrake presets used by a lane are no longer missed.** The one-time migration only ran on the very first start, so lanes that arrived afterwards (a restored backup, imported settings, or a first start on a clean install) still named presets that only lived in HandBrake's `presets.json`. Compressarr now copies any such preset into its own profiles at every startup, after Import settings and after Restoring a backup. Nothing is renamed or repointed by this.
 
 ### Changed
+- **Backups card: a hint to keep a copy elsewhere.** Backups are saved on the same computer by default, so the Settings page now suggests copying them to another drive or a share now and then.
 - **The run history now lives in Compressarr's own data folder** (`%AppData%\Compressarr\Compressarr_History.csv`) instead of the Logs folder, so clearing out the logs can't delete it and changing the log folder can't leave it behind. A history file already in the Logs folder is copied across the first time 2.2 needs it, and the old copy is removed. Backup, Restore, Clear History and Purge all use the new location.
 
 ### Compatibility

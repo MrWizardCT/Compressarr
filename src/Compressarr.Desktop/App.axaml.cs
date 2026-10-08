@@ -111,6 +111,15 @@ public partial class App : Application
             Services.GetRequiredService<Compressarr.Core.Logging.IRunLogger>().Log($"Profile setup failed: {ex.Message}", Compressarr.Core.Logging.LogSeverity.Error);
         }
 
+        // The "run at login" setting only wrote the registry when Settings was saved, so settings that arrived another
+        // way (a restored backup, an import, a new machine) never got their login entry. Best effort.
+        try
+        {
+            var startupConfig = Services.GetRequiredService<Compressarr.Core.Config.IConfigStore>().Load(Compressarr.Core.Config.AppPaths.GetConfigFilePath());
+            Services.GetRequiredService<Compressarr.Core.Startup.IStartupRegistrationService>().Reconcile(startupConfig.Startup.RunAtLogin);
+        }
+        catch { }
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;

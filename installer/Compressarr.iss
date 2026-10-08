@@ -168,6 +168,15 @@ begin
   Exec('taskkill.exe', '/IM "{#MyAppExeName}" /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
+// A real uninstall (not the silent one an upgrade runs on the previous version) also removes the "run at login"
+// entry Compressarr added to the current user's Run key - otherwise Windows keeps trying to start a program
+// that is no longer there. An upgrade must keep it. Best effort: another account's entry is not reachable.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if (CurUninstallStep = usPostUninstall) and (not UninstallSilent()) then
+    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', '{#MyAppName}');
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
