@@ -106,7 +106,9 @@ public sealed class FFmpegInstaller : IFFmpegInstaller
             }
 
             progress?.Report("Verifying the download...");
-            return VerifyAndExtract(downloadPath, actual, release.Sha256, installDir, progress);
+            var installed = VerifyAndExtract(downloadPath, actual, release.Sha256, installDir, progress);
+            FFmpegInstallMarkerFile.Write(installDir, release); // which build this is, for the About page's update check
+            return installed;
         }
         finally
         {

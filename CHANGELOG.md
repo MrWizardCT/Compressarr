@@ -9,6 +9,24 @@ for that full history.
 > and renaming all run on plain, inspectable regex pattern matching - the same deterministic
 > logic every time, nothing generative involved.
 
+## [2.2.0-beta.5] - Unreleased
+
+> [!NOTE]
+> Changes since [2.2.0-beta.4](https://github.com/MrWizardCT/Compressarr/releases/tag/v2.2.0-beta.4)
+> only - everything else is in the entries below.
+
+### Added
+- **The license now comes with the program.** The installer shows an information page about the GPLv3 (no "I accept"
+  step - the GPL grants rights and isn't needed to run the program), and installs `LICENSE` and a new
+  `THIRD-PARTY-NOTICES.txt` (every component Compressarr is built with, with its copyright and license text) into the
+  install folder. The About page has a License line linking to both, to the source code, and a note that there is no warranty.
+- **About page: an ffmpeg card with Check for Updates**, like the HandBrakeCLI one. It shows the installed ffmpeg and checks
+  for a newer build. ffmpeg's own version is a commit id, so a newer build is recognised from the build Compressarr recorded when
+  it installed ffmpeg; an ffmpeg you installed yourself (or one installed by an earlier beta) can only be shown the latest build.
+- **About page: "Built with" now lists ffmpeg.**
+- **A downloaded HandBrakeCLI gets a short license note beside it** (`LICENSE-NOTICE.txt`: GPLv2, with a link to its source),
+  the same way a downloaded ffmpeg already keeps its license file.
+
 ## [2.2.0-beta.4] - 2026-10-08
 
 > [!NOTE]

@@ -78,10 +78,22 @@ public interface IFFmpegCapabilityProbe
 {
     /// <summary>Asks ffmpeg what it can do. Null when ffmpeg can't be run at all.</summary>
     Task<FFmpegCapabilities?> DetectAsync(string ffmpegPath, CancellationToken cancellationToken);
+
+    /// <summary>Just the version line and build note - one quick call, for places (the About page) that don't need the
+    /// encoder list or a GPU test. Null when ffmpeg can't be run or isn't ffmpeg.</summary>
+    Task<(string? Version, string? BuildNote)?> ReadVersionAsync(string ffmpegPath, CancellationToken cancellationToken);
 }
 
 public sealed class FFmpegCapabilityProbe : IFFmpegCapabilityProbe
 {
+    public async Task<(string? Version, string? BuildNote)?> ReadVersionAsync(string ffmpegPath, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(ffmpegPath)) return null;
+        var version = await RunAsync(ffmpegPath, new[] { "-hide_banner", "-version" }, cancellationToken, TimeSpan.FromSeconds(8));
+        if (version is null || FFmpegCapabilityParser.ParseVersion(version.Output) is null) return null;
+        return (FFmpegCapabilityParser.ParseVersion(version.Output), FFmpegCapabilityParser.ParseBuildNote(version.Output));
+    }
+
     public async Task<FFmpegCapabilities?> DetectAsync(string ffmpegPath, CancellationToken cancellationToken)
     {
         if (!File.Exists(ffmpegPath)) return null;

@@ -75,6 +75,45 @@ public static class FFmpegEndpoints
             }
         });
 
+        // The About page's ffmpeg card: which ffmpeg is installed (one quick call - no encoder list, no GPU test).
+        app.MapGet("/api/ffmpeg/installed-version", async (IConfigStore configStore, IPathExpander pathExpander, IFFmpegCapabilityProbe probe, CancellationToken ct) =>
+        {
+            var path = pathExpander.Expand(configStore.Load(AppPaths.GetConfigFilePath()).FFmpeg.Path);
+            var found = await probe.ReadVersionAsync(path, ct);
+            return Results.Json(new { version = found?.Version, buildNote = found?.BuildNote, installedBuild = FFmpegInstallMarkerFile.Read(path)?.Name });
+        });
+
+        // "Check for Updates" on the About page. ffmpeg's own version string is a commit id and BtbN publishes every
+        // build under the same file name, so a newer build is recognised from the build Compressarr recorded when it
+        // installed ffmpeg (see FFmpegInstallMarkerFile). An ffmpeg Compressarr did not install can't be compared.
+        app.MapGet("/api/ffmpeg/update-check", async (IConfigStore configStore, IPathExpander pathExpander, IFFmpegCapabilityProbe probe, IFFmpegInstaller installer, CancellationToken ct) =>
+        {
+            var path = pathExpander.Expand(configStore.Load(AppPaths.GetConfigFilePath()).FFmpeg.Path);
+            var installed = await probe.ReadVersionAsync(path, ct);
+            var marker = FFmpegInstallMarkerFile.Read(path);
+
+            FFmpegReleaseInfo? latest;
+            try
+            {
+                latest = await installer.GetLatestReleaseAsync();
+            }
+            catch (HttpRequestException ex)
+            {
+                return Results.Json(new { status = "error", error = $"Could not reach GitHub: {ex.Message}" });
+            }
+
+            if (latest is null) return Results.Json(new { status = "unavailable" });
+
+            return Results.Json(new
+            {
+                status = FFmpegUpdateCheck.Compare(installed is not null, marker, latest).ToString().ToLowerInvariant(),
+                installedVersion = installed?.Version,
+                installedBuild = marker?.Name,
+                latestBuild = latest.Name,
+                releaseUrl = latest.ReleaseUrl
+            });
+        });
+
         app.MapPost("/api/ffmpeg/install", async (IFFmpegInstaller installer, IConfigStore configStore, CancellationToken ct) =>
         {
             try

@@ -345,6 +345,47 @@ public class EncoderEndpointTests
         Assert.Equal(HttpStatusCode.NotFound, traversal.StatusCode);
     }
 
+    [Fact]
+    public async Task About_ServesTheLicenseAndNotices_WhenTheyAreNextToTheProgram_AndNotFoundWhenTheyAreNot()
+    {
+        await using var host = await QueueHost.StartAsync(Lane1);
+        var license = Path.Combine(AppContext.BaseDirectory, "LICENSE");
+        var notices = Path.Combine(AppContext.BaseDirectory, "THIRD-PARTY-NOTICES.txt");
+        bool hadLicense = File.Exists(license), hadNotices = File.Exists(notices);
+        try
+        {
+            if (hadLicense) File.Delete(license);
+            if (hadNotices) File.Delete(notices);
+            using var missing = await host.Client.GetAsync("/api/about/license");
+
+            await File.WriteAllTextAsync(license, "GNU GENERAL PUBLIC LICENSE");
+            await File.WriteAllTextAsync(notices, "Third-party notices");
+            using var licenseResponse = await host.Client.GetAsync("/api/about/license");
+            using var noticesResponse = await host.Client.GetAsync("/api/about/notices");
+
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            Assert.Equal("GNU GENERAL PUBLIC LICENSE", await licenseResponse.Content.ReadAsStringAsync());
+            Assert.Equal("Third-party notices", await noticesResponse.Content.ReadAsStringAsync());
+            Assert.StartsWith("text/plain", licenseResponse.Content.Headers.ContentType!.MediaType);
+        }
+        finally
+        {
+            if (!hadLicense) File.Delete(license);
+            if (!hadNotices) File.Delete(notices);
+        }
+    }
+
+    [Fact]
+    public async Task FfmpegInstalledVersion_IsEmptyWhenThereIsNoFfmpeg_AndNeverFails()
+    {
+        await using var host = await QueueHost.StartAsync(Lane1);
+
+        var dto = (await host.Client.GetFromJsonAsync<JsonObject>("/api/ffmpeg/installed-version"))!;
+
+        Assert.Null(dto["version"]);
+        Assert.Null(dto["installedBuild"]);
+    }
+
     [Theory]
     [InlineData("/api/encoder")]
     [InlineData("/api/profiles")]
