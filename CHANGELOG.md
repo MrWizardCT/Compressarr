@@ -16,6 +16,8 @@ for that full history.
 > only - everything else is in the entries below.
 
 ### Changed
+- **Run Now runs the queue without starting monitoring.** On the Monitor page, Run Now now works whether monitoring is on or off. With monitoring on it still skips the countdown; with monitoring off it runs one pass and stops, leaving monitoring off. Abort works on it like on any pass. It is unavailable only while a pass is already running.
+- **The Start/Stop button says just "Start" or "Stop".** The word "monitoring" was implied; it stays in the tooltip.
 - **The top bar's buttons are icon-over-label.** On every page the action buttons (Save, Clear changes, Run once, Add lane, Start/Stop monitoring, Pause, Run now, Abort, the Profiles buttons, Back and Duplicate in the profile editors...) now show an icon above a short label, in groups split by thin dividers, instead of boxed text buttons. The full name is the tooltip. The bar is slightly taller (62 px instead of 56).
 - **Messages in the top toolbar are readable.** Success and error messages ("Settings saved.", a failed save, a refused lane change...) were red or green text straight on the dark toolbar, which was hard to read. They are now light chips with an icon and dark text. A long message, or an error that doesn't fit the toolbar, appears in a bar under the toolbar that wraps and shows the whole text, with a close button. This applies to every page.
 

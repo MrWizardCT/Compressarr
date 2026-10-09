@@ -120,6 +120,64 @@ public class RunLoopControllerTests
         throw new TimeoutException("Condition was not met within the timeout.");
     }
 
+    // ---- Run Now with monitoring off: one pass, no monitoring --------------------------------------------------
+
+    [Fact]
+    public async Task RunOnceInBackground_RunsExactlyOnePass_WithoutStartingMonitoring()
+    {
+        var orchestrator = new FakeRunOrchestrator();
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
+
+        var started = controller.RunOnceInBackground(new CompressarrConfig());
+        await WaitUntil(() => orchestrator.CallCount == 1, TimeSpan.FromSeconds(2));
+        await Task.Delay(150); // a monitoring loop would have run more passes by now
+
+        Assert.True(started);
+        Assert.Equal(1, orchestrator.CallCount);
+        Assert.False(controller.IsRunning); // monitoring itself was never started
+    }
+
+    [Fact]
+    public async Task RunOnceInBackground_WhileAPassIsInProgress_StartsNothing_AndWorksAgainOnceItEnds()
+    {
+        var orchestrator = new SlowRunOrchestrator();
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
+
+        var first = controller.RunOnceInBackground(new CompressarrConfig());
+        var whileRunning = controller.RunOnceInBackground(new CompressarrConfig());
+        orchestrator.ReleasePass();
+        await WaitUntil(() => controller.RunOnceInBackground(new CompressarrConfig()), TimeSpan.FromSeconds(2));
+
+        Assert.True(first);
+        Assert.False(whileRunning);
+    }
+
+    [Fact]
+    public void RunOnceInBackground_WhileMonitoringIsOn_StartsNothing()
+    {
+        var orchestrator = new SlowRunOrchestrator();
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
+        controller.Start(new CompressarrConfig(), TinyInterval);
+
+        var started = controller.RunOnceInBackground(new CompressarrConfig());
+
+        Assert.False(started); // the monitor loop owns the passes; Run Now skips its countdown instead
+        orchestrator.ReleasePass();
+    }
+
+    [Fact]
+    public async Task RunOnceInBackground_AFailedPass_DoesNotThrow_AndTheNextRunStillWorks()
+    {
+        var orchestrator = new FakeRunOrchestrator { ThrowOnNextCall = true };
+        var controller = new RunLoopController(orchestrator, new FakeRunLogger(), new FakeActiveRunController(), new FakeConfigStore());
+
+        Assert.True(controller.RunOnceInBackground(new CompressarrConfig()));
+        await WaitUntil(() => orchestrator.CallCount == 1, TimeSpan.FromSeconds(2));
+        await WaitUntil(() => controller.RunOnceInBackground(new CompressarrConfig()), TimeSpan.FromSeconds(2));
+
+        await WaitUntil(() => orchestrator.CallCount == 2, TimeSpan.FromSeconds(2));
+    }
+
     [Fact]
     public void Start_SetsIsRunningTrue()
     {

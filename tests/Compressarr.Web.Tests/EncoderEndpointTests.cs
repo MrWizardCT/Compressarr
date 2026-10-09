@@ -386,6 +386,22 @@ public class EncoderEndpointTests
         Assert.Null(dto["installedBuild"]);
     }
 
+    [Fact]
+    public async Task RunNow_WithMonitoringOff_StartsOneBackgroundPass_AndDoesNotStartMonitoring()
+    {
+        await using var host = await QueueHost.StartAsync(Lane1);
+
+        using var response = await host.Client.PostAsync("/api/run/run-now", null);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        await Task.Delay(500); // let the background pass finish before the test host is torn down
+        var status = (await host.Client.GetFromJsonAsync<JsonObject>("/api/run/status"))!;
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(body["started"]!.GetValue<bool>());
+        Assert.Equal("single-pass", body["mode"]!.GetValue<string>());
+        Assert.False(status["isMonitoring"]!.GetValue<bool>()); // Run Now never turns monitoring on
+    }
+
     [Theory]
     [InlineData("/api/encoder")]
     [InlineData("/api/profiles")]

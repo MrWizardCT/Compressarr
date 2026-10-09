@@ -25,12 +25,15 @@ let toggleIsStopping = false;
 function renderToggleButton() {
   if (toggleIsStopping) {
     toggleMonitorBtn.innerHTML = STOP_ICON + 'Stopping...';
+    toggleMonitorBtn.title = 'Stopping monitoring';
     toggleMonitorBtn.disabled = true;
   } else if (toggleIsMonitoring) {
-    toggleMonitorBtn.innerHTML = STOP_ICON + 'Stop monitoring';
+    toggleMonitorBtn.innerHTML = STOP_ICON + 'Stop';
+    toggleMonitorBtn.title = 'Stop monitoring';
     toggleMonitorBtn.disabled = false;
   } else {
-    toggleMonitorBtn.innerHTML = START_ICON + 'Start monitoring';
+    toggleMonitorBtn.innerHTML = START_ICON + 'Start';
+    toggleMonitorBtn.title = 'Start monitoring';
     toggleMonitorBtn.disabled = false;
   }
 }
@@ -102,7 +105,7 @@ runNowBtn.addEventListener('click', async () => {
   document.getElementById('countdown').textContent = '';
   runNowBtn.disabled = true;
 
-  await fetch('/api/run/trigger-now', { method: 'POST' });
+  await fetch('/api/run/run-now', { method: 'POST' });
   poll();
 });
 
@@ -119,7 +122,7 @@ runAnywayBtn.addEventListener('click', async () => {
 });
 
 abortBtn.addEventListener('click', async () => {
-  if (!confirm('Abort the current conversion immediately and stop monitoring?')) return;
+  if (!confirm(toggleIsMonitoring ? 'Abort the current conversion immediately and stop monitoring?' : 'Abort the current conversion immediately?')) return;
   await fetch('/api/run/abort', { method: 'POST' });
   poll();
 });
@@ -612,9 +615,9 @@ async function poll() {
   toggleIsStopping = s.isStopping;
   renderToggleButton();
   abortBtn.disabled = !s.isMonitoring && !s.isRunning;
-  // Only meaningful while idle between passes - nothing to skip if not monitoring at all, or
-  // if a pass is already running right now.
-  runNowBtn.disabled = !s.isMonitoring || s.isRunning;
+  // Run Now works with monitoring on (it skips the countdown) or off (it runs one pass without starting monitoring);
+  // it is only unavailable while a pass is already running or monitoring is stopping.
+  runNowBtn.disabled = s.isRunning || s.isStopping;
   togglePauseIsRunning = s.isRunning;
   togglePauseIsPaused = s.isPaused;
   renderPauseButton();

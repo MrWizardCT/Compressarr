@@ -57,6 +57,18 @@ public static class RunEndpoints
             return Results.Ok();
         });
 
+        // The Monitor page's Run Now. With monitoring on and idle it skips the countdown; with monitoring OFF it runs
+        // one pass without starting monitoring. Nothing starts if a pass is already running.
+        app.MapPost("/api/run/run-now", (IRunLoopController loopController, IConfigStore configStore) =>
+        {
+            if (loopController.TriggerNow()) return Results.Json(new { started = true, mode = "countdown" });
+            if (loopController.IsRunning) return Results.Json(new { started = false, mode = "busy" });
+
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+            var started = loopController.RunOnceInBackground(config);
+            return Results.Json(new { started, mode = started ? "single-pass" : "busy" });
+        });
+
         app.MapPost("/api/run/trigger-now", (IRunLoopController loopController) =>
         {
             var triggered = loopController.TriggerNow();

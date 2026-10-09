@@ -62,6 +62,12 @@ public interface IRunLoopController
     /// either case.</summary>
     bool TriggerNow();
 
+    /// <summary>Runs ONE pass in the background without starting monitoring - "Run Now" on the Monitor page while
+    /// monitoring is off. Returns immediately. False (nothing started) if a pass is already in progress: the monitor
+    /// loop is running (use <see cref="TriggerNow"/> to skip its countdown) or an earlier one-off pass hasn't finished.
+    /// Abort works on it like on any pass; RunningChanged is not raised, since that reports monitoring.</summary>
+    bool RunOnceInBackground(CompressarrConfig config);
+
     event Action<bool>? RunningChanged;
 
     /// <summary>Fires true when StopAsync begins, false once it actually finishes.</summary>
@@ -81,6 +87,7 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
     private Task? _loopTask;
     private DateTimeOffset? _nextRunUtc;
     private TaskCompletionSource? _triggerNowTcs;
+    private Task? _singlePassTask;
     private bool _isStopping;
 
     public RunLoopController(IRunOrchestrator runOrchestrator, IRunLogger logger, IActiveRunController activeRunController, IConfigStore configStore)
@@ -218,6 +225,31 @@ public sealed class RunLoopController : IRunLoopController, IDisposable
 
             _logger.Log("Run Now requested - skipping the rest of the countdown.");
             _triggerNowTcs.TrySetResult();
+            return true;
+        }
+    }
+
+    public bool RunOnceInBackground(CompressarrConfig config)
+    {
+        lock (_lock)
+        {
+            if (_loopTask is { IsCompleted: false } || _singlePassTask is { IsCompleted: false }) return false;
+
+            _logger.Log("Run Now requested - running one pass (monitoring is off).");
+            // Task.Run for the same reason Start() uses it: the first stretch of RunOnceAsync does real blocking work,
+            // and the HTTP request that asked for this must return right away.
+            _singlePassTask = Task.Run(async () =>
+            {
+                try
+                {
+                    await _runOrchestrator.RunOnceAsync(config, CancellationToken.None);
+                    _logger.ClearProblem("monitor-pass-failed");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogProblem("monitor-pass-failed", $"Run Now pass failed: {ex.Message}");
+                }
+            });
             return true;
         }
     }
