@@ -26,8 +26,8 @@ function setupToggle(storageKey, sectionId, btnId, label) {
   applyVisibility();
 }
 
-setupToggle('compressarr.historyHidden', 'historySection', 'toggleHistoryBtn', 'History');
-setupToggle('compressarr.reportsHidden', 'reportsSection', 'toggleReportsBtn', 'Reports');
+setupToggle('compressarr.historyHidden', 'historySection', 'toggleHistoryBtn', 'history');
+setupToggle('compressarr.reportsHidden', 'reportsSection', 'toggleReportsBtn', 'reports');
 
 // Matches the "Xh Ym Zs" convention already used everywhere else (run-complete log lines, the
 // HTML report's own duration text) - always all three units, not just the ones that are nonzero.

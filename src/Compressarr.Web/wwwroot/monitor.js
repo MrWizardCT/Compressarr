@@ -27,10 +27,10 @@ function renderToggleButton() {
     toggleMonitorBtn.innerHTML = STOP_ICON + 'Stopping...';
     toggleMonitorBtn.disabled = true;
   } else if (toggleIsMonitoring) {
-    toggleMonitorBtn.innerHTML = STOP_ICON + 'Stop Monitoring';
+    toggleMonitorBtn.innerHTML = STOP_ICON + 'Stop monitoring';
     toggleMonitorBtn.disabled = false;
   } else {
-    toggleMonitorBtn.innerHTML = START_ICON + 'Start Monitoring';
+    toggleMonitorBtn.innerHTML = START_ICON + 'Start monitoring';
     toggleMonitorBtn.disabled = false;
   }
 }

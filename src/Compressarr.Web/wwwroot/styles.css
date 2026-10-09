@@ -219,7 +219,7 @@ body {
   align-items: center;
   gap: 10px;
   padding: 0 24px;
-  height: 56px;
+  height: 62px;
   flex-shrink: 0;
   flex-wrap: wrap;
 }
@@ -334,6 +334,40 @@ body {
 }
 
 .toolbar button:hover { border-color: #ffffff; color: #ffffff; }
+
+/* The page's action buttons are icon-over-label (Sonarr-style): the icon above a short label, no button box, groups
+   split by thin dividers (.tb-sep). The full name is each button's tooltip. The primary action (Save...) is white with
+   a light-blue icon, the rest muted; a disabled button is dimmed; Abort's icon is a soft red. */
+.toolbar .page-actions button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 56px;
+  max-width: 92px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--toolbar-text);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.15;
+  text-align: center;
+  white-space: normal;
+  text-wrap: balance;
+}
+
+.toolbar .page-actions button .btn-icon { width: 22px; height: 22px; }
+.toolbar .page-actions button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); color: #ffffff; }
+.toolbar .page-actions button:focus-visible { outline: 2px solid #8fb0ff; outline-offset: 1px; }
+.toolbar .page-actions button.primary { background: transparent; border: none; color: #ffffff; }
+.toolbar .page-actions button.primary .btn-icon { color: #8fb0ff; }
+.toolbar .page-actions button.danger .btn-icon { color: #ff9d9d; }
+.toolbar .page-actions button:disabled { opacity: 0.4; cursor: default; }
+.toolbar .page-actions { gap: 2px; }
+.toolbar .tb-sep { width: 1px; height: 36px; margin: 0 6px; background: rgba(255, 255, 255, 0.16); flex-shrink: 0; }
 
 /* Monitoring status (with a live/idle dot), the countdown, and CPU - visible in the toolbar on
    every page, not just Monitor (see nav.js's own poll of /api/run/status). Sits between the
