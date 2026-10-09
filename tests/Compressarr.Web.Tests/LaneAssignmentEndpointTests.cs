@@ -72,7 +72,7 @@ public class LaneAssignmentEndpointTests
         System.Text.Json.Nodes.JsonNode.Parse(await host.Client.GetStringAsync("/api/lanes"))!.AsArray();
 
     [Fact]
-    public async Task DuplicatingALane_CopiesItsSettings_ButNotItsFolders_StartsDisabled_AndSitsAfterTheOriginal()
+    public async Task DuplicatingALane_CopiesEveryField_StartsDisabled_AndSitsAfterTheOriginal()
     {
         await using var host = await QueueHost.StartAsync(Home, Kids);
         var home = (await GetLanesAsync(host))[0]!.AsObject();
@@ -89,12 +89,110 @@ public class LaneAssignmentEndpointTests
         Assert.Equal("Compressarr SD-HD", copy["tvPreset"]!.GetValue<string>());
         Assert.Equal(@"D:\TV", copy["tvShowBasePath"]!.GetValue<string>());
         Assert.Equal(@"D:\Movies", copy["movieBasePath"]!.GetValue<string>());
-        Assert.Equal("", copy["input"]!.GetValue<string>());                     // two lanes must not watch one folder
-        Assert.Equal("", copy["output"]!.GetValue<string>());
+        Assert.Equal(home["input"]!.GetValue<string>(), copy["input"]!.GetValue<string>());   // an exact copy, folders included
+        Assert.Equal(home["output"]!.GetValue<string>(), copy["output"]!.GetValue<string>());
         Assert.False(copy["enabled"]!.GetValue<bool>());
 
         var lanes = await GetLanesAsync(host);
         Assert.Equal(new[] { "SD-HD", "SD-HD Anime", "Kids" }, lanes.Select(l => l!["displayName"]!.GetValue<string>()).ToArray());
+    }
+
+    // ---- Two enabled lanes must not watch the same Input folder ----------------------------------
+
+    private static async Task<(HttpStatusCode Status, System.Text.Json.Nodes.JsonObject Body)> PutLaneAsync(QueueHost host, System.Text.Json.Nodes.JsonObject lane)
+    {
+        using var response = await host.Client.PutAsync($"/api/lanes/{lane["id"]!.GetValue<string>()}", new StringContent(lane.ToJsonString(), System.Text.Encoding.UTF8, "application/json"));
+        return (response.StatusCode, System.Text.Json.Nodes.JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject());
+    }
+
+    private static System.Text.Json.Nodes.JsonObject Lane(System.Text.Json.Nodes.JsonArray lanes, string id) =>
+        lanes.Single(l => l!["id"]!.GetValue<string>() == id)!.AsObject();
+
+    [Fact]
+    public async Task EnablingACopyOnTheOriginalsFolder_IsRefused_UntilTheOriginalIsTurnedOff()
+    {
+        await using var host = await QueueHost.StartAsync(Home, Kids);
+        var home = Lane(await GetLanesAsync(host), "hdsd");
+        var (_, copy) = await DuplicateAsync(host, home, "SD-HD Copy");
+        copy["enabled"] = true;
+
+        var (refused, refusal) = await PutLaneAsync(host, copy);
+        Assert.Equal(HttpStatusCode.BadRequest, refused);
+        Assert.Contains("SD-HD", refusal["message"]!.GetValue<string>());       // names the lane that already watches it
+        Assert.Equal("input", refusal["field"]!.GetValue<string>());
+        Assert.False(Lane(await GetLanesAsync(host), copy["id"]!.GetValue<string>())["enabled"]!.GetValue<bool>()); // nothing was saved
+
+        home["enabled"] = false;
+        Assert.Equal(HttpStatusCode.OK, (await PutLaneAsync(host, home)).Status);
+        Assert.Equal(HttpStatusCode.OK, (await PutLaneAsync(host, copy)).Status);   // the swap now works
+    }
+
+    [Fact]
+    public async Task PointingAnEnabledLaneAtAnotherLanesFolder_OrInsideIt_IsRefused()
+    {
+        await using var host = await QueueHost.StartAsync(Home, Kids);
+        var homeInput = Lane(await GetLanesAsync(host), "hdsd")["input"]!.GetValue<string>();
+        var kids = Lane(await GetLanesAsync(host), "kids");
+
+        kids["input"] = homeInput;
+        var same = await PutLaneAsync(host, kids);
+        kids["input"] = System.IO.Path.Combine(homeInput, "Sub", "Folder");
+        var inside = await PutLaneAsync(host, kids);
+        kids["input"] = System.IO.Path.GetDirectoryName(homeInput)!;
+        var around = await PutLaneAsync(host, kids);
+
+        Assert.Equal(HttpStatusCode.BadRequest, same.Status);
+        Assert.Equal(HttpStatusCode.BadRequest, inside.Status);
+        Assert.Equal(HttpStatusCode.BadRequest, around.Status);
+        Assert.Contains("inside", inside.Body["message"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task AFolderThatMerelyStartsWithAnotherLanesFolderName_IsNotAClash()
+    {
+        // D:\Media Download and D:\Media Download Kids are two folders, not one inside the other.
+        await using var host = await QueueHost.StartAsync(Home, Kids);
+        var homeInput = Lane(await GetLanesAsync(host), "hdsd")["input"]!.GetValue<string>();
+        var kids = Lane(await GetLanesAsync(host), "kids");
+        kids["input"] = homeInput + " Kids";
+
+        Assert.Equal(HttpStatusCode.OK, (await PutLaneAsync(host, kids)).Status);
+    }
+
+    [Fact]
+    public async Task ADisabledLane_CanShareAFolder_AndSavesFreely()
+    {
+        await using var host = await QueueHost.StartAsync(Home, Kids);
+        var homeInput = Lane(await GetLanesAsync(host), "hdsd")["input"]!.GetValue<string>();
+        var kids = Lane(await GetLanesAsync(host), "kids");
+        kids["input"] = homeInput;
+        kids["enabled"] = false;
+
+        Assert.Equal(HttpStatusCode.OK, (await PutLaneAsync(host, kids)).Status);
+    }
+
+    [Fact]
+    public async Task AnOverlapThatAlreadyExists_IsFlagged_ButUnrelatedEditsStillSave()
+    {
+        // An upgrade, an import or a hand-edited settings file can already hold two enabled lanes on one folder.
+        await using var host = await QueueHost.StartAsync(Home, Kids);
+        var homeInput = Lane(await GetLanesAsync(host), "hdsd")["input"]!.GetValue<string>();
+        host.Services.GetRequiredService<Compressarr.Core.Config.IConfigStore>().Update(Compressarr.Core.Config.AppPaths.GetConfigFilePath(), config =>
+        {
+            config.Lanes.Single(l => l.Id == "kids").Input = homeInput;
+            return true;
+        });
+
+        var kids = Lane(await GetLanesAsync(host), "kids");
+        kids["displayName"] = "Kids Renamed";
+        var (status, _) = await PutLaneAsync(host, kids);
+
+        Assert.Equal(HttpStatusCode.OK, status); // not locked out of an unrelated edit
+        foreach (var id in new[] { "hdsd", "kids" })
+        {
+            var issues = Lane(await GetLanesAsync(host), id)["validationIssues"]!.AsArray().Select(i => i!["field"]!.GetValue<string>());
+            Assert.Contains("input", issues);   // both lanes show the warning
+        }
     }
 
     [Fact]

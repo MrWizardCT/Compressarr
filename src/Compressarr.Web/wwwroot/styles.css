@@ -752,6 +752,9 @@ a.primary:hover { opacity: 0.9; }
   box-shadow: 0 0 0 1px var(--err);
 }
 
+/* The reason for a red field, spelled out under it (the Lanes page's Input folder). */
+.field-note { color: var(--err); font-size: 12px; line-height: 1.4; margin-top: 6px; }
+
 /* Lane card - fields grouped by what they mean (Folders, then Movie/TV Content routing) rather
    than packed into alternating field-rows. See the approved "Lane Card Redesign" mockup. */
 .lane-card {

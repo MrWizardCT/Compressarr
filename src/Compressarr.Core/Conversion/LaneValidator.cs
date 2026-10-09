@@ -29,6 +29,12 @@ public static class LaneValidator
         {
             issues.Add(new ValidationIssue("input", "Input folder is required and must exist."));
         }
+        else if (LaneFolders.FindConflict(lane, config.Lanes, pathExpander) is { } folderConflict)
+        {
+            // Only a warning here: an overlap that already existed keeps running as it always did (it is flagged, not
+            // stopped). Creating a NEW overlap is refused when the lane is saved - see LaneEndpoints.
+            issues.Add(new ValidationIssue("input", folderConflict.Describe()));
+        }
 
         var outputBase = pathExpander.Expand(lane.Output);
         if (string.IsNullOrWhiteSpace(outputBase) && !config.Processing.OutSameAsIn)

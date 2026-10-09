@@ -27,7 +27,16 @@ const LANE_FIELD_MAP = {
 // decided by the caller, since a single lane's issues shouldn't overwrite/hide another card's.
 function applyLaneValidation(node, issues) {
   showEngineNote(node, node.querySelector('.f-engine').value, issues);
+  // The Input problem is also spelled out under the field: it can be long (it names the other lane), and the red
+  // outline's tooltip and the toolbar line are easy to miss or cut short.
+  setInputNote(node, (issues || []).find(i => i.field === 'input')?.message);
   return applyValidationIssues(node, issues, LANE_FIELD_MAP, '');
+}
+
+function setInputNote(node, message) {
+  const note = node.querySelector('.f-inputNote');
+  note.textContent = message || '';
+  note.classList.toggle('hidden', !message);
 }
 
 function escapeHtml(text) {
@@ -91,14 +100,16 @@ function laneCardFromDto(dto) {
   for (const eventName of ['input', 'change']) {
     node.addEventListener(eventName, () => scheduleRevalidation(node));
   }
+  // Turning a lane on is when a clash with another lane's folder matters, so check straight away rather than at Save.
+  node.querySelector('.f-enabled').addEventListener('change', e => { if (e.target.checked) scheduleRevalidation(node, true); });
 
   return node;
 }
 
 let revalidationSeq = 0;
 
-function scheduleRevalidation(node) {
-  if (!node.querySelector('.field-invalid')) return; // nothing red to clear - validation stays a Save-time thing
+function scheduleRevalidation(node, force = false) {
+  if (!force && !node.querySelector('.field-invalid')) return; // nothing red to clear - validation stays a Save-time thing
   clearTimeout(node._revalidateTimer);
   node._revalidateTimer = setTimeout(async () => {
     const seq = ++revalidationSeq;
@@ -139,7 +150,18 @@ async function putLane(dto) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(dto)
   });
-  return { ok: res.ok, dto: res.ok ? await res.json() : null };
+  if (res.ok) return { ok: true, dto: await res.json() };
+  // A refused save (e.g. enabling a lane on a folder another enabled lane already watches) explains itself.
+  const body = await res.json().catch(() => ({}));
+  return { ok: false, dto: null, message: body.message || null, field: body.field || null };
+}
+
+// Shows why a save was refused, on the field it is about when the server says which one.
+function showSaveRefusal(node, result) {
+  if (result.message && result.field === 'input') {
+    applyValidationIssues(node, [{ field: 'input', message: result.message }], LANE_FIELD_MAP, '');
+    setInputNote(node, result.message);
+  }
 }
 
 async function saveLane(node) {
@@ -147,7 +169,8 @@ async function saveLane(node) {
   setStatus(`Saving lane "${dto.displayName}"...`);
   const result = await putLane(dto);
   if (!result.ok) {
-    setStatus('Failed to save lane.');
+    showSaveRefusal(node, result);
+    setStatusMessage(result.message ? `Lane "${dto.displayName}" was not saved. ${result.message}` : 'Failed to save lane.', 'error');
     return;
   }
 
@@ -169,8 +192,16 @@ async function saveAllLanes() {
   }
 
   setStatus(`Saving ${cards.length} lane(s)...`);
-  const results = await Promise.all(cards.map(node => putLane(readLaneCard(node))));
+  // One at a time, lanes being turned OFF first: the server refuses to enable a lane on a folder another enabled lane
+  // watches, so switching which of two lanes is on has to take the old one off before the new one goes on.
+  const order = cards.map((node, i) => ({ node, i, dto: readLaneCard(node) })).sort((a, b) => Number(a.dto.enabled) - Number(b.dto.enabled) || a.i - b.i);
+  const results = new Array(cards.length);
+  for (const { node, i, dto } of order) {
+    results[i] = await putLane(dto);
+    if (!results[i].ok) showSaveRefusal(node, results[i]);
+  }
   const failedCount = results.filter(r => !r.ok).length;
+  const firstRefusal = results.find(r => !r.ok && r.message);
 
   let anyIssues = false;
   results.forEach((result, i) => {
@@ -178,7 +209,7 @@ async function saveAllLanes() {
   });
 
   if (failedCount > 0) {
-    setStatus(`Saved ${cards.length - failedCount} of ${cards.length} lane(s) - ${failedCount} failed.`);
+    setStatusMessage(`Saved ${cards.length - failedCount} of ${cards.length} lane(s) - ${failedCount} failed.${firstRefusal ? ' ' + firstRefusal.message : ''}`, 'error');
   } else if (anyIssues) {
     setStatusMessage(`All ${cards.length} lane(s) saved, but one or more has a configuration issue - check the fields below.`, 'error');
   } else {
@@ -187,9 +218,8 @@ async function saveAllLanes() {
   if (failedCount === 0) lanesDirty = false;
 }
 
-// Copies this lane (as the card shows it right now) under a name the user picks. The copy's Input and Output folders
-// come back blank and it starts disabled - two lanes must not watch the same folder - so the card is shown with those
-// fields flagged, ready to fill in.
+// Copies this lane (as the card shows it right now, every field) under a name the user picks. The copy always starts
+// disabled: two enabled lanes can't watch the same folder, and that is checked when the copy is enabled.
 async function duplicateLane(node) {
   const dto = readLaneCard(node);
   const name = prompt(`Name for the new lane, copied from "${dto.displayName}":`, `${dto.displayName} (copy)`);
@@ -215,7 +245,7 @@ async function duplicateLane(node) {
   node.after(copyNode);
   applyLaneValidation(copyNode, copy.validationIssues);
   copyNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  setStatus(`Lane "${copy.displayName}" created from "${dto.displayName}". Set its Input and Output folders, then tick Enabled - the copy starts disabled so it can't run half set up.`, true);
+  setStatus(`Lane "${copy.displayName}" created from "${dto.displayName}", switched off. It watches the same folders as the original: choose its own Input folder (or turn the original off), then tick Enabled.`, true);
 }
 
 async function removeLane(node) {

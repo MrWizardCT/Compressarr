@@ -40,10 +40,10 @@ public static class LaneEndpoints
             return Results.Json(dto);
         });
 
-        // Copies a lane under a new name. What the card currently shows is what gets copied (the request carries it),
-        // except the two folders and Enabled: the Input and Output folders are left blank because two lanes watching
-        // the same folder would both pick up the same files, and the copy starts disabled so it can't run half set up.
-        // The new lane sits right after the one it was copied from.
+        // Copies a lane under a new name: every field as the card currently shows it (the request carries it), Input
+        // and Output included. The copy always starts DISABLED, which is what makes an exact copy safe - two enabled lanes
+        // can't watch the same folder, and that is checked when the copy is enabled (see the PUT above). The new lane sits
+        // right after the one it was copied from.
         app.MapPost("/api/lanes/duplicate", (DuplicateLaneRequest request, IConfigStore configStore, IPathExpander pathExpander, IEncoderResolver encoders) =>
         {
             var name = (request.DisplayName ?? "").Trim();
@@ -59,8 +59,6 @@ public static class LaneEndpoints
                 var lane = new LaneConfig();
                 ConfigMapping.ApplyLaneDto(lane, request.Lane);
                 lane.DisplayName = name;
-                lane.Input = "";
-                lane.Output = "";
                 lane.Enabled = false;
 
                 var sourceIndex = config.Lanes.FindIndex(l => l.Id == request.Lane.Id);
@@ -73,16 +71,29 @@ public static class LaneEndpoints
 
         app.MapPut("/api/lanes/{id}", (string id, LaneDto dto, IConfigStore configStore, IPathExpander pathExpander, IEncoderResolver encoders) =>
         {
-            var result = configStore.Update(AppPaths.GetConfigFilePath(), config =>
+            var outcome = configStore.Update(AppPaths.GetConfigFilePath(), config =>
             {
                 var lane = config.Lanes.FirstOrDefault(l => l.Id == id);
-                if (lane is null) return null;
+                if (lane is null) return (Found: false, Dto: (LaneDto?)null, Error: (string?)null);
+
+                // Two enabled lanes must not watch the same Input folder (or one inside the other): both would pick up the
+                // same files. A save that would CREATE such an overlap - enabling the lane, or pointing it at a different
+                // Input - is refused. A lane that already overlapped and is otherwise unchanged still saves, so an
+                // existing setup (an upgrade, an import) is flagged but never locked out of unrelated edits or stopped.
+                var candidate = new LaneConfig { Id = lane.Id };
+                ConfigMapping.ApplyLaneDto(candidate, dto);
+                var unchangedAndRunning = lane.Enabled && LaneFolders.SameFolder(pathExpander, lane.Input, candidate.Input);
+                if (!unchangedAndRunning && LaneFolders.FindConflict(candidate, config.Lanes, pathExpander) is { } conflict)
+                {
+                    return (Found: true, Dto: null, Error: conflict.Describe());
+                }
 
                 ConfigMapping.ApplyLaneDto(lane, dto);
-                return ConfigMapping.ToLaneDto(lane, Validate(lane, config, pathExpander, encoders));
+                return (Found: true, Dto: ConfigMapping.ToLaneDto(lane, Validate(lane, config, pathExpander, encoders)), Error: null);
             });
 
-            return result is null ? Results.NotFound() : Results.Json(result);
+            if (!outcome.Found) return Results.NotFound();
+            return outcome.Error is null ? Results.Json(outcome.Dto) : Results.BadRequest(new { message = outcome.Error, field = "input" });
         });
 
         // Checks a lane as it is currently typed on the page, without saving it - so a field that was red can

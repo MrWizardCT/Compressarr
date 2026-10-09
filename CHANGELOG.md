@@ -16,7 +16,8 @@ for that full history.
 > only - everything else is in the entries below.
 
 ### Added
-- **A Duplicate button on every lane card.** It asks for a name for the new lane and copies the lane as the card shows it: encoder, profiles and library folders. The copy's Input and Output folders are left blank and it starts disabled - two lanes watching the same folder would both pick up the same files - so set its folders and tick Enabled when it's ready. The new lane appears right after the original.
+- **A Duplicate button on every lane card.** It asks for a name for the new lane and copies the lane exactly as the card shows it, every field. The copy always starts switched off, and appears right after the original.
+- **Two enabled lanes can't watch the same Input folder.** Lanes scan their Input folder including subfolders, so the same folder - or one inside another - would have both lanes pick up the same files. Turning a lane on, or pointing it at a different Input, is now refused when another enabled lane already watches that folder or one around or inside it; the reason is shown under the Input field. Folders are compared by whole folder name (`D:\Media Download` and `D:\Media Download Kids` are different folders). A setup that already overlaps (an upgrade, an import) keeps running exactly as before, with both lanes flagged, and unrelated edits to those lanes still save. Save All now saves lanes one at a time, switching lanes off before switching others on.
 - **The license now comes with the program.** The installer shows an information page about the GPLv3 (no "I accept"
   step - the GPL grants rights and isn't needed to run the program), and installs `LICENSE` and a new
   `THIRD-PARTY-NOTICES.txt` (every component Compressarr is built with, with its copyright and license text) into the
