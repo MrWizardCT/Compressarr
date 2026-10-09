@@ -134,6 +134,14 @@ function renderNav(activePage) {
   toolbar.querySelector('.toolbar-spacer').appendChild(toolbarStatus);
   toolbarStatusEl = toolbarStatus;
 
+  // Long messages (a refusal that names the lane and what to do about it) don't fit the toolbar's one line, so
+  // they appear in this bar under the toolbar instead - see setStatusMessage.
+  const messageBar = document.createElement('div');
+  messageBar.className = 'message-bar hidden';
+  messageBar.innerHTML = '<span class="message-bar-icon"></span><span class="message-bar-text"></span><button type="button" class="message-bar-close" aria-label="Dismiss message">&times;</button>';
+  messageBar.querySelector('.message-bar-close').addEventListener('click', () => setStatusMessage('', ''));
+  toolbarMessageBarEl = messageBar;
+
   // Wraps the page's remaining content in .content-inner (see styles.css) so <main> itself can
   // span the full column width for scrolling while the actual content still visually caps/centers
   // at 1080px, same as before.
@@ -145,6 +153,7 @@ function renderNav(activePage) {
   }
 
   mainCol.appendChild(toolbar);
+  mainCol.appendChild(messageBar);
   if (existingMain) mainCol.appendChild(existingMain);
 
   // Off-canvas at narrow viewports (see styles.css's sidebar media query) - inert/invisible at
@@ -482,29 +491,82 @@ document.addEventListener('focusin', e => {
 // The single element every page's transient action feedback is shown in - set by renderNav()
 // above, since it builds the toolbar before any page script's own status-related code runs.
 let toolbarStatusEl = null;
+let toolbarMessageBarEl = null;
+let currentStatusText = '';
+
+// Longer than this, a success/error message goes in the bar under the toolbar (it wraps and shows the whole text)
+// instead of the toolbar chip, which is one line and cuts a long message off.
+const STATUS_BAR_THRESHOLD = 70;
+
+const STATUS_ALERT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
+const STATUS_CHECK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>';
+
+// What the status currently says, wherever it is shown (the chip or the bar) - for pages that need to tell whether
+// a particular message is still up.
+function currentStatusMessage() {
+  return currentStatusText;
+}
 
 // The one status-message convention every page uses - every page used to keep its own local
 // element(s) for this (#status, #presetStatus, a per-card .preset-status, etc); those are gone
-// now, so this always targets the shared toolbar span. kind: 'success' (green, auto-clears after
-// 4s - a success message left up forever is easy to miss/mistake for stale), 'error' (red via
-// --err, stays up until the next call - a broken-config error shouldn't silently disappear while
-// it's still true), or '' (neutral, e.g. "Saving..." - stays up, no color). Since there's only
-// one target now, whichever page/card/button set a message last is simply what's showing -
-// there's no per-widget status to preserve across two things happening close together.
+// now, so this always targets the shared toolbar. kind: 'success' (green, auto-clears - a success
+// message left up forever is easy to miss/mistake for stale), 'error' (red, stays up until the
+// next call or until dismissed - a broken-config error shouldn't silently disappear while it's
+// still true), or '' (neutral, e.g. "Saving..." - stays up, plain text). Success and error are
+// light chips with an icon so they read against the toolbar's dark background; a long one is shown
+// in the full-width bar under the toolbar instead. Since there's only one target, whichever
+// page/card/button set a message last is simply what's showing.
 function setStatusMessage(text, kind) {
-  const el = toolbarStatusEl;
-  if (!el) return;
-  clearTimeout(el._statusClearTimer);
-  el.textContent = text;
-  el.classList.toggle('success', kind === 'success');
-  el.classList.toggle('error', kind === 'error');
+  const chip = toolbarStatusEl;
+  if (!chip) return;
+  const bar = toolbarMessageBarEl;
 
-  if (kind === 'success') {
-    el._statusClearTimer = setTimeout(() => {
-      el.textContent = '';
-      el.classList.remove('success');
-    }, 4000);
+  clearTimeout(chip._statusClearTimer);
+  chip.className = 'toolbar-page-status';
+  chip.replaceChildren();
+  if (bar) bar.classList.add('hidden');
+  currentStatusText = text || '';
+  if (!text) return;
+
+  const emphasised = kind === 'success' || kind === 'error';
+  const clearLater = ms => {
+    chip._statusClearTimer = setTimeout(() => setStatusMessage('', ''), ms);
+  };
+
+  const showInBar = () => {
+    chip.className = 'toolbar-page-status';
+    chip.replaceChildren();
+    bar.className = `message-bar ${kind}`;
+    bar.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    bar.querySelector('.message-bar-icon').innerHTML = kind === 'error' ? STATUS_ALERT_ICON : STATUS_CHECK_ICON;
+    bar.querySelector('.message-bar-text').textContent = text;
+    if (kind === 'success') clearLater(10000); // long: give it time to be read
+  };
+
+  if (emphasised && bar && text.length > STATUS_BAR_THRESHOLD) {
+    showInBar();
+    return;
   }
+
+  if (emphasised) {
+    chip.classList.add(kind);
+    const icon = document.createElement('span');
+    icon.className = 'status-icon';
+    icon.innerHTML = kind === 'error' ? STATUS_ALERT_ICON : STATUS_CHECK_ICON;
+    chip.appendChild(icon);
+  }
+  const msg = document.createElement('span');
+  msg.className = 'status-text';
+  msg.textContent = text;
+  chip.appendChild(msg);
+  // An ERROR the chip can't show in full (a narrow window, a toolbar crowded with buttons) goes in the bar instead of
+  // being cut off - the whole text matters for an error. A success that doesn't fit just stays a chip: pushing the page
+  // down for a moment on every Save would be noisy.
+  if (kind === 'error' && bar && msg.scrollWidth > msg.clientWidth) {
+    showInBar();
+    return;
+  }
+  if (kind === 'success') clearLater(4000);
 }
 
 // Removes the red outline/tooltip left by a previous applyValidationIssues call. fieldMap:

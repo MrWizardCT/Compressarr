@@ -15,6 +15,9 @@ for that full history.
 > Changes since [2.2.0-beta.4](https://github.com/MrWizardCT/Compressarr/releases/tag/v2.2.0-beta.4)
 > only - everything else is in the entries below.
 
+### Changed
+- **Messages in the top toolbar are readable.** Success and error messages ("Settings saved.", a failed save, a refused lane change...) were red or green text straight on the dark toolbar, which was hard to read. They are now light chips with an icon and dark text. A long message, or an error that doesn't fit the toolbar, appears in a bar under the toolbar that wraps and shows the whole text, with a close button. This applies to every page.
+
 ### Added
 - **A Duplicate button on every lane card.** It asks for a name for the new lane and copies the lane exactly as the card shows it, every field. The copy always starts switched off, and appears right after the original.
 - **Two enabled lanes can't watch the same Input folder.** Lanes scan their Input folder including subfolders, so the same folder - or one inside another - would have both lanes pick up the same files. Turning a lane on, or pointing it at a different Input, is now refused when another enabled lane already watches that folder or one around or inside it; the reason is shown under the Input field. Folders are compared by whole folder name (`D:\Media Download` and `D:\Media Download Kids` are different folders). A setup that already overlaps (an upgrade, an import) keeps running exactly as before, with both lanes flagged, and unrelated edits to those lanes still save. Save All now saves lanes one at a time, switching lanes off before switching others on.

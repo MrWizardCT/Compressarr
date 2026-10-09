@@ -122,7 +122,7 @@ function scheduleRevalidation(node, force = false) {
       });
       if (!res.ok || node._revalidateSeq !== seq) return; // failed, or a newer check is already on its way
       applyLaneValidation(node, await res.json());
-      if (!lanesContainer.querySelector('.field-invalid') && /configuration issue/.test(toolbarStatusEl?.textContent || '')) {
+      if (!lanesContainer.querySelector('.field-invalid') && /configuration issue/.test(currentStatusMessage())) {
         setStatusMessage('', '');
       }
     } catch { /* leave the highlight as it was */ }

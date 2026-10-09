@@ -251,22 +251,64 @@ body {
   margin-left: 14px;
   font-size: 12.5px;
   color: var(--toolbar-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-/* --ok is a content-theme token (differs between light/dark) - the toolbar itself is a fixed dark
-   chrome regardless of content theme, so this reuses --dot-on (the monitoring status dot's own
-   fixed green) instead, same reasoning as --badge-warning above. */
-.toolbar-page-status.success {
-  color: var(--dot-on);
-  font-weight: 600;
-}
+.toolbar-page-status .status-text { overflow: hidden; text-overflow: ellipsis; }
+.toolbar-page-status .status-icon { display: inline-flex; flex-shrink: 0; }
+.toolbar-page-status .status-icon svg { width: 16px; height: 16px; }
 
+/* Success and error are light chips with dark text: red and green text straight on the toolbar's dark blue-grey
+   were hard to read (roughly 1.1:1 and 2.4:1). The toolbar is a fixed dark chrome whatever the content theme, so
+   these are fixed colours too. About 11:1 for the error chip, about 9:1 for the success chip. */
+.toolbar-page-status.success,
 .toolbar-page-status.error {
-  color: var(--dot-off);
-  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.toolbar-page-status.success { background: #e3f6ea; color: #14532d; }
+.toolbar-page-status.error { background: #fdeaea; color: #7a1818; }
+
+/* A long message goes here instead: a full-width strip under the toolbar that wraps and shows all of it. */
+.message-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 9px 24px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #ffffff;
+}
+
+.message-bar.error { background: #9c2b2b; }
+.message-bar.success { background: #1f6b3a; }
+.message-bar-icon { display: inline-flex; flex-shrink: 0; margin-top: 2px; }
+.message-bar-icon svg { width: 17px; height: 17px; }
+.message-bar-text { flex: 1; min-width: 0; }
+
+.message-bar-close {
+  background: none;
+  border: none;
+  color: #ffffff;
+  opacity: 0.85;
+  font-size: 20px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.message-bar-close:hover { opacity: 1; }
+
+@media (max-width: 760px) {
+  .message-bar { padding: 9px 14px; }
 }
 
 /* A page's own action-button row, relocated here from the content area - stripped of the
@@ -282,6 +324,8 @@ body {
 }
 
 .toolbar button {
+  flex-shrink: 0;
+  white-space: nowrap;
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.12);
   color: var(--toolbar-text);
