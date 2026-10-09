@@ -52,6 +52,38 @@ public class HtmlReportGeneratorTests
     };
 
     [Fact]
+    public void FullDetailsLink_CarriesTheLogsName_AndTheReportPointsItAtTheAppWhenViewedOverHttp()
+    {
+        // A browser will not follow a file:// link from a page served over http (the History page), so the link
+        // keeps its file:// target for a report opened from disk and the page rewrites it for the http case.
+        var logPath = Path.Combine(Path.GetTempPath(), $"report-link-{Guid.NewGuid():N}_HBdetails.txt");
+        File.WriteAllText(logPath, "log");
+        try
+        {
+            var result = new ConversionResult
+            {
+                LaneId = "lane1", FileName = "a.mkv", FullName = @"C:\videos\a.mkv",
+                ContentType = "Movie", PresetName = "Compressarr SD-HD",
+                BeginSizeGb = 1, EndSizeGb = 0, Success = false,
+                ErrorCode = ReportErrorCode.EncodeFailed,
+                DetailLogFile = logPath,
+                StartTime = DateTime.Now, EndTime = DateTime.Now
+            };
+            var model = BaseModel(new List<LaneReportSection> { new() { LaneDisplayName = "HD/SD", Results = new[] { result } } });
+
+            var html = new HtmlReportGenerator().Generate(model);
+
+            Assert.Contains(new Uri(logPath).AbsoluteUri, html);
+            Assert.Contains($"data-log=\"{Path.GetFileName(logPath)}\"", html);
+            Assert.Contains("/api/logs/", html);
+        }
+        finally
+        {
+            File.Delete(logPath);
+        }
+    }
+
+    [Fact]
     public void Generate_RedirectedFile_IsTaggedWithWhereItLandedAndWhereItCameFrom()
     {
         var model = BaseModel(new List<LaneReportSection>

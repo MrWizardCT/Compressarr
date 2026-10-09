@@ -1235,6 +1235,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 
@@ -1280,6 +1281,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 
@@ -1347,6 +1349,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 
@@ -1629,6 +1632,7 @@ public class ConversionOrchestratorTests : IDisposable
         var outputDir = Path.Combine(_tempDir, "Output");
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
+        Directory.CreateDirectory(Path.Combine(_tempDir, "Movies"));
 
         var lane = new LaneConfig
         {
@@ -1672,6 +1676,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 
@@ -2025,6 +2030,7 @@ public class ConversionOrchestratorTests : IDisposable
         var outputDir = Path.Combine(_tempDir, "Output");
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
+        Directory.CreateDirectory(Path.Combine(_tempDir, "Movies"));
 
         var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
         File.WriteAllText(sourcePath, "source");
@@ -2087,6 +2093,7 @@ public class ConversionOrchestratorTests : IDisposable
         var outputDir = Path.Combine(_tempDir, "Output");
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
+        Directory.CreateDirectory(Path.Combine(_tempDir, "Movies"));
 
         var sourcePath = Path.Combine(inputDir, "Caddyshack (1980).mkv");
         File.WriteAllText(sourcePath, "source");
@@ -2155,6 +2162,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 
@@ -2223,6 +2231,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 
@@ -2287,6 +2296,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 
@@ -2337,6 +2347,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 
@@ -2411,6 +2422,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 
@@ -2463,6 +2475,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 
@@ -2523,6 +2536,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 
@@ -2572,6 +2586,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 
@@ -2644,6 +2659,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 
@@ -2693,6 +2709,7 @@ public class ConversionOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
 

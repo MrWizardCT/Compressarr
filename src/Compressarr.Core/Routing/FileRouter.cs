@@ -80,6 +80,18 @@ public sealed class FileRouter : IFileRouter
         return candidate;
     }
 
+    /// <summary>The lane's TV/Movie base folder is where the user's library lives: Compressarr creates the show/season and
+    /// movie folders inside it, but never the base folder itself. A base folder that is missing (renamed, a drive or share
+    /// that is gone, a typo) is a destination problem to report and retry - not something to quietly recreate, which
+    /// would start a second, empty library in the wrong place. Reported as "destination unavailable" (ERROR 102).</summary>
+    private static void RequireBaseFolder(string outputBase, string kind)
+    {
+        if (!Directory.Exists(outputBase))
+        {
+            throw new DirectoryNotFoundException($"The {kind} base folder '{outputBase}' does not exist. Compressarr creates the folders inside it, but not the base folder itself - fix the path on the Lanes page or restore the folder.");
+        }
+    }
+
     public string? MoveTvFile(string sourcePath, string desiredFileName, string outputBase, DestinationCollisionMode collisionMode = DestinationCollisionMode.Overwrite)
     {
         if (string.IsNullOrWhiteSpace(outputBase))
@@ -93,6 +105,7 @@ public sealed class FileRouter : IFileRouter
             return null;
         }
 
+        RequireBaseFolder(outputBase, "TV Show");
         var destFolder = Path.Combine(outputBase, info.ShowName, "Season " + info.Season);
         Directory.CreateDirectory(destFolder);
         var destPath = ResolveCollision(Path.Combine(destFolder, info.EpisodeFileName), collisionMode);
@@ -117,6 +130,7 @@ public sealed class FileRouter : IFileRouter
         // Movie (2026)" contains "Movie") and silently nested every subsequent movie inside
         // whichever one happened to be the sole match - confirmed misrouting real files in
         // production. Bucket folders aren't used, so removed rather than made safer.
+        RequireBaseFolder(outputBase, "Movie");
         var movieDestFolder = Path.Combine(outputBase, movieFolderName);
         Directory.CreateDirectory(movieDestFolder);
         var destPath = ResolveCollision(Path.Combine(movieDestFolder, desiredFileName), collisionMode);

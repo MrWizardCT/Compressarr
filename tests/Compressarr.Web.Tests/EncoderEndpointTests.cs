@@ -323,6 +323,28 @@ public class EncoderEndpointTests
         Assert.Equal(HttpStatusCode.NotFound, notABackup.StatusCode);
     }
 
+    [Fact]
+    public async Task LogsEndpoint_ServesALogByName_AndNothingElse()
+    {
+        await using var host = await QueueHost.StartAsync(Lane1);
+        var logs = Path.Combine(Compressarr.Core.Config.AppPaths.GetAppDataDirectory(), "Logs");
+        Directory.CreateDirectory(logs);
+        await File.WriteAllTextAsync(Path.Combine(logs, "Compressarr_run_HBdetails.txt"), "encoder said no");
+        await File.WriteAllTextAsync(Path.Combine(logs, "Compressarr_History.csv"), "1,2,3");
+
+        using var ok = await host.Client.GetAsync("/api/logs/Compressarr_run_HBdetails.txt");
+        using var csv = await host.Client.GetAsync("/api/logs/Compressarr_History.csv");
+        using var missing = await host.Client.GetAsync("/api/logs/nothing.log");
+        using var traversal = await host.Client.GetAsync("/api/logs/" + Uri.EscapeDataString(@"..\compressarr.settings.json"));
+
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        Assert.Equal("encoder said no", await ok.Content.ReadAsStringAsync());
+        Assert.StartsWith("text/plain", ok.Content.Headers.ContentType!.MediaType);
+        Assert.Equal(HttpStatusCode.NotFound, csv.StatusCode);       // only .log/.txt
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, traversal.StatusCode);
+    }
+
     [Theory]
     [InlineData("/api/encoder")]
     [InlineData("/api/profiles")]

@@ -148,6 +148,8 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
             AppendHistorySection(sb, model);
         }
 
+        // Viewed through the app (http), the log links go to /api/logs/ instead of the file:// path a browser would block.
+        sb.Append("<script>(function(){if(!/^https?:$/.test(location.protocol))return;document.querySelectorAll('a[data-log]').forEach(function(a){a.href='/api/logs/'+encodeURIComponent(a.getAttribute('data-log'));});})();</script>\n");
         sb.Append("</body>\n</html>\n");
         return sb.ToString();
     }
@@ -223,11 +225,14 @@ public sealed class HtmlReportGenerator : IHtmlReportGenerator
                     : (summaryLogFilePath, "Full Details (Compressarr log)");
                 if (!string.IsNullOrEmpty(linkTarget) && File.Exists(linkTarget))
                 {
-                    // A plain local file, same machine the report itself lives on - a file:// link
-                    // resolves whether the report was opened directly (the common case) or viewed
-                    // through the app's own /api/reports/ route.
+                    // The link is a file:// path, which is right when the report is opened straight from disk (the
+                    // "open report after run" case). A browser refuses to follow a file:// link from a page served over
+                    // http though, so the log's name is carried along and the script at the end of the report points
+                    // the link at the app's own /api/logs/ route when the report is viewed through the app (the History
+                    // page, or from another device).
                     var detailUri = new Uri(linkTarget).AbsoluteUri;
-                    statusHtml += $"<br><a href=\"{detailUri}\" target=\"_blank\" rel=\"noopener\">{linkText}</a>";
+                    var logName = WebUtility.HtmlEncode(Path.GetFileName(linkTarget));
+                    statusHtml += $"<br><a href=\"{detailUri}\" data-log=\"{logName}\" target=\"_blank\" rel=\"noopener\">{linkText}</a>";
                 }
             }
             else
