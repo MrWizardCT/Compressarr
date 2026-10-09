@@ -76,6 +76,26 @@ public static class HistoryEndpoints
         // the *current* Report.ReportPath, so a later change to that setting doesn't strand
         // already-generated links - Path.GetFileName strips any directory component an attacker
         // (or a stale link) might try to smuggle in, so this can never escape the reports folder.
+        // Serves a run's text log (the Compressarr log, or a HandBrake/ffmpeg detail log) by name only, from the Logs
+        // folder, for the "Full Details" links on a report viewed through the app. Only .log/.txt files, and
+        // Path.GetFileName strips any folder component, so it can't reach anything else on disk. Opened with shared
+        // access because the current run's log may still be being written.
+        app.MapGet("/api/logs/{fileName}", (string fileName, IConfigStore configStore, IPathExpander pathExpander) =>
+        {
+            var safeName = Path.GetFileName(fileName);
+            var extension = Path.GetExtension(safeName);
+            if (!extension.Equals(".log", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".txt", StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.NotFound();
+            }
+
+            var config = configStore.Load(AppPaths.GetConfigFilePath());
+            var fullPath = Path.Combine(pathExpander.Expand(config.Logging.LogFilePath), safeName);
+            if (!File.Exists(fullPath)) return Results.NotFound();
+
+            return Results.Stream(new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete), "text/plain; charset=utf-8");
+        });
+
         app.MapGet("/api/reports/{fileName}", (string fileName, IConfigStore configStore, IPathExpander pathExpander) =>
         {
             var config = configStore.Load(AppPaths.GetConfigFilePath());

@@ -23,6 +23,7 @@ public class FileRouterTests : IDisposable
         var router = new FileRouter();
         var source = CreateSourceFile("MASH.S04E09.mkv");
         var outputBase = Path.Combine(_tempDir, "TV");
+        Directory.CreateDirectory(outputBase);
 
         var dest = router.MoveTvFile(source, "MASH.S04E09.mkv", outputBase)!;
 
@@ -41,6 +42,7 @@ public class FileRouterTests : IDisposable
         var router = new FileRouter();
         var source = CreateSourceFile("MASH.S04E09.compressarr-a1b2c3d4.mkv");
         var outputBase = Path.Combine(_tempDir, "TV");
+        Directory.CreateDirectory(outputBase);
 
         var dest = router.MoveTvFile(source, "MASH.S04E09.mkv", outputBase)!;
 
@@ -78,6 +80,43 @@ public class FileRouterTests : IDisposable
     }
 
     [Fact]
+    public void MissingBaseFolder_IsAnErrorNotSomethingToRecreate_ForTvAndMovies()
+    {
+        // The base folder is the user's library. If it was renamed or its drive is gone, the move fails (and is
+        // retried) instead of quietly starting a second, empty library at the old path.
+        var router = new FileRouter();
+        var tvSource = Path.Combine(_tempDir, "tv.mkv");
+        var movieSource = Path.Combine(_tempDir, "movie.mkv");
+        File.WriteAllText(tvSource, "x");
+        File.WriteAllText(movieSource, "x");
+        var tvBase = Path.Combine(_tempDir, "12. UHD TV Shows");
+        var movieBase = Path.Combine(_tempDir, "Movies Gone");
+
+        var tvEx = Assert.Throws<DirectoryNotFoundException>(() => router.MoveTvFile(tvSource, "MASH.S04E09.mkv", tvBase));
+        Assert.Throws<DirectoryNotFoundException>(() => router.MoveMovieFile(movieSource, "Caddyshack (1980).mkv", movieBase));
+
+        Assert.Contains("12. UHD TV Shows", tvEx.Message);
+        Assert.False(Directory.Exists(tvBase));
+        Assert.False(Directory.Exists(movieBase));
+        Assert.True(File.Exists(tvSource));
+        Assert.True(File.Exists(movieSource));
+    }
+
+    [Fact]
+    public void FoldersInsideAnExistingBaseFolder_AreStillCreated()
+    {
+        var router = new FileRouter();
+        var source = Path.Combine(_tempDir, "tv.mkv");
+        File.WriteAllText(source, "x");
+        var tvBase = Directory.CreateDirectory(Path.Combine(_tempDir, "TV")).FullName;
+
+        var dest = router.MoveTvFile(source, "MASH.S04E09.mkv", tvBase)!;
+
+        Assert.StartsWith(Path.Combine(tvBase, "MASH"), dest); // show and season folders are made on demand
+        Assert.True(File.Exists(dest));
+    }
+
+    [Fact]
     public void MoveTvFile_NoSeasonEpisode_ReturnsNull()
     {
         var router = new FileRouter();
@@ -95,6 +134,7 @@ public class FileRouterTests : IDisposable
         var router = new FileRouter();
         var source = CreateSourceFile("Caddyshack (1980).mkv");
         var outputBase = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(outputBase);
 
         var dest = router.MoveMovieFile(source, "Caddyshack (1980).mkv", outputBase)!;
 
@@ -113,6 +153,7 @@ public class FileRouterTests : IDisposable
         var router = new FileRouter();
         var source = CreateSourceFile("The Runner (2026).mkv");
         var outputBase = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(outputBase);
         Directory.CreateDirectory(Path.Combine(outputBase, "Scary Movie (2026)"));
 
         var dest = router.MoveMovieFile(source, "The Runner (2026).mkv", outputBase)!;
@@ -127,6 +168,7 @@ public class FileRouterTests : IDisposable
         var source = CreateSourceFile("Caddyshack (1980).mkv");
         File.WriteAllText(source, "NEW CONTENT");
         var outputBase = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(outputBase);
 
         // A prior conversion already placed a file at the exact spot this one is about to land -
         // e.g. the same movie converted a second time.
@@ -149,6 +191,7 @@ public class FileRouterTests : IDisposable
         var source = CreateSourceFile("MASH.S04E09.mkv");
         File.WriteAllText(source, "NEW CONTENT");
         var outputBase = Path.Combine(_tempDir, "TV");
+        Directory.CreateDirectory(outputBase);
 
         var existingDestFolder = Path.Combine(outputBase, "MASH", "Season 04");
         Directory.CreateDirectory(existingDestFolder);
@@ -181,6 +224,7 @@ public class FileRouterTests : IDisposable
         var source = CreateSourceFile("Caddyshack (1980).mkv");
         File.WriteAllText(source, "NEW CONTENT");
         var outputBase = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(outputBase);
         var existingDestFolder = Path.Combine(outputBase, "Caddyshack (1980)");
         Directory.CreateDirectory(existingDestFolder);
         var existingDestPath = Path.Combine(existingDestFolder, "Caddyshack (1980).mkv");
@@ -201,6 +245,7 @@ public class FileRouterTests : IDisposable
         var router = new FileRouter();
         var source = CreateSourceFile("MASH.S04E09.mkv");
         var outputBase = Path.Combine(_tempDir, "TV");
+        Directory.CreateDirectory(outputBase);
         var existingDestFolder = Path.Combine(outputBase, "MASH", "Season 04");
         Directory.CreateDirectory(existingDestFolder);
         var existingDestPath = Path.Combine(existingDestFolder, "MASH.S04E09.mkv");
@@ -221,6 +266,7 @@ public class FileRouterTests : IDisposable
         var source = CreateSourceFile("Caddyshack (1980).mkv");
         File.WriteAllText(source, "NEW CONTENT");
         var outputBase = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(outputBase);
         var existingDestFolder = Path.Combine(outputBase, "Caddyshack (1980)");
         Directory.CreateDirectory(existingDestFolder);
         var existingDestPath = Path.Combine(existingDestFolder, "Caddyshack (1980).mkv");
@@ -240,6 +286,7 @@ public class FileRouterTests : IDisposable
         var router = new FileRouter();
         var source = CreateSourceFile("Caddyshack (1980).mkv");
         var outputBase = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(outputBase);
         var existingDestFolder = Path.Combine(outputBase, "Caddyshack (1980)");
         Directory.CreateDirectory(existingDestFolder);
         File.WriteAllText(Path.Combine(existingDestFolder, "Caddyshack (1980).mkv"), "1");
@@ -258,6 +305,7 @@ public class FileRouterTests : IDisposable
         var source = CreateSourceFile("Caddyshack (1980).mkv");
         File.WriteAllText(source, "NEW CONTENT");
         var outputBase = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(outputBase);
         var existingDestFolder = Path.Combine(outputBase, "Caddyshack (1980)");
         Directory.CreateDirectory(existingDestFolder);
         var existingDestPath = Path.Combine(existingDestFolder, "Caddyshack (1980).mkv");
@@ -275,6 +323,7 @@ public class FileRouterTests : IDisposable
         var router = new FileRouter();
         var source = CreateSourceFile("Caddyshack (1980).mkv");
         var outputBase = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(outputBase);
 
         var dest = router.MoveMovieFile(source, "Caddyshack (1980).mkv", outputBase, DestinationCollisionMode.Rename)!;
 

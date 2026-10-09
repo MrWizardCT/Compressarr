@@ -576,6 +576,7 @@ public class RunOrchestratorTests : IDisposable
         var inputDir = Path.Combine(_tempDir, "Input");
         var outputDir = Path.Combine(_tempDir, "Output");
         var movieBaseDir = Path.Combine(_tempDir, "Movies");
+        Directory.CreateDirectory(movieBaseDir);
         Directory.CreateDirectory(inputDir);
         Directory.CreateDirectory(outputDir);
         // Input deliberately empty - nothing new to encode this pass, only the retry below.
