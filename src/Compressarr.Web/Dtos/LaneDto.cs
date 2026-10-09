@@ -12,3 +12,6 @@ public sealed record LaneDto(
     string MovieBasePath,
     List<ValidationIssueDto> ValidationIssues,
     string? Engine = null);
+
+/// <summary>Duplicate a lane: the new lane's name, and the lane as it is currently shown (see POST /api/lanes/duplicate).</summary>
+public sealed record DuplicateLaneRequest(string DisplayName, LaneDto Lane);

@@ -40,6 +40,37 @@ public static class LaneEndpoints
             return Results.Json(dto);
         });
 
+        // Copies a lane under a new name. What the card currently shows is what gets copied (the request carries it),
+        // except the two folders and Enabled: the Input and Output folders are left blank because two lanes watching
+        // the same folder would both pick up the same files, and the copy starts disabled so it can't run half set up.
+        // The new lane sits right after the one it was copied from.
+        app.MapPost("/api/lanes/duplicate", (DuplicateLaneRequest request, IConfigStore configStore, IPathExpander pathExpander, IEncoderResolver encoders) =>
+        {
+            var name = (request.DisplayName ?? "").Trim();
+            if (name.Length == 0) return Results.BadRequest(new { message = "Enter a name for the new lane." });
+
+            var outcome = configStore.Update(AppPaths.GetConfigFilePath(), config =>
+            {
+                if (config.Lanes.Any(l => string.Equals(l.DisplayName.Trim(), name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return (Dto: (LaneDto?)null, Error: $"There is already a lane named \"{name}\". Choose a different name.");
+                }
+
+                var lane = new LaneConfig();
+                ConfigMapping.ApplyLaneDto(lane, request.Lane);
+                lane.DisplayName = name;
+                lane.Input = "";
+                lane.Output = "";
+                lane.Enabled = false;
+
+                var sourceIndex = config.Lanes.FindIndex(l => l.Id == request.Lane.Id);
+                config.Lanes.Insert(sourceIndex >= 0 ? sourceIndex + 1 : config.Lanes.Count, lane);
+                return (Dto: ConfigMapping.ToLaneDto(lane, Validate(lane, config, pathExpander, encoders)), Error: (string?)null);
+            });
+
+            return outcome.Error is null ? Results.Json(outcome.Dto) : Results.BadRequest(new { message = outcome.Error });
+        });
+
         app.MapPut("/api/lanes/{id}", (string id, LaneDto dto, IConfigStore configStore, IPathExpander pathExpander, IEncoderResolver encoders) =>
         {
             var result = configStore.Update(AppPaths.GetConfigFilePath(), config =>

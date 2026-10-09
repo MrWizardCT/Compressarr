@@ -74,6 +74,7 @@ function laneCardFromDto(dto) {
 
   node.querySelector('.save-lane-btn').addEventListener('click', () => saveLane(node));
   node.querySelector('.remove-lane-btn').addEventListener('click', () => removeLane(node));
+  node.querySelector('.duplicate-lane-btn').addEventListener('click', () => duplicateLane(node));
 
   for (const btn of node.querySelectorAll('.browse-btn')) {
     btn.addEventListener('click', () => {
@@ -184,6 +185,37 @@ async function saveAllLanes() {
     setStatus(`All ${cards.length} lane(s) saved.`, true);
   }
   if (failedCount === 0) lanesDirty = false;
+}
+
+// Copies this lane (as the card shows it right now) under a name the user picks. The copy's Input and Output folders
+// come back blank and it starts disabled - two lanes must not watch the same folder - so the card is shown with those
+// fields flagged, ready to fill in.
+async function duplicateLane(node) {
+  const dto = readLaneCard(node);
+  const name = prompt(`Name for the new lane, copied from "${dto.displayName}":`, `${dto.displayName} (copy)`);
+  if (name === null) return;
+  if (!name.trim()) {
+    setStatus('Enter a name for the new lane.');
+    return;
+  }
+
+  const res = await fetch('/api/lanes/duplicate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ displayName: name.trim(), lane: dto })
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    setStatus(body.message || 'Could not duplicate the lane.');
+    return;
+  }
+
+  const copy = await res.json();
+  const copyNode = laneCardFromDto(copy);
+  node.after(copyNode);
+  applyLaneValidation(copyNode, copy.validationIssues);
+  copyNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setStatus(`Lane "${copy.displayName}" created from "${dto.displayName}". Set its Input and Output folders, then tick Enabled - the copy starts disabled so it can't run half set up.`, true);
 }
 
 async function removeLane(node) {

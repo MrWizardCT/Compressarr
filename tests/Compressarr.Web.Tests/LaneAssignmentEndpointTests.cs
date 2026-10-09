@@ -59,6 +59,74 @@ public class LaneAssignmentEndpointTests
         return status!["landsInLaneName"]?.GetValue<string>();
     }
 
+    // ---- Duplicate lane -------------------------------------------------------------------------
+
+    private static async Task<(HttpStatusCode Status, System.Text.Json.Nodes.JsonObject Body)> DuplicateAsync(QueueHost host, System.Text.Json.Nodes.JsonObject lane, string name)
+    {
+        var request = new System.Text.Json.Nodes.JsonObject { ["displayName"] = name, ["lane"] = lane.DeepClone() };
+        using var response = await host.Client.PostAsync("/api/lanes/duplicate", new StringContent(request.ToJsonString(), System.Text.Encoding.UTF8, "application/json"));
+        return (response.StatusCode, System.Text.Json.Nodes.JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject());
+    }
+
+    private static async Task<System.Text.Json.Nodes.JsonArray> GetLanesAsync(QueueHost host) =>
+        System.Text.Json.Nodes.JsonNode.Parse(await host.Client.GetStringAsync("/api/lanes"))!.AsArray();
+
+    [Fact]
+    public async Task DuplicatingALane_CopiesItsSettings_ButNotItsFolders_StartsDisabled_AndSitsAfterTheOriginal()
+    {
+        await using var host = await QueueHost.StartAsync(Home, Kids);
+        var home = (await GetLanesAsync(host))[0]!.AsObject();
+        home["tvPreset"] = "Compressarr SD-HD";
+        home["tvShowBasePath"] = @"D:\TV";
+        home["movieBasePath"] = @"D:\Movies";
+        home["engine"] = "HandBrake";
+
+        var (status, copy) = await DuplicateAsync(host, home, "  SD-HD Anime  ");
+
+        Assert.Equal(HttpStatusCode.OK, status);
+        Assert.Equal("SD-HD Anime", copy["displayName"]!.GetValue<string>()); // trimmed
+        Assert.NotEqual("hdsd", copy["id"]!.GetValue<string>());                // a lane of its own
+        Assert.Equal("Compressarr SD-HD", copy["tvPreset"]!.GetValue<string>());
+        Assert.Equal(@"D:\TV", copy["tvShowBasePath"]!.GetValue<string>());
+        Assert.Equal(@"D:\Movies", copy["movieBasePath"]!.GetValue<string>());
+        Assert.Equal("", copy["input"]!.GetValue<string>());                     // two lanes must not watch one folder
+        Assert.Equal("", copy["output"]!.GetValue<string>());
+        Assert.False(copy["enabled"]!.GetValue<bool>());
+
+        var lanes = await GetLanesAsync(host);
+        Assert.Equal(new[] { "SD-HD", "SD-HD Anime", "Kids" }, lanes.Select(l => l!["displayName"]!.GetValue<string>()).ToArray());
+    }
+
+    [Fact]
+    public async Task DuplicatingALane_CopiesWhatTheCardShowsRightNow_NotWhatWasLastSaved()
+    {
+        await using var host = await QueueHost.StartAsync(Home);
+        var card = (await GetLanesAsync(host))[0]!.AsObject();
+        card["moviePreset"] = "Edited But Not Saved"; // an unsaved edit on the card
+
+        var (_, copy) = await DuplicateAsync(host, card, "Copy");
+
+        Assert.Equal("Edited But Not Saved", copy["moviePreset"]!.GetValue<string>());
+        Assert.NotEqual("Edited But Not Saved", (await GetLanesAsync(host))[0]!["moviePreset"]!.GetValue<string>()); // the original is untouched
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("kids")]      // already used, whatever the capitalisation
+    [InlineData("  SD-HD ")]
+    public async Task DuplicatingALane_NeedsAnUnusedName(string name)
+    {
+        await using var host = await QueueHost.StartAsync(Home, Kids);
+        var home = (await GetLanesAsync(host))[0]!.AsObject();
+
+        var (status, body) = await DuplicateAsync(host, home, name);
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.False(string.IsNullOrWhiteSpace(body["message"]!.GetValue<string>()));
+        Assert.Equal(2, (await GetLanesAsync(host)).Count); // nothing was added
+    }
+
     [Fact]
     public async Task AnOrdinaryRow_HasNoDestination()
     {
